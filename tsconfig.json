@@ -7,6 +7,9 @@
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "noEmit": true,
+    // Node strips types natively and resolves imports literally, so relative
+    // imports carry the .ts extension. tsc has to be told that is intentional.
+    "allowImportingTsExtensions": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
     "resolveJsonModule": true,
