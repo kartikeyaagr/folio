@@ -1,0 +1,11 @@
+# Private planning notes and internal documentation. Never committed.
+docs/
+tasks/
+
+node_modules/
+.next/
+out/
+*.tsbuildinfo
+.env
+.env.local
+.DS_Store
