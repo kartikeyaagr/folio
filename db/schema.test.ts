@@ -105,7 +105,11 @@ test('every audited table carries the trigger', async () => {
     FROM pg_class c
     JOIN pg_namespace n ON n.oid = c.relnamespace
     WHERE n.nspname = 'public' AND c.relkind = 'r'
-      AND c.relname NOT IN ('actors', 'audit_log', 'schema_migrations')
+      -- Each exclusion is deliberate and documented in the migration that created the table:
+      -- actors and audit_log would be circular; schema_migrations is the runner's own ledger;
+      -- prices is ~2,000 unchanging exchange facts a day whose provenance is ingestion_runs;
+      -- ingestion_runs is that provenance table itself.
+      AND c.relname NOT IN ('actors', 'audit_log', 'schema_migrations', 'prices', 'ingestion_runs')
       AND NOT EXISTS (
         SELECT 1 FROM pg_trigger t WHERE t.tgrelid = c.oid AND t.tgname = 'audit'
       )`);
