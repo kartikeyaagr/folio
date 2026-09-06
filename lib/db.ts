@@ -20,6 +20,17 @@
 
 import pg from 'pg';
 
+/**
+ * A `date` column is a calendar date, not an instant, and node-postgres parses one into a JS Date
+ * at *local* midnight. In IST that makes `2024-04-01`.toISOString() report `2024-03-31`, which is
+ * how a reporting period silently moves a day. Dates are therefore handed back as the strings they
+ * are, and only `timestamptz` becomes a Date.
+ *
+ * Found the hard way: the first fundamentals ingest appeared to store 2024-03-31..2024-12-30 for a
+ * period the database actually held correctly.
+ */
+pg.types.setTypeParser(1082, (v: string) => v); // DATE
+
 /** Service principals allowed to act without a person. Closed set on purpose. */
 export type ServicePrincipal =
   | 'system:ingest'
