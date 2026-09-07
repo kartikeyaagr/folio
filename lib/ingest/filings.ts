@@ -131,9 +131,9 @@ export async function storeFilings(filings: Filing[]): Promise<StoreResult> {
       const companyId = isinHit ?? symbolHit ?? null;
       const linkedBy = isinHit ? 'isin' : symbolHit ? 'symbol' : null;
       const { rows } = await c.query<{ company_id: string | null }>(
-        `INSERT INTO filings (id, company_id, symbol, isin, category, subject, summary,
+        `INSERT INTO filings (id, company_id, symbol, isin, category, summary,
                               attachment_url, has_xbrl, announced_at, linked_by)
-         VALUES ($1, $10, $3, $2, $4, $5, $6, $7, $8, $9, $11)
+         VALUES ($1, $9, $3, $2, $4, $5, $6, $7, $8, $10)
          ON CONFLICT (id) DO UPDATE
             SET company_id = COALESCE(EXCLUDED.company_id, filings.company_id),
                 linked_by = COALESCE(EXCLUDED.linked_by, filings.linked_by),
@@ -147,7 +147,6 @@ export async function storeFilings(filings: Filing[]): Promise<StoreResult> {
           f.isin,
           f.symbol,
           f.category,
-          f.companyName,
           f.summary,
           f.attachmentUrl,
           f.hasXbrl,

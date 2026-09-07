@@ -1,0 +1,341 @@
+/* agents — area styles. Tokens and shared components live in globals.css. */
+
+/* --- The hub's split panes ------------------------------------------------------------------- */
+
+/* The tab bar sits between the header and the split, so the split is one bar shorter than the
+   shell sizes it: 10px of top padding, a 38px tab, a 1px rule. Doubled selectors because area
+   files are imported ahead of globals.css and would otherwise lose to `.split` on order. */
+.split.ag-split {
+  --ag-tabs-h: 49px;
+  height: calc(100vh - var(--head-h) - var(--ag-tabs-h));
+}
+.split.ag-split-review {
+  grid-template-columns: minmax(240px, 300px) minmax(0, 1fr);
+}
+.split.ag-split-chat {
+  grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
+}
+@media (max-width: 900px) {
+  .split.ag-split {
+    height: auto;
+  }
+}
+
+/* The agent's name over a detail title, in the accent that means "an agent wrote this". */
+.ag-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--teal);
+}
+
+/* --- Review ---------------------------------------------------------------------------------- */
+
+/* A draft in the list: agent and cost, the subject, the model. No dot — nothing here has a
+   severity, only a price. */
+.rv-row {
+  display: block;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--line);
+  color: var(--ink);
+  text-decoration: none;
+  transition: background-color 120ms var(--ease);
+}
+.rv-row:hover,
+.rv-row[aria-current='true'] {
+  background: var(--surface-2);
+}
+.rv-row:focus-visible {
+  outline-offset: -2px;
+}
+.rv-agent {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--teal);
+}
+.rv-agent .rv-cost {
+  color: var(--muted);
+  font-weight: 500;
+}
+.rv-title {
+  margin-top: 3px;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+.rv-model {
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* Provenance tiles carry a model name and a list of sources, not a figure: prose size. */
+.rv-facts .fact-v {
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.45;
+  letter-spacing: 0;
+}
+
+/* The reject half of the actions row. Its input is owned by a separate form (the `form`
+   attribute), so it can sit beside the accept button without nesting forms; the button dims
+   until a reason is typed, and `required` refuses the submit until then. */
+.rv-reject {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.rv-reason {
+  width: 280px;
+  max-width: 100%;
+}
+.rv-reject:has(input:invalid) .btn {
+  opacity: 0.5;
+}
+
+/* --- Fleet ----------------------------------------------------------------------------------- */
+
+.fl-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+@media (max-width: 900px) {
+  .fl-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.fl-meta {
+  font-size: 12px;
+  color: var(--muted);
+}
+textarea.field.fl-rule {
+  width: 100%;
+  margin-top: 8px;
+  background: var(--surface-2);
+}
+.fl-evidence {
+  margin: 8px 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+.fl-evidence summary {
+  cursor: pointer;
+}
+.fl-evidence ul {
+  margin: 6px 0 0 18px;
+  padding: 0;
+}
+.fl-evidence li {
+  margin-bottom: 4px;
+}
+/* A row in a card: a name on the left, a figure on the right, a rule between rows. */
+.fl-hot {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0;
+  border-top: 1px solid var(--line);
+  font-size: 13px;
+}
+.fl-hot:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+.fl-hot code {
+  font-size: 12px;
+}
+.fl-hot a {
+  color: inherit;
+  text-decoration: none;
+}
+.fl-hot a:hover {
+  color: var(--teal);
+}
+.fl-more {
+  margin-top: 12px;
+  padding-top: 4px;
+  border-top: 1px solid var(--line);
+}
+.fl-spark {
+  vertical-align: middle;
+}
+/* A note under a table that fills its card edge to edge. */
+.fl-note {
+  padding: 0 16px 12px;
+}
+
+/* --- Chat ------------------------------------------------------------------------------------ */
+
+/* The new-thread form. The title takes the full width; the company and Go share the next row, so
+   the pane still works at its 220px minimum. */
+.ch-start {
+  flex: none;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--line);
+}
+/* One control, full width: the pane's job here is to start a thread, not to configure one. */
+.ch-new {
+  width: 100%;
+}
+
+/* What a thread is about, set from inside it rather than before it. */
+.ch-about {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line);
+  font-size: 12px;
+  color: var(--muted);
+}
+.ch-about select.field {
+  height: 30px;
+  font-size: 12.5px;
+  max-width: 220px;
+}
+
+/* A thread nobody has typed into yet. */
+.ch-blank {
+  margin: auto;
+  max-width: 46ch;
+  padding: 32px 16px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 13.5px;
+  line-height: 1.6;
+}
+.ch-blank b {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--ink);
+  font-size: 15px;
+  font-weight: 700;
+}
+.ch-row {
+  display: block;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--line);
+  color: var(--ink);
+  text-decoration: none;
+  transition: background-color 120ms var(--ease);
+}
+.ch-row:hover,
+.ch-row[aria-current='true'] {
+  background: var(--surface-2);
+}
+.ch-row:focus-visible {
+  outline-offset: -2px;
+}
+.ch-row-title {
+  font-size: 13.5px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+.ch-row-meta {
+  margin-top: 2px;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+/* The conversation: the person on the right in navy, everything else on the left on the inset
+   surface. Bodies keep their line breaks — an answer with a "Read:" line depends on it. */
+.ch-log {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 24px 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.ch-msg {
+  max-width: 640px;
+  display: grid;
+  gap: 4px;
+  align-self: flex-start;
+}
+.ch-msg.is-me {
+  align-self: flex-end;
+}
+.ch-who {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.ch-msg.is-agent .ch-who {
+  color: var(--teal);
+}
+.ch-body {
+  margin: 0;
+  padding: 10px 14px;
+  border-radius: var(--r-lg);
+  background: var(--surface-2);
+  color: var(--ink);
+  font-size: 14px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.ch-msg.is-me .ch-body {
+  background: var(--navy);
+  color: var(--on-navy);
+}
+/* What became of the draft behind an answer, or of the run behind a queued line. */
+.ch-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--muted);
+}
+/* Saying an answer was not useful, under the answer itself. The same rule the Review tab holds to:
+   the button dims until a reason is typed, and `required` refuses the submit — a rejection with no
+   reason is the one thing the learning loop cannot read. */
+.ch-reject {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+input.field.ch-reason {
+  width: 200px;
+  max-width: 100%;
+  height: 30px;
+  font-size: 12px;
+}
+.ch-reject:has(input:invalid) .btn {
+  opacity: 0.5;
+}
+/* A decided answer is a sentence, not a row of controls — so it reflows as one line. */
+.ch-verdict {
+  display: block;
+}
+.ch-verdict b {
+  color: var(--red);
+  font-weight: 600;
+}
+.ch-reading {
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+.ch-composer {
+  flex: none;
+  display: flex;
+  gap: 8px;
+  padding: 14px 20px;
+  border-top: 1px solid var(--line);
+}
+@media (max-width: 900px) {
+  .ch-log {
+    padding: 16px;
+  }
+  .ch-composer {
+    padding: 12px;
+  }
+}

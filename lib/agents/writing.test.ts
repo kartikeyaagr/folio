@@ -196,7 +196,7 @@ async function newsItem(id: string, title: string, state: string, mechanism: str
 test('the brief leads with filings, because for an SME they are the news', async () => {
   await serviceTxn('system:ingest', async (c) => {
     await c.query(
-      `INSERT INTO filings (id, company_id, symbol, category, subject, announced_at)
+      `INSERT INTO filings (id, company_id, symbol, category, summary, announced_at)
        VALUES ('f1',$1,'PRAJIND','Resignation of Director/KMP/SMP','The CFO has resigned', now())`, [CO]);
   });
   await enqueue({ agentKey: 'news-brief', requestedBy: ME });

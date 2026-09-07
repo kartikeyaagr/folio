@@ -1,0 +1,252 @@
+/* Desk: the three-pane inbox, and the reminders list that shares its vocabulary. Tokens and the
+   shared pane / item / detail classes live in globals.css. */
+
+/* --- Inbox head: the filter pills, the acknowledged toggle, the reminder button ---------------- */
+
+.desk-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.desk-toggle {
+  margin-left: 4px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--muted);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.desk-toggle:hover {
+  color: var(--ink);
+  text-decoration: underline;
+}
+
+/* --- Detail ---------------------------------------------------------------------------------- */
+
+/* An alert's detail arrives with its own line breaks — category, summary, attachment. */
+.desk .detail-lede {
+  white-space: pre-line;
+}
+/* The teal line that replaces the button once somebody has looked. */
+.desk-acked {
+  margin: 0;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--teal);
+}
+
+/* --- Aside: the fortnight, the team, the brief ---------------------------------------------- */
+
+.desk-aside {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-height: 0;
+  overflow: auto;
+}
+.desk-card-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 14px 16px 8px;
+}
+.desk-card-head a {
+  text-decoration: none;
+}
+.desk-card-head a:hover {
+  color: var(--navy);
+  text-decoration: underline;
+}
+.desk-count {
+  font-size: 11px;
+  color: var(--muted);
+}
+.desk-none {
+  margin: 0;
+  padding: 4px 16px 14px;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+.desk-soon {
+  display: grid;
+  grid-template-columns: 56px 1fr;
+  gap: 10px;
+  padding: 8px 16px;
+  border-top: 1px solid var(--line);
+  font-size: 13px;
+}
+.desk-soon-when {
+  padding-top: 2px;
+  font-size: 11.5px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+.desk-soon-when.is-bad {
+  color: var(--red);
+}
+.desk-soon b {
+  font-weight: 700;
+}
+.desk-soon-detail {
+  display: block;
+  font-size: 12px;
+  color: var(--muted);
+}
+.desk-more {
+  display: block;
+  padding: 8px 16px 12px;
+  border-top: 1px solid var(--line);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.desk-cov {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 16px;
+  border-top: 1px solid var(--line);
+  font-size: 13px;
+}
+.desk-ini {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--navy-soft);
+  color: var(--navy);
+  font-size: 10px;
+  font-weight: 700;
+}
+.desk-cov-name {
+  flex: 1;
+  min-width: 0;
+  font-weight: 600;
+}
+.desk-cov-n {
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.desk-cov-alerts {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+}
+.desk-cov-alerts.is-bad {
+  color: var(--red);
+}
+
+/* The one navy card on the page, because it is the one thing that goes out. */
+.desk-brief {
+  padding: 16px;
+  border-radius: var(--r-lg);
+  background: var(--navy);
+  color: var(--on-navy);
+}
+.desk-brief-k {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  opacity: 0.7;
+}
+.desk-brief-v {
+  margin-top: 6px;
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+.desk-brief-btn {
+  display: inline-flex;
+  margin-top: 12px;
+  padding: 7px 12px;
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--on-navy) 14%, transparent);
+  color: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  text-decoration: none;
+  transition: background-color 140ms var(--ease);
+}
+.desk-brief-btn:hover {
+  background: color-mix(in srgb, var(--on-navy) 22%, transparent);
+  color: inherit;
+}
+.desk-brief-btn:active {
+  transform: scale(0.97);
+}
+
+/* --- Reminders: the full list --------------------------------------------------------------- */
+
+.rem-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.rem-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  border-top: 1px solid var(--line);
+  font-size: 13px;
+}
+.rem-row:first-child {
+  border-top: 0;
+}
+/* Due: pending, so amber — the reader chose the date, nothing has gone wrong. */
+.rem-row.is-due {
+  box-shadow: inset 3px 0 0 var(--amber);
+}
+.rem-body {
+  flex: 1 1 240px;
+  min-width: 0;
+  font-weight: 500;
+}
+.rem-meta {
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.rem-meta a {
+  font-weight: 600;
+  text-decoration: none;
+}
+.rem-meta a:hover {
+  text-decoration: underline;
+}
+
+@media (max-width: 620px) {
+  .rem-meta {
+    flex-basis: 100%;
+    white-space: normal;
+  }
+}
+
+/*
+ * A desk row carries exactly one action: acknowledge, or done.
+ *
+ * The base `.item` is a dot and a body. This adds a third column for the action rather than letting
+ * the button wrap under the title, which is what it does inside a 1fr body.
+ */
+.item.has-act {
+  grid-template-columns: 8px 1fr auto;
+  align-items: start;
+}
+.item.has-act form {
+  padding-top: 2px;
+}
+.desk-items {
+  margin: -16px -18px;
+  list-style: none;
+}
+.desk-items .item:last-child {
+  border-bottom: 0;
+}

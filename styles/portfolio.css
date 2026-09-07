@@ -1,0 +1,254 @@
+/*
+ * Portfolio. The frame is a tab bar on the header and five stats; the tabs are tables. What lives
+ * here is the little the shared classes do not have — sign colours, the weight bar, a totals row,
+ * the trigger rules. Tokens and the table itself come from globals.css.
+ */
+
+/* Sign colours. Teal is up, red is down, and nothing else on these pages is coloured. */
+.pf-up {
+  color: var(--teal);
+}
+.pf-down {
+  color: var(--red);
+}
+
+/* A symbol is bold and a link; the company name trails it in muted 12px. */
+.pf-sym {
+  font-weight: 700;
+  color: var(--ink);
+  text-decoration: none;
+}
+a.pf-sym:hover {
+  color: var(--teal);
+  text-decoration: underline;
+}
+.pf-name {
+  margin-left: 8px;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--muted);
+}
+.pf-series {
+  margin-left: 6px;
+  vertical-align: 1px;
+}
+.pf-sub {
+  margin-left: 6px;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--muted);
+}
+.pf-strong {
+  font-weight: 600;
+}
+.tbl td.pf-wrap {
+  max-width: 320px;
+  white-space: normal;
+}
+
+/* --- Holdings: eight columns and a bar. Below 860px the table scrolls inside its card. ------- */
+
+.pf-holdings {
+  min-width: 860px;
+}
+.pf-weight {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 200px;
+}
+/* Actual weight as a navy bar, target as a teal tick, both scaled to the largest on the page. */
+.pf-bar {
+  position: relative;
+  flex: 1;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--surface-2);
+}
+.pf-bar-fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: var(--w, 0%);
+  border-radius: 3px;
+  background: var(--navy);
+}
+.pf-bar-tick {
+  position: absolute;
+  top: -3px;
+  bottom: -3px;
+  left: var(--t, 0%);
+  width: 2px;
+  background: var(--teal);
+}
+.pf-w {
+  min-width: 44px;
+  text-align: right;
+}
+.pf-drift {
+  min-width: 34px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--amber);
+}
+
+/* --- Transactions --------------------------------------------------------------------------- */
+
+/* A reversed row and its reversal both stay in the log, faded. */
+.pf-void td {
+  opacity: 0.45;
+}
+/* Charges on one row, so the dialog reads as one contract note. */
+.pf-charges {
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+}
+
+/* --- Recording a trade ---------------------------------------------------------------------- */
+
+/* The company field and its list. The list sits in flow rather than floating over the page: a
+   native dialog clips anything that leaves it, and a dialog that grows with its list scrolls
+   where a popover would be cut off. */
+.pf-pick {
+  display: grid;
+  gap: 6px;
+}
+.pf-pick-list {
+  max-height: 260px;
+  overflow: auto;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+}
+/* What the ticker in the field stands for, so a four-letter symbol is never taken on faith. */
+.pf-pick-at,
+.pf-pick-none {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+/* Side is two options, so it is two segments rather than a menu that hides one of them. */
+.pf-side {
+  display: flex;
+  height: 36px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  overflow: hidden;
+}
+.pf-side label {
+  flex: 1;
+  position: relative;
+  display: flex;
+}
+.pf-side input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+.pf-side span {
+  flex: 1;
+  display: grid;
+  place-items: center;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-2);
+  cursor: pointer;
+  transition: background-color 140ms var(--ease);
+}
+.pf-side span:hover {
+  background: var(--surface-2);
+}
+.pf-side input:checked + span {
+  background: var(--navy);
+  color: var(--on-navy);
+}
+/* A sell lights up in the same red the page uses for a position going the other way. */
+.pf-side input[value='sell']:checked + span {
+  background: var(--red-soft);
+  color: var(--red);
+}
+.pf-side input:focus-visible + span {
+  box-shadow: inset 0 0 0 2px var(--ring);
+}
+
+/* The six charges, folded away. Real, kept, and not the first thing the eye lands on. */
+.pf-more {
+  display: grid;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+}
+.pf-more > summary {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-2);
+  cursor: pointer;
+}
+.pf-more .field {
+  background: var(--surface);
+}
+.pf-decide {
+  display: flex;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+/* --- Facts at the head of a card, above its table ------------------------------------------- */
+
+.pf-facts {
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--line);
+}
+
+/* --- Return: the headline figure, Stat-sized ------------------------------------------------ */
+
+.pf-headline {
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+  font-variant-numeric: tabular-nums;
+}
+.pf-headline-sub {
+  margin-top: 2px;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+.pf-headline-sub + .notice {
+  margin-top: 12px;
+}
+/* The period table sits under the headline in the same card, behind a rule. */
+.pf-periods {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+.pf-periods .box-head {
+  margin-bottom: 8px;
+}
+
+/* --- A totals row --------------------------------------------------------------------------- */
+
+.tbl .pf-total td {
+  font-weight: 700;
+  border-top: 1px solid var(--line-2);
+  background: var(--surface-2);
+}
+
+/* --- Thesis: three states on a 3px rule — broken, unanswered, holding ----------------------- */
+
+.pf-trig td:first-child {
+  box-shadow: inset 3px 0 var(--line-2);
+}
+.pf-trig.is-bad td:first-child {
+  box-shadow: inset 3px 0 var(--red);
+}
+.pf-trig.is-na td:first-child {
+  box-shadow: inset 3px 0 var(--muted);
+}

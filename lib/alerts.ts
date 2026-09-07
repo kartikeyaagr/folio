@@ -136,9 +136,9 @@ export async function evaluateFilings(maxAgeDays = 60): Promise<EvaluateResult> 
     );
 
     const { rows: filings } = await c.query<{
-      id: string; company_id: string; symbol: string; category: string | null; subject: string | null;
+      id: string; company_id: string; symbol: string; category: string | null; summary: string | null;
     }>(
-      `SELECT f.id, f.company_id, f.symbol, f.category, f.subject
+      `SELECT f.id, f.company_id, f.symbol, f.category, f.summary
          FROM filings f
         WHERE f.company_id IS NOT NULL
           AND f.announced_at > now() - ($1 || ' days')::interval
@@ -149,7 +149,7 @@ export async function evaluateFilings(maxAgeDays = 60): Promise<EvaluateResult> 
 
     let raised = 0;
     for (const f of filings) {
-      const haystack = `${f.category ?? ''} ${f.subject ?? ''}`.toLowerCase();
+      const haystack = `${f.category ?? ''} ${f.summary ?? ''}`.toLowerCase();
       for (const rule of rules) {
         if (rule.company_id !== null && rule.company_id !== f.company_id) continue;
         if (!rule.patterns.some((p) => haystack.includes(p.toLowerCase()))) continue;
@@ -159,7 +159,7 @@ export async function evaluateFilings(maxAgeDays = 60): Promise<EvaluateResult> 
           companyId: f.company_id,
           severity: rule.severity,
           title: `${f.symbol}: ${f.category ?? 'filing'}`,
-          detail: f.subject,
+          detail: f.summary,
         });
         if (ok) raised++;
         // First matching rule wins, and the rules arrive worst-first, so one filing raises one

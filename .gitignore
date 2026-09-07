@@ -9,3 +9,5 @@ out/
 .env
 .env.local
 .DS_Store
+.env.local
+next-env.d.ts

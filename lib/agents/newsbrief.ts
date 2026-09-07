@@ -50,7 +50,7 @@ const SCHEMA = {
 interface Material {
   symbol: string;
   name: string;
-  filings: { at: string; category: string | null; subject: string | null }[];
+  filings: { at: string; category: string | null; summary: string | null }[];
   news: { at: string | null; title: string; source: string; mechanism: string }[];
   events: { on: string; kind: string; title: string }[];
   alerts: { severity: string; title: string }[];
@@ -67,8 +67,8 @@ export async function gather(c: Client, days: number, companyId: string | null):
   const out: Material[] = [];
   for (const co of companies) {
     const since = [co.id, String(days)];
-    const { rows: filings } = await c.query<{ at: string; category: string | null; subject: string | null }>(
-      `SELECT announced_at::text AS at, category, subject FROM filings
+    const { rows: filings } = await c.query<{ at: string; category: string | null; summary: string | null }>(
+      `SELECT announced_at::text AS at, category, summary FROM filings
         WHERE company_id = $1 AND announced_at > now() - ($2 || ' days')::interval
         ORDER BY announced_at DESC`, since);
     const { rows: news } = await c.query<{ at: string | null; title: string; source: string; mechanism: string }>(
@@ -101,7 +101,7 @@ export function describe(material: Material[], days: number): string {
     lines.push('  EXCHANGE FILINGS:');
     lines.push(...(m.filings.length === 0
       ? ['    none']
-      : m.filings.map((f) => `    ${f.at.slice(0, 10)}  ${f.category ?? '?'}${f.subject ? ` — ${f.subject.slice(0, 160)}` : ''}`)));
+      : m.filings.map((f) => `    ${f.at.slice(0, 10)}  ${f.category ?? '?'}${f.summary ? ` — ${f.summary.slice(0, 160)}` : ''}`)));
     lines.push('  ALERTS RAISED:');
     lines.push(...(m.alerts.length === 0 ? ['    none'] : m.alerts.map((a) => `    [${a.severity}] ${a.title}`)));
     lines.push('  CONFIRMED NEWS (each with the mechanism that admitted it):');

@@ -1,0 +1,455 @@
+/* Calendar: the month grid and the open day. */
+
+/* --- Calendar --------------------------------------------------------------------------------- */
+/*                                                                                                 */
+/* Two channels, never mixed. Hue says which feed an entry came from — red for a statutory duty,    */
+/* amber for the thing that moves the position, navy for an announced notice. Ink level says how   */
+/* much it costs to miss, straight off the view's severity column. Kept separate so neither has    */
+/* to fight the other's specificity.                                                               */
+/*                                                                                                 */
+/* The fund's own return is a statutory duty like an investee's, so it keeps the red — a fourth    */
+/* hue would claim it is a fourth kind of thing, and it is not. What separates it is a wash behind */
+/* the rule, which says whose duty it is without adding a meaning to the palette.                  */
+
+.cal-nav {
+  display: inline-flex;
+  gap: 6px;
+}
+
+.cal-dow {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--line);
+}
+.cal-dow span {
+  padding: 7px 9px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+}
+
+.cal-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  min-height: 108px;
+  padding: 5px 5px 7px;
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+.cal-cell:nth-child(7n) {
+  border-right: 0;
+}
+/* The card's own edge closes the last row. */
+.cal-grid > .cal-cell:nth-last-child(-n + 7) {
+  border-bottom: 0;
+}
+.cal-cell.is-out {
+  background: color-mix(in srgb, var(--surface-2) 55%, transparent);
+}
+.cal-cell.is-sel {
+  background: var(--surface-2);
+  /* A ring, not an elevation — boxes inside a card use a rule, not a shadow. */
+  outline: 1px solid var(--line-2);
+  outline-offset: -1px;
+}
+
+.cal-num {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  border-radius: var(--r-sm);
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-2);
+  text-decoration: none;
+  transition:
+    background-color 140ms var(--ease),
+    color 140ms var(--ease),
+    transform 100ms var(--ease);
+}
+.cal-num:hover {
+  background: var(--line);
+  color: var(--ink);
+}
+.cal-num:active {
+  transform: scale(0.9);
+}
+.is-out .cal-num,
+.is-past .cal-num {
+  color: var(--ghost);
+}
+.cal-cell.is-today .cal-num {
+  background: var(--navy);
+  color: var(--on-navy);
+}
+.cal-cell.is-today .cal-num:hover {
+  background: var(--navy-2);
+  color: var(--on-navy);
+}
+
+.cal-ev {
+  display: block;
+  min-width: 0;
+  padding: 2px 4px 2px 6px;
+  border-left: 2px solid var(--navy);
+  border-radius: 0 var(--r-sm) var(--r-sm) 0;
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--ink-2);
+  text-decoration: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition:
+    background-color 140ms var(--ease),
+    color 140ms var(--ease);
+}
+.cal-ev b {
+  font-weight: 600;
+}
+.cal-ev[data-kind='compliance_deadline'] {
+  border-left-color: var(--red);
+}
+.cal-ev[data-kind='corporate_action'] {
+  border-left-color: var(--amber);
+}
+.cal-ev[data-kind='fund_obligation'] {
+  border-left-color: var(--red);
+  background: var(--red-soft);
+}
+/* A past date is spent ink everywhere else on this grid; the wash has to fade with it or a filed
+   return goes on shouting at the reader for the rest of the month. */
+.is-past .cal-ev[data-kind='fund_obligation'] {
+  background: color-mix(in srgb, var(--red-soft) 50%, transparent);
+}
+.cal-ev[data-sev='high'] {
+  color: var(--ink);
+}
+.cal-ev[data-sev='critical'] {
+  color: var(--ink);
+  font-weight: 500;
+  border-left-width: 3px;
+}
+.is-past .cal-ev {
+  color: var(--ghost);
+}
+a.cal-ev:hover {
+  background: var(--surface-2);
+  color: var(--ink);
+}
+a.cal-ev:active {
+  background: var(--line);
+}
+
+/* Overflow is counted, never clipped: a calendar that silently drops the fourth thing on a day is
+   worse than no calendar, because it looks complete. */
+.cal-more {
+  align-self: flex-start;
+  padding: 1px 5px 1px 6px;
+  border-radius: var(--r-sm);
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--muted);
+  text-decoration: none;
+  transition:
+    background-color 140ms var(--ease),
+    color 140ms var(--ease);
+}
+.cal-more:hover {
+  background: var(--surface-2);
+  color: var(--navy);
+}
+.cal-more:active {
+  background: var(--line);
+}
+
+/* The 375px reading of a day: how many, and of what kind. */
+.cal-dots {
+  display: none;
+  align-items: center;
+  gap: 3px;
+}
+.cal-dot-n {
+  font-size: 9px;
+  font-weight: 600;
+  font-style: normal;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  color: var(--muted);
+}
+.cal-dot {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--navy);
+}
+.cal-dot[data-kind='compliance_deadline'] {
+  background: var(--red);
+}
+.cal-dot[data-kind='corporate_action'] {
+  background: var(--amber);
+}
+.cal-dot[data-kind='fund_obligation'] {
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1.5px var(--red);
+}
+
+/* --- Calendar: the open day ------------------------------------------------------------------- */
+
+.cal-day {
+  padding: 12px 18px 14px;
+  border-top: 1px solid var(--line);
+  background: var(--surface-2);
+}
+/* On a wide screen the cells already carry the detail, so the panel only appears when a day was
+   asked for. Below 720px the grid can only carry marks, so it always shows. */
+@media (min-width: 721px) {
+  .cal-day:not(.is-open) {
+    display: none;
+  }
+}
+.cal-day-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0 0 8px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.cal-day-now {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--navy);
+}
+.cal-day-none {
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+.cal-day-list {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.cal-day-list li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 9px;
+  font-size: 12.5px;
+}
+.cal-day-sym {
+  min-width: 88px;
+  font-weight: 600;
+  color: var(--ink);
+  text-decoration: none;
+  border-radius: var(--r-sm);
+}
+a.cal-day-sym:hover {
+  color: var(--teal);
+  text-decoration: underline;
+}
+a.cal-day-sym:active {
+  opacity: 0.7;
+}
+.cal-day-detail {
+  min-width: 0;
+  color: var(--ink-2);
+}
+
+.cal-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin: 0 2px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.cal-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.cal-legend span::before {
+  content: '';
+  width: 2px;
+  height: 11px;
+  border-radius: 1px;
+  background: var(--navy);
+}
+.cal-legend span[data-kind='compliance_deadline']::before {
+  background: var(--red);
+}
+.cal-legend span[data-kind='corporate_action']::before {
+  background: var(--amber);
+}
+.cal-legend span[data-kind='fund_obligation']::before {
+  background: var(--red);
+}
+/* The key has to look like the thing it is a key to, so the fund's item carries the same wash the
+   cell does rather than describing it in words. */
+.cal-legend span[data-kind='fund_obligation'] {
+  padding: 1px 7px 1px 0;
+  border-radius: 0 var(--r-sm) var(--r-sm) 0;
+  background: var(--red-soft);
+}
+
+.cal-note {
+  max-width: 62ch;
+  margin: 0 2px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+@media (max-width: 720px) {
+  .cal-dow span {
+    padding: 6px 2px;
+    font-size: 9px;
+    letter-spacing: 0.03em;
+    text-align: center;
+  }
+  .cal-cell {
+    position: relative;
+    align-items: center;
+    min-height: 54px;
+    padding: 5px 2px;
+  }
+  /* Seven columns of text at 375px is not readable at any size worth reading. The cell becomes a
+     mark and a count; the detail moves to the panel below, which is always open at this width. */
+  .cal-ev,
+  .cal-more {
+    display: none;
+  }
+  .cal-dots {
+    display: flex;
+  }
+  .cal-num {
+    align-self: center;
+  }
+  /* The whole cell is the tap target. Safe because the event links are hidden here. */
+  .cal-num::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+  }
+}
+
+@media (max-width: 520px) {
+  .cal-day {
+    padding: 12px 14px 14px;
+  }
+}
+
+/* --- Calendar: what the fund itself owes ------------------------------------------------------- */
+/*                                                                                                 */
+/* The grid above can only draw a date that exists. This card is where one comes from, so it has   */
+/* to carry the whole basis of the date — cadence, day count, note — and not just the date, or the */
+/* reader has no way to tell a confirmed deadline from a guess somebody typed.                     */
+
+.cal-fo-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cal-fo {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 4px 14px;
+  padding: 12px 18px;
+  border-top: 1px solid var(--line);
+}
+.cal-fo:first-child {
+  border-top: 0;
+}
+
+.cal-fo-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 5px 9px;
+  min-width: 0;
+  font-size: 13px;
+}
+.cal-fo-label {
+  font-weight: 600;
+  color: var(--ink);
+}
+.cal-fo-meta {
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+/* The date, or the reason there isn't one. Both belong in the same slot: whichever is true is the
+   answer to "when is this next due", and putting them in different places would let a reader who
+   skims one row's date assume the next row has one too. */
+.cal-fo-due {
+  font-size: 11.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+.cal-fo-off {
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+.cal-fo-note {
+  grid-column: 1;
+  max-width: 82ch;
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.cal-fo-act {
+  grid-row: 1 / span 2;
+  grid-column: 2;
+}
+
+/* Off is grey, and grey stops at the note: the note is the thing that says what to confirm before
+   turning it on, and fading that out would hide the only instruction on the card. */
+.cal-fo.is-off .cal-fo-label {
+  font-weight: 500;
+  color: var(--muted);
+}
+
+.cal-fo-foot {
+  margin: 0;
+  padding: 10px 18px 12px;
+  border-top: 1px solid var(--line);
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+@media (max-width: 520px) {
+  .cal-fo {
+    grid-template-columns: minmax(0, 1fr);
+    padding: 12px 14px;
+  }
+  .cal-fo-act {
+    grid-row: auto;
+    grid-column: 1;
+    margin-top: 2px;
+  }
+}

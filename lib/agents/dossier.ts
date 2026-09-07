@@ -49,7 +49,7 @@ const cr = (v: string | null): string => (v === null ? 'not reported' : `${(Numb
 interface Held {
   company: { symbol: string; name: string; sector: string | null; status: string; isin: string | null };
   quarters: { period_start: string; period_end: string; basis: string; revenue: string | null; profit_after_tax: string | null }[];
-  filings: { announced_at: string; category: string | null; subject: string | null }[];
+  filings: { announced_at: string; category: string | null; summary: string | null }[];
   insider: { disclosed_at: string; person: string; category: string | null; kind: string | null; quantity: string | null; pct_before: string | null; pct_after: string | null }[];
   shareholding: { as_of: string; promoter_pct: string | null; promoter_pledge_pct: string | null; promoter_encumbered_pct: string | null; fii_pct: string | null; dii_pct: string | null }[];
   notes: { title: string; kind: string; summary: string | null }[];
@@ -74,7 +74,7 @@ async function gather(c: Client, companyId: string): Promise<Held | null> {
         ORDER BY period_end DESC LIMIT 12`,
     ),
     filings: await one(
-      `SELECT announced_at::text, category, subject FROM filings
+      `SELECT announced_at::text, category, summary FROM filings
         WHERE company_id = $1 ORDER BY announced_at DESC LIMIT 25`,
     ),
     insider: await one(
@@ -137,7 +137,7 @@ export function describe(h: Held): string {
     'EXCHANGE FILINGS:',
     ...(h.filings.length === 0
       ? ['  none held']
-      : h.filings.map((f) => `  ${f.announced_at.slice(0, 10)}  ${f.category ?? '?'}${f.subject ? ` — ${f.subject.slice(0, 140)}` : ''}`)),
+      : h.filings.map((f) => `  ${f.announced_at.slice(0, 10)}  ${f.category ?? '?'}${f.summary ? ` — ${f.summary.slice(0, 140)}` : ''}`)),
     '',
     'DOCUMENTS THE DESK HAS WRITTEN:',
     ...(h.notes.length === 0
