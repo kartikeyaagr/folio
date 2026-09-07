@@ -12,6 +12,8 @@ import { execFileSync } from 'node:child_process';
 import { migrate } from '../../db/migrate.ts';
 import { closePool, readTxn, serviceTxn } from '../db.ts';
 import { scriptedModel, scriptedOk } from './model.ts';
+import { acceptDraft, pendingDrafts } from './review.ts';
+import { briefs, brief, pendingBrief } from '../briefs.ts';
 import { drain, enqueue } from './runner.ts';
 import * as concall from './concall.ts';
 import './dossier.ts';
@@ -48,12 +50,14 @@ after(async () => {
 
 beforeEach(async () => {
   await serviceTxn('system:agents', async (c) => {
+    // Documents before drafts: a document records the draft it came from, and the foreign key
+    // holding that link refuses to let the draft go while it does.
+    await c.query('DELETE FROM document_versions');
+    await c.query('DELETE FROM documents');
     await c.query('DELETE FROM ai_drafts');
     await c.query('DELETE FROM agent_runs');
     await c.query('DELETE FROM news_matches');
     await c.query('DELETE FROM news_items');
-    await c.query('DELETE FROM document_versions');
-    await c.query('DELETE FROM documents');
     await c.query('DELETE FROM filings');
   });
 });
@@ -264,4 +268,58 @@ test('a handler that runs bad SQL records why, rather than being swallowed', asy
   assert.match(run.error, /column_that_does_not_exist/, 'the actual cause survives');
   assert.equal(run.failure_kind, 'error');
   assert.notEqual(run.status, 'running', 'and it is not left claimed for the lease to clean up');
+});
+
+// ---- an accepted brief becomes a brief ---------------------------------------------------------
+
+const BRIEF = {
+  period: 'The last 7 days',
+  by_company: [{ symbol: 'PRAJIND', what_happened: ['Nothing filed.'], why_it_matters: 'Quiet week.' }],
+  nothing_to_report: ['AERON'],
+  coming_up: ['PRAJIND — results, 30 September'],
+};
+
+async function acceptedBrief(): Promise<void> {
+  await enqueue({ agentKey: 'news-brief', requestedBy: ME });
+  await drain(1, scriptedModel([scriptedOk(BRIEF)]));
+  const [draft] = await pendingDrafts();
+  await acceptDraft(draft!.id, null, ME);
+}
+
+test('a brief waiting for review is visible before it is accepted', async () => {
+  // Somebody who came to read this morning's brief should be told it exists and is waiting on a
+  // person, not shown yesterday's and left to wonder.
+  await enqueue({ agentKey: 'news-brief', requestedBy: ME });
+  await drain(1, scriptedModel([scriptedOk(BRIEF)]));
+  assert.notEqual(await pendingBrief(), null);
+  assert.deepEqual(await briefs(), [], 'and it is not on the page until somebody accepts it');
+});
+
+test('an accepted brief is a brief, not an untitled note', async () => {
+  await acceptedBrief();
+  const [b] = await briefs();
+  assert.ok(b, 'findable as a brief');
+  assert.match(b.title, /The last 7 days/, 'and titled by its period rather than "news-brief draft"');
+  assert.equal(b.covered, 1);
+  assert.equal(b.quiet, 1);
+  assert.equal(await pendingBrief(), null, 'and no longer waiting');
+});
+
+test('an accepted brief still knows which draft it came from', async () => {
+  // The review gate spends its whole design showing provenance before you accept. Losing it at the
+  // moment of acceptance loses it exactly when it starts to matter.
+  await acceptedBrief();
+  const [summary] = await briefs();
+  const b = await brief(summary!.id);
+  assert.ok(b!.fromDraftId, 'the draft is named');
+  assert.equal(b!.model, 'claude-opus-5');
+  assert.ok(Number(b!.costUsd) > 0, 'and what it cost came with it');
+});
+
+test('the whole brief survives acceptance, not a summary of it', async () => {
+  await acceptedBrief();
+  const [summary] = await briefs();
+  const b = await brief(summary!.id);
+  assert.deepEqual(b!.content['coming_up'], ['PRAJIND — results, 30 September']);
+  assert.deepEqual(b!.content['nothing_to_report'], ['AERON']);
 });

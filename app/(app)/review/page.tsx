@@ -1,6 +1,7 @@
 import Link from 'next/link';
 
 import { pendingDrafts } from '@/lib/agents/review.ts';
+import { Brief } from '@/components/Brief.tsx';
 import { AppHeader, Blank, Card, Chip, Empty, Eyebrow } from '@/components/ui.tsx';
 
 import { accept, reject } from '../../_lib/actions/review.ts';
@@ -149,14 +150,24 @@ export default async function ReviewPage() {
                 )}
 
                 <Eyebrow>What it wrote</Eyebrow>
-                <dl className="draft-fields">
-                  {orderedFields(d.content, d.fieldOrder).map(([k, v]) => (
-                    <div key={k}>
-                      <dt>{k.replace(/_/g, ' ')}</dt>
-                      <dd><Value value={v} /></dd>
-                    </div>
-                  ))}
-                </dl>
+                {/*
+                  A brief is judged as the document it will become, not as its fields. The generic
+                  renderer would show `by_company` as a line of JSON.stringify, and nobody can tell
+                  whether a brief is any good from that — which would make the gate a formality on
+                  exactly the agent whose output is longest.
+                */}
+                {d.agentKey === 'news-brief' ? (
+                  <Brief content={d.content} />
+                ) : (
+                  <dl className="draft-fields">
+                    {orderedFields(d.content, d.fieldOrder).map(([k, v]) => (
+                      <div key={k}>
+                        <dt>{k.replace(/_/g, ' ')}</dt>
+                        <dd><Value value={v} /></dd>
+                      </div>
+                    ))}
+                  </dl>
+                )}
 
                 <div className="draft-acts">
                   <form action={accept}>

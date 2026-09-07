@@ -63,6 +63,7 @@ export default async function NewsPage({
             sub={ailing.length ? ailing.map((a) => a.key).join(', ') : 'all polling'}
             tone={ailing.length > 0 ? 'warn' : undefined}
           />
+          <Stat label="Brief" value={<Link href="/news/brief">Ask for one →</Link>} sub="every followed name" />
         </StatRow>
 
         {/*

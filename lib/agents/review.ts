@@ -79,6 +79,7 @@ export function diffFields(
 }
 
 interface DraftRow {
+  id: string;
   agent_key: string;
   company_id: string | null;
   content: Record<string, unknown>;
@@ -87,7 +88,7 @@ interface DraftRow {
 
 async function lockDraft(c: Client, draftId: string): Promise<DraftRow> {
   const { rows } = await c.query<DraftRow>(
-    'SELECT agent_key, company_id, content, status FROM ai_drafts WHERE id = $1 FOR UPDATE',
+    'SELECT id, agent_key, company_id, content, status FROM ai_drafts WHERE id = $1 FOR UPDATE',
     [draftId],
   );
   const d = rows[0];
@@ -153,6 +154,30 @@ async function landForensics(
   void actorId; // attribution comes from the transaction, not from a column here
 }
 
+/**
+ * What kind of document each agent's work becomes.
+ *
+ * Everything landing as `note` made a brief indistinguishable from something somebody typed, and
+ * "show me the last brief" unanswerable. Anything not named here is a note, which is the right
+ * default for an agent added later.
+ */
+const DOCUMENT_KIND: Record<string, string> = {
+  'news-brief': 'brief',
+  'company-dossier': 'memo',
+};
+
+/** A title somebody can pick out of a list, without opening it. */
+function documentTitle(agentKey: string, content: Record<string, unknown>): string {
+  const headline = content['headline'];
+  if (typeof headline === 'string' && headline.trim() !== '') return headline.slice(0, 200);
+
+  if (agentKey === 'news-brief') {
+    const period = typeof content['period'] === 'string' ? content['period'] : null;
+    return period ? `Brief — ${period}`.slice(0, 200) : 'Brief';
+  }
+  return `${agentKey} draft`;
+}
+
 /** Everything else becomes a document, with its first version. */
 async function landDocument(
   c: Client,
@@ -161,14 +186,16 @@ async function landDocument(
   actorId: string,
 ): Promise<void> {
   const docId = id();
-  const title =
-    typeof content['headline'] === 'string' && content['headline'].trim() !== ''
-      ? String(content['headline']).slice(0, 200)
-      : `${draft.agent_key} draft`;
-
   await c.query(
-    `INSERT INTO documents (id, company_id, title, kind, created_by) VALUES ($1,$2,$3,'note',$4)`,
-    [docId, draft.company_id, title, actorId],
+    `INSERT INTO documents (id, company_id, title, kind, created_by, from_draft_id)
+     VALUES ($1,$2,$3,$4,$5,$6)`,
+    [
+      docId, draft.company_id, documentTitle(draft.agent_key, content),
+      DOCUMENT_KIND[draft.agent_key] ?? 'note', actorId,
+      // The link the review gate spends its whole design showing. Losing it at the moment of
+      // acceptance is losing it exactly when it starts to matter.
+      draft.id,
+    ],
   );
   await c.query(
     'INSERT INTO document_versions (document_id, body, written_by) VALUES ($1,$2,$3)',

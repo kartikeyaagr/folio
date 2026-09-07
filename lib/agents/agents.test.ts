@@ -55,6 +55,10 @@ beforeEach(async () => {
   await serviceTxn('system:agents', async (c) => {
     await c.query('DELETE FROM forensics_answers');
     await c.query('DELETE FROM forensics_checklists');
+    // Documents before drafts: a document records the draft it came from, and the foreign key
+    // holding that link refuses to let the draft go while it does.
+    await c.query('DELETE FROM document_versions');
+    await c.query('DELETE FROM documents');
     await c.query('DELETE FROM ai_drafts');
     await c.query('DELETE FROM agent_runs');
   });
