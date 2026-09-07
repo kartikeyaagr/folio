@@ -1,0 +1,30 @@
+[Unit]
+# One template for every tsx job. %i is the filename under jobs/ without its extension, so
+# `systemctl start trisula-job@ingest-eod` runs jobs/ingest-eod.ts.
+Description=Trisula job %i
+After=postgresql.service
+OnFailure=trisula-alert@%n.service
+
+[Service]
+Type=oneshot
+User=trisula
+WorkingDirectory=/srv/trisula
+EnvironmentFile=/etc/trisula/trisula.env
+ExecStart=/usr/bin/pnpm exec tsx jobs/%i.ts
+
+# Postgres over a unix socket, so it needs no TCP listener.
+Environment=PGHOST=/var/run/postgresql
+# Every job time in this system is IST, and the dates it computes are Indian trading dates.
+Environment=TZ=Asia/Kolkata
+
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+ReadWritePaths=/var/lib/trisula
+
+StandardOutput=journal
+StandardError=journal

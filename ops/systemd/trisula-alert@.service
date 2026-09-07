@@ -1,0 +1,12 @@
+[Unit]
+# Reports a failed unit. Named by OnFailure= on every job, so a failure is noticed by the machine
+# rather than by somebody happening to read the journal.
+Description=Report a failed Trisula unit (%i)
+
+[Service]
+Type=oneshot
+User=trisula
+WorkingDirectory=/srv/trisula
+EnvironmentFile=/etc/trisula/trisula.env
+Environment=PGHOST=/var/run/postgresql
+ExecStart=/usr/bin/pnpm exec tsx jobs/report-failure.ts %i

@@ -1,0 +1,15 @@
+[Unit]
+# An untested restore is not a backup. This runs the whole round trip against a throwaway key:
+# dump, encrypt, decrypt, restore into a fresh database, compare row counts table by table.
+Description=Trisula restore drill
+After=postgresql.service
+OnFailure=trisula-alert@%n.service
+
+[Service]
+Type=oneshot
+User=trisula
+EnvironmentFile=/etc/trisula/trisula.env
+Environment=TZ=Asia/Kolkata
+ExecStart=/srv/trisula/ops/verify-backup.sh trisula
+NoNewPrivileges=yes
+ProtectHome=yes

@@ -1,0 +1,10 @@
+[Unit]
+Description=Financial results XBRL
+
+[Timer]
+OnCalendar=*-*-* 08:15,20:15 Asia/Kolkata
+Persistent=true
+Unit=trisula-job@ingest-fundamentals.service
+
+[Install]
+WantedBy=timers.target

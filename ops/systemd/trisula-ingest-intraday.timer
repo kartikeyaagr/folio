@@ -1,0 +1,10 @@
+[Unit]
+Description=Exchange announcements, through the day
+
+[Timer]
+OnCalendar=*-*-* 08,10,12,14,16,18,20,22:05:00 Asia/Kolkata
+Persistent=true
+Unit=trisula-job@ingest-intraday.service
+
+[Install]
+WantedBy=timers.target
