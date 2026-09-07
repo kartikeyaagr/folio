@@ -8,15 +8,17 @@
  *   pnpm exec tsx jobs/agents.ts [limit]
  */
 import { closePool } from '../lib/db.ts';
-import { drain } from '../lib/agents/runner.ts';
+import { drain, sweepScheduled } from '../lib/agents/runner.ts';
 import * as results from '../lib/agents/results.ts';
 import * as forensics from '../lib/agents/forensics.ts';
+// Imported for their side effect: registering handlers 4 and 5.
+import '../lib/agents/notify.ts';
 
 async function main(): Promise<void> {
   const limit = Number(process.argv[2] ?? 10);
 
   const queued =
-    (await results.sweep()) + (await forensics.sweep());
+    (await results.sweep()) + (await forensics.sweep()) + (await sweepScheduled());
 
   const r = await drain(limit);
   console.log(

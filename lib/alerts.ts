@@ -264,3 +264,21 @@ export async function snooze(alertId: string, until: string, actorId: string): P
     await c.query('UPDATE alerts SET snoozed_until = $1 WHERE id = $2', [until, alertId]);
   });
 }
+
+/** The next fortnight: what the fund already knows is coming. */
+export async function upcoming(days = 14): Promise<
+  { id: string; kind: string; title: string; onDate: string; symbol: string | null }[]
+> {
+  return readTxn(async (c) => {
+    const { rows } = await c.query<{
+      id: string; kind: string; title: string; onDate: string; symbol: string | null;
+    }>(
+      `SELECT e.id, e.kind, e.title, e.on_date AS "onDate", co.symbol
+         FROM calendar_events e LEFT JOIN companies co ON co.id = e.company_id
+        WHERE e.on_date BETWEEN current_date AND current_date + ($1 || ' days')::interval
+        ORDER BY e.on_date, co.symbol`,
+      [String(days)],
+    );
+    return rows;
+  });
+}

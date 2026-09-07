@@ -1,0 +1,12 @@
+[Unit]
+Description=Board meetings and results dates
+
+[Timer]
+# Once a day, before the market opens. The calendar changes slowly and a company that announces a
+# board meeting does it days ahead, not minutes.
+OnCalendar=*-*-* 07:45 Asia/Kolkata
+Persistent=true
+Unit=trisula-job@ingest-calendar.service
+
+[Install]
+WantedBy=timers.target

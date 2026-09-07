@@ -111,6 +111,37 @@ export async function enqueue(input: EnqueueInput): Promise<string> {
   return runId;
 }
 
+/**
+ * Enqueue scheduled agents that are due.
+ *
+ * Due means: nothing queued or running for that agent already, and the last finished run was
+ * longer ago than its minimum interval. Deliberately not a cron string — a cron string is a second
+ * schedule that can disagree with the timer actually installed, which is exactly what v2 had, a
+ * row saying 09:00 daily against a unit running hourly, with nothing reading the row.
+ */
+export async function sweepScheduled(): Promise<number> {
+  return serviceTxn('system:agents', async (c) => {
+    const { rows } = await c.query<{ key: string }>(
+      `SELECT a.key
+         FROM agents a
+        WHERE a.enabled AND a.trigger = 'schedule' AND a.min_interval_minutes IS NOT NULL
+          AND NOT EXISTS (
+            SELECT 1 FROM agent_runs r
+             WHERE r.agent_key = a.key AND r.status IN ('queued', 'running'))
+          AND NOT EXISTS (
+            SELECT 1 FROM agent_runs r
+             WHERE r.agent_key = a.key
+               AND r.finished_at > now() - (a.min_interval_minutes || ' minutes')::interval)`,
+    );
+    for (const r of rows) {
+      // Ids are generated here rather than in SQL, like every other id in this codebase.
+      // gen_random_bytes lives in pgcrypto, which is one extension more than this needs.
+      await c.query('INSERT INTO agent_runs (id, agent_key) VALUES ($1, $2)', [id(), r.key]);
+    }
+    return rows.length;
+  });
+}
+
 /** Re-queue runs whose claim lease has expired. A dead worker must not hold work forever. */
 export async function reclaim(): Promise<number> {
   return serviceTxn('system:agents', async (c) => {
