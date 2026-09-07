@@ -252,3 +252,13 @@ a.pf-sym:hover {
 .pf-trig.is-na td:first-child {
   box-shadow: inset 3px 0 var(--muted);
 }
+
+/* A reversed trade stays on the page, struck through: the correction is part of the record. */
+.tbl tr.is-reversed td {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+.tbl tr.is-reversed .cell-sub {
+  text-decoration: none;
+  color: var(--red);
+}

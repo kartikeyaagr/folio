@@ -140,7 +140,34 @@ Then:
 versioning. Attach an instance role to the EC2 instance with `s3:PutObject` on that bucket and
 nothing else — no keys on disk. Set `BACKUP_S3_BUCKET` in the env file.
 
-## 8. Schedules
+## 8. The web app
+
+```bash
+cd /srv/trisula
+pnpm install --frozen-lockfile
+pnpm build
+
+sudo cp ops/systemd/trisula-web.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now trisula-web
+curl -sS localhost:3100/api/health
+```
+
+It binds to `127.0.0.1:3100` and nothing else. Reaching it is Tailscale's job, or a reverse proxy
+on this same box — never a public listener with a firewall in front, because that is one
+misconfiguration away from the fund's positions being on the internet.
+
+`pnpm build` runs on the VM rather than being shipped as an artefact: the tree is small, the build
+is under a minute, and a box that can rebuild itself is a box that can be recovered from git alone.
+
+There is no signup route. Create the first account here, which prints a claim URL and a set of
+recovery codes exactly once:
+
+```bash
+sudo -u trisula pnpm exec tsx jobs/seed-user.ts --email you@trisulacapital.com --name "Your Name"
+```
+
+## 9. Schedules
 
 ```bash
 cd /srv/trisula
@@ -168,7 +195,7 @@ Every unit carries `TZ=Asia/Kolkata`. Every time in this system is IST and every
 is an Indian trading date; inheriting the box's timezone is how a reporting period silently moves
 a day.
 
-## 9. Claude Platform on AWS (the agents)
+## 10. Claude Platform on AWS (the agents)
 
 Separate from everything above, and skippable until you want agents running.
 
@@ -186,7 +213,7 @@ outputs on Opus 5 or Sonnet 5. Every agent here passes a schema, so Bedrock woul
 The alternative is a plain `ANTHROPIC_API_KEY`, used when no workspace id is set. One or the other,
 never both.
 
-## 10. First run
+## 11. First run
 
 Order matters — each step needs the one before it.
 
@@ -206,7 +233,7 @@ sudo -u trisula bash -c 'set -a; . /etc/trisula/trisula.env; set +a; \
 
 Then add the names you follow, and let the timers fill in filings, prices and results.
 
-## 11. Prove it works
+## 12. Prove it works
 
 ```bash
 # The restore drill: dump, encrypt, decrypt, restore to a scratch database, compare row by row.
@@ -225,7 +252,7 @@ aws s3 cp s3://<bucket>/<latest>.dump.age .
 ./ops/restore.sh <latest>.dump.age scratch_check ~/trisula-backup.key
 ```
 
-## 12. Day-to-day
+## 13. Day-to-day
 
 ```bash
 systemctl list-timers 'trisula-*'              # what runs when

@@ -339,3 +339,96 @@ input.field.ch-reason {
     padding: 12px;
   }
 }
+
+/*
+ * The review gate.
+ *
+ * Sources before content, deliberately: a queue that shows conclusions and hides what they were
+ * built from trains people to wave them through.
+ */
+.draft-meta {
+  color: var(--muted);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+.draft-sources {
+  list-style: none;
+  display: grid;
+  gap: 4px;
+  margin-bottom: 16px;
+  font-size: 11.5px;
+  color: var(--muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.draft-fields {
+  display: grid;
+  gap: 12px;
+}
+.draft-fields dt {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--muted);
+  margin-bottom: 3px;
+}
+.draft-text {
+  color: var(--ink-2);
+  line-height: 1.55;
+}
+.draft-list {
+  display: grid;
+  gap: 4px;
+  padding-left: 18px;
+  color: var(--ink-2);
+  line-height: 1.5;
+}
+.draft-json {
+  padding: 10px 12px;
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  font-size: 11.5px;
+  overflow-x: auto;
+}
+.draft-acts {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+.draft-reject {
+  display: flex;
+  gap: 8px;
+  flex: 1;
+}
+.draft-reject .field {
+  flex: 1;
+  max-width: 380px;
+}
+.ask-grid {
+  display: grid;
+  gap: 10px;
+}
+.ask-form {
+  display: grid;
+  grid-template-columns: 200px 1fr auto;
+  gap: 10px;
+  align-items: center;
+}
+.ask-label {
+  font-weight: 700;
+  font-size: 13px;
+}
+.tbl tr.is-off td {
+  opacity: 0.55;
+}
+
+/* Sections inside a draft need air between them; the eyebrow otherwise sits on the line above. */
+.card-body > .box-head + * {
+  margin-top: 6px;
+}
+.card-body > .box-head:not(:first-child) {
+  margin-top: 20px;
+}

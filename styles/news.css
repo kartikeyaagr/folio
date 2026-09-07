@@ -312,3 +312,54 @@ a.brief-item-title:hover {
   font-size: 12px;
   line-height: 1.45;
 }
+
+/*
+ * A matched story: what it is, and why it is here.
+ *
+ * The mechanism is styled as text a person reads, not as metadata. It is the reason the story
+ * cleared the gate, and burying it in a smaller, greyer line would recreate the unexplained match
+ * the gate exists to prevent.
+ */
+.news-list {
+  list-style: none;
+}
+.news-item {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 16px;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--line);
+}
+.news-item:last-child {
+  border-bottom: 0;
+}
+.news-item.is-read {
+  opacity: 0.62;
+}
+.news-main {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+.news-title {
+  color: var(--ink);
+  font-size: 14.5px;
+  font-weight: 700;
+  text-decoration: none;
+  line-height: 1.35;
+}
+.news-title:hover {
+  text-decoration: underline;
+}
+.news-why {
+  color: var(--ink-2);
+  font-size: 12.5px;
+  line-height: 1.5;
+  border-left: 2px solid var(--navy-soft);
+  padding-left: 10px;
+}
+.news-acts {
+  display: flex;
+  gap: 6px;
+  align-items: start;
+}

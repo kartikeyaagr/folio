@@ -299,13 +299,16 @@ async function recordDraft(
   const draftId = id();
   await c.query(
     `INSERT INTO ai_drafts (id, run_id, agent_key, company_id, content, sources, verification,
-                            model, input_tokens, output_tokens, cost_usd)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+                            model, input_tokens, output_tokens, cost_usd, field_order)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
     [
       draftId, runId, agent.key, companyId,
       JSON.stringify(d.content), JSON.stringify(d.sources),
       d.verification === undefined ? null : JSON.stringify(d.verification),
       d.model, d.inputTokens ?? null, d.outputTokens ?? null, d.costUsd ?? null,
+      // Captured here because this is the last place it exists. jsonb stores keys sorted by length
+      // and then alphabetically, so the order the agent's schema declared is gone after the insert.
+      Object.keys(d.content),
     ],
   );
   return draftId;

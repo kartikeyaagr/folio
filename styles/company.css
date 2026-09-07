@@ -850,3 +850,33 @@ details.chk-stage > .chk-stage-head:hover {
     border: 0;
   }
 }
+
+/* A plain dated list: when, what, and the text. Used where a table would be four columns of air. */
+.item-plain {
+  list-style: none;
+  display: grid;
+  gap: 8px;
+}
+.item-plain li {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 200px) 1fr auto;
+  gap: 12px;
+  align-items: baseline;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--line);
+  font-size: 12.5px;
+}
+.item-plain li:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+.item-plain .num {
+  color: var(--muted);
+}
+.item-plain b {
+  color: var(--ink);
+}
+.item-plain span:not(.num) {
+  color: var(--ink-2);
+  min-width: 0;
+}

@@ -1,0 +1,30 @@
+[Unit]
+Description=Trisula web app
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=trisula
+WorkingDirectory=/srv/trisula
+EnvironmentFile=/etc/trisula/env
+# TZ on the unit, like every job. Every date this system computes is an Indian trading date, and
+# inheriting the box's timezone is how a reporting period silently moves a day.
+Environment=TZ=Asia/Kolkata
+Environment=NODE_ENV=production
+# Bound to loopback. Reaching it goes through Tailscale or a reverse proxy on the same box —
+# never by listening on a public interface and hoping the firewall holds.
+Environment=HOSTNAME=127.0.0.1
+ExecStart=/usr/bin/pnpm start
+Restart=always
+RestartSec=5
+
+# The app needs the database and its own directory. Nothing else.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/srv/trisula/.next
+
+[Install]
+WantedBy=multi-user.target

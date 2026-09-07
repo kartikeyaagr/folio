@@ -35,6 +35,8 @@ export interface PendingDraft {
   model: string;
   costUsd: string | null;
   createdAt: Date;
+  /** The order the agent wrote its fields in; jsonb does not keep it. Null on older drafts. */
+  fieldOrder: string[] | null;
 }
 
 /**
@@ -47,7 +49,7 @@ export async function pendingDrafts(limit = 50): Promise<PendingDraft[]> {
   return readTxn(async (c) => {
     const { rows } = await c.query<PendingDraft>(
       `SELECT d.id, d.agent_key AS "agentKey", a.label AS "agentLabel",
-              d.company_id AS "companyId", co.symbol,
+              d.company_id AS "companyId", co.symbol, d.field_order AS "fieldOrder",
               d.content, d.sources, d.verification, d.model,
               d.cost_usd::text AS "costUsd", d.created_at AS "createdAt"
          FROM ai_drafts d
