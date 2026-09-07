@@ -3,7 +3,9 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { migrate } from '../db/migrate.ts';
 import { closePool, readTxn, serviceTxn } from './db.ts';
-import { acknowledge, desk, evaluateFilings, evaluatePrices, recipients } from './alerts.ts';
+import {
+  acknowledge, desk, evaluateFilings, evaluateInsider, evaluatePrices, recipients,
+} from './alerts.ts';
 
 const DB = `trisula_alerts_${process.pid}`;
 const A = 'u_a';
@@ -37,6 +39,7 @@ beforeEach(async () => {
   await serviceTxn('system:alerts', async (c) => {
     await c.query('DELETE FROM notification_outbox');
     await c.query('DELETE FROM alerts');
+    await c.query('DELETE FROM insider_transactions');
     await c.query('DELETE FROM filings');
     await c.query('DELETE FROM prices');
   });
@@ -130,11 +133,13 @@ test('a filing for a company nobody follows raises nothing', async () => {
 });
 
 test('one filing raises one alert, at the highest matching severity', async () => {
-  // "Resignation" also contains no auditor words, but a pledge disclosure could match twice.
-  await filing(COVERED, 'COV', 'Pledge of shares / encumbrance', 1, 'f_pl');
+  // This category matches kmp_resignation (high) and auditor_change (critical). The rules are read
+  // worst-first for exactly this reason: without that ordering the winner was whichever row
+  // Postgres returned first, and this could have been filed as `high`.
+  await filing(COVERED, 'COV', 'Resignation of Director and Change in Auditors', 1, 'f_two');
   const r = await evaluateFilings();
-  assert.equal(r.raised, 1);
-  assert.equal((await desk())[0]?.severity, 'critical');
+  assert.equal(r.raised, 1, 'one filing, one alert');
+  assert.equal((await desk())[0]?.severity, 'critical', 'and the worse of the two');
 });
 
 // ---- price moves ----------------------------------------------------------------------------
@@ -166,4 +171,69 @@ test('acknowledging clears it from the desk but keeps the record', async () => {
     return rows[0];
   });
   assert.equal(kept?.acknowledged_by, A);
+});
+
+// ---- insider disclosures ----------------------------------------------------------------------
+
+async function disclosure(
+  id: string,
+  kind: string,
+  category: string,
+  daysAgo = 1,
+  extra: { quantity?: number; before?: number; after?: number } = {},
+) {
+  await serviceTxn('system:ingest', async (c) => {
+    await c.query(
+      `INSERT INTO insider_transactions
+         (id, company_id, symbol, person, category, kind, quantity, pct_before, pct_after,
+          disclosed_at)
+       VALUES ($1,$2,'COV','A Person',$3,$4,$5,$6,$7, now() - ($8 || ' days')::interval)`,
+      [id, COVERED, category, kind, extra.quantity ?? null, extra.before ?? null,
+       extra.after ?? null, String(daysAgo)],
+    );
+  });
+}
+
+test('a promoter selling raises, and an employee selling does not', async () => {
+  await disclosure('d_prom', 'Sell', 'Promoters', 1, { quantity: 3200000, before: 21.05, after: 18.2 });
+  await disclosure('d_emp', 'Sell', 'Employees/Designated Employees', 1, { quantity: 3000 });
+  const r = await evaluateInsider();
+  assert.equal(r.considered, 2);
+  assert.equal(r.raised, 1, 'a designated employee selling 3,000 shares is not news');
+});
+
+test('the alert carries the holding on both sides', async () => {
+  await disclosure('d_move', 'Sell', 'Promoters', 1, { quantity: 3200000, before: 21.05, after: 18.2 });
+  await evaluateInsider();
+  const item = (await desk())[0]!;
+  assert.match(String(item.detail), /21\.05% to 18\.20%/, 'the point of reading the disclosure');
+  assert.match(String(item.detail), /32,00,000/, 'lakhs, because that is how the desk reads');
+});
+
+test('a promoter buying is not an alert', async () => {
+  await disclosure('d_buy', 'Buy', 'Promoters', 1, { quantity: 7200000 });
+  assert.equal((await evaluateInsider()).raised, 0);
+});
+
+test('a pledge is critical and a revocation is silent', async () => {
+  await disclosure('d_pledge', 'Pledge', 'Promoters', 1, { quantity: 1000000 });
+  await disclosure('d_revoke', 'Pledge Revoke', 'Promoters', 1, { quantity: 1000000 });
+  assert.equal((await evaluateInsider()).raised, 1);
+  assert.equal((await desk())[0]?.severity, 'critical', 'a pledge stops the fund');
+});
+
+test('a decade of history arriving at once does not raise a decade of alerts', async () => {
+  // A newly followed company brings its whole PIT history: PRAJIND arrived with 232 disclosures
+  // back to 2016. Without a floor, adding a name would alert on every promoter sale since.
+  await disclosure('d_old', 'Sell', 'Promoters', 900, { quantity: 100000 });
+  await disclosure('d_new', 'Sell', 'Promoters', 2, { quantity: 100000 });
+  const r = await evaluateInsider();
+  assert.equal(r.considered, 1, 'the old one is not even considered');
+  assert.equal(r.raised, 1);
+});
+
+test('re-evaluating raises nothing twice', async () => {
+  await disclosure('d_once', 'Sell', 'Promoters', 1, { quantity: 100000 });
+  assert.equal((await evaluateInsider()).raised, 1);
+  assert.equal((await evaluateInsider()).raised, 0);
 });

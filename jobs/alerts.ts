@@ -1,12 +1,12 @@
 /**
- * Raise alerts from filings and prices.
+ * Raise alerts from filings, insider disclosures and prices.
  *
  * Gated on a successful end-of-day ingest for today rather than on the clock: systemd timers are
  * wall clock, not a dependency graph, and a slow bhavcopy would otherwise have this evaluating
  * yesterday's prices while reporting success.
  */
 import { closePool, readTxn, serviceTxn } from '../lib/db.ts';
-import { evaluateFilings, evaluatePrices } from '../lib/alerts.ts';
+import { evaluateFilings, evaluateInsider, evaluatePrices } from '../lib/alerts.ts';
 
 async function main(): Promise<void> {
   const eodRan = await readTxn(async (c) => {
@@ -20,8 +20,9 @@ async function main(): Promise<void> {
   });
 
   const filings = await evaluateFilings();
-  // Filings do not depend on prices, so they are always evaluated. Price moves are skipped rather
-  // than computed against stale closes, and the skip is recorded rather than silent.
+  const insider = await evaluateInsider();
+  // Neither depends on prices, so both are always evaluated. Price moves are skipped rather than
+  // computed against stale closes, and the skip is recorded rather than silent.
   const prices = eodRan ? await evaluatePrices() : null;
 
   await serviceTxn('system:alerts', async (c) => {
@@ -29,16 +30,19 @@ async function main(): Promise<void> {
       `INSERT INTO ingestion_runs (source, finished_at, status, items, detail)
        VALUES ('alerts', now(), 'ok', $1, $2)`,
       [
-        filings.raised + (prices?.raised ?? 0),
-        prices
-          ? `filings ${filings.raised}/${filings.considered}, prices ${prices.raised}/${prices.considered}`
-          : `filings ${filings.raised}/${filings.considered}; prices skipped, no successful eod run today`,
+        filings.raised + insider.raised + (prices?.raised ?? 0),
+        `filings ${filings.raised}/${filings.considered}, ` +
+          `insider ${insider.raised}/${insider.considered}, ` +
+          (prices
+            ? `prices ${prices.raised}/${prices.considered}`
+            : 'prices skipped, no successful eod run today'),
       ],
     );
   });
 
   console.log(
     `filings ${filings.raised}/${filings.considered}` +
+      `  insider ${insider.raised}/${insider.considered}` +
       (prices ? `  prices ${prices.raised}/${prices.considered}` : '  prices skipped (no eod today)'),
   );
 }

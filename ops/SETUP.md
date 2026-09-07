@@ -153,6 +153,8 @@ sudo systemctl enable --now \
   trisula-ingest-eod.timer \
   trisula-ingest-fundamentals.timer \
   trisula-ingest-calendar.timer \
+  trisula-ingest-insider.timer \
+  trisula-ingest-shareholding.timer \
   trisula-agents.timer \
   trisula-backup.timer \
   trisula-backup-verify.timer

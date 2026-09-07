@@ -1,0 +1,13 @@
+[Unit]
+Description=Quarterly shareholding patterns
+
+[Timer]
+# Daily against a quarterly fact: the index only shows recent submissions, so a company is visible
+# on the day it files and gone the next. Polling daily is how the filing gets caught without
+# knowing the date it will arrive.
+OnCalendar=*-*-* 20:30 Asia/Kolkata
+Persistent=true
+Unit=trisula-job@ingest-shareholding.service
+
+[Install]
+WantedBy=timers.target

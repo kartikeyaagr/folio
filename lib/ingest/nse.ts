@@ -50,24 +50,25 @@ export class NseSession {
     return this.cookie ? { ...HEADERS, Cookie: this.cookie } : HEADERS;
   }
 
-  /** A JSON API call. Returns the first array in the payload, which is where NSE hides the rows. */
+  /**
+   * A JSON API call. Returns the first array in the payload, which is where NSE hides the rows.
+   *
+   * `referer` exists because a few endpoints check that the request looks like it came from the
+   * page that normally makes it. The insider-trading endpoint answers 503 without it.
+   */
   async rows<T = Record<string, unknown>>(
     path: string,
     params?: Record<string, string>,
+    referer?: string,
   ): Promise<T[]> {
     const url = new URL(`${BASE}/api/${path.replace(/^\//, '')}`);
     for (const [k, v] of Object.entries(params ?? {})) url.searchParams.set(k, v);
 
-    const res = await fetch(url, { headers: this.headers(), redirect: 'follow' });
+    const headers = referer ? { ...this.headers(), Referer: referer } : this.headers();
+    const res = await fetch(url, { headers, redirect: 'follow' });
     if (!res.ok) throw new NseError(`${res.status} from ${url.pathname}`);
 
-    const payload: unknown = await res.json();
-    if (Array.isArray(payload)) return payload as T[];
-    if (payload && typeof payload === 'object') {
-      const arr = Object.values(payload).find((v) => Array.isArray(v));
-      if (arr) return arr as T[];
-    }
-    return [];
+    return pickRows<T>(await res.json());
   }
 
   /** Raw bytes from anywhere on NSE, archives included. */
@@ -80,6 +81,25 @@ export class NseSession {
   async text(url: string): Promise<string> {
     return (await this.bytes(url)).toString('utf8');
   }
+}
+
+/**
+ * Find the rows in a JSON payload.
+ *
+ * `data` by name before any array by position. The insider endpoint answers
+ * `{acqNameList: [...], data: [...]}`, and taking the first array found returned a list of people's
+ * names — which parsed to nothing and stored nothing, with a 200 and no error anywhere. Endpoints
+ * that answer with a bare array or with some other single key still work by position.
+ */
+export function pickRows<T>(payload: unknown): T[] {
+  if (Array.isArray(payload)) return payload as T[];
+  if (payload && typeof payload === 'object') {
+    const named = (payload as Record<string, unknown>)['data'];
+    if (Array.isArray(named)) return named as T[];
+    const arr = Object.values(payload).find((v) => Array.isArray(v));
+    if (arr) return arr as T[];
+  }
+  return [];
 }
 
 /**

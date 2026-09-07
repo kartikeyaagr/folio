@@ -100,6 +100,18 @@ export interface EvaluateResult {
 }
 
 /**
+ * Rules are read worst-first.
+ *
+ * Both evaluators stop at the first rule a subject matches, so that one event raises one alert.
+ * That only means "at the highest severity" if the rules arrive in severity order — without this
+ * the winner was whatever order Postgres happened to return, and a pledge that also mentions an
+ * auditor could have been filed as `low`.
+ */
+const BY_SEVERITY = `ORDER BY CASE severity
+                              WHEN 'critical' THEN 0 WHEN 'high' THEN 1
+                              WHEN 'normal' THEN 2 ELSE 3 END, key`;
+
+/**
  * Match filings against the category rules.
  *
  * **Asks "what has no alert yet", not "what arrived recently."** The first version used a rolling
@@ -120,7 +132,7 @@ export async function evaluateFilings(maxAgeDays = 60): Promise<EvaluateResult> 
       key: string; severity: Severity; patterns: string[]; company_id: string | null;
     }>(
       `SELECT key, severity, patterns, company_id FROM alert_rules
-        WHERE active AND kind = 'filing_category'`,
+        WHERE active AND kind = 'filing_category' ${BY_SEVERITY}`,
     );
 
     const { rows: filings } = await c.query<{
@@ -150,12 +162,78 @@ export async function evaluateFilings(maxAgeDays = 60): Promise<EvaluateResult> 
           detail: f.subject,
         });
         if (ok) raised++;
-        // First matching rule wins. A pledge disclosure that also mentions an auditor should
-        // raise once, at the higher severity, rather than twice.
+        // First matching rule wins, and the rules arrive worst-first, so one filing raises one
+        // alert at the highest severity it matches rather than two alerts or the wrong one.
         break;
       }
     }
     return { considered: filings.length, raised };
+  });
+}
+
+/**
+ * Match insider disclosures against the insider rules.
+ *
+ * Reads the disclosure rather than the announcement about it, so an alert can carry the holding on
+ * both sides: "Promoters sold 3,200,000 shares, 21.05% to 18.20%" rather than "there is a filing
+ * about shares".
+ *
+ * `maxAgeDays` is the same floor on history as the filings evaluator, and it matters more here.
+ * A newly followed company arrives with its complete PIT history — PRAJIND brought 232 disclosures
+ * back to 2016 — and without a floor, adding a name would raise an alert for every promoter sale
+ * of the last decade.
+ */
+export async function evaluateInsider(maxAgeDays = 60): Promise<EvaluateResult> {
+  return serviceTxn('system:alerts', async (c) => {
+    const { rows: rules } = await c.query<{
+      key: string; severity: Severity; company_id: string | null;
+      config: { types?: string[]; categories?: string[] };
+    }>(
+      `SELECT key, severity, company_id, config FROM alert_rules
+        WHERE active AND kind = 'insider_transaction' ${BY_SEVERITY}`,
+    );
+
+    const { rows } = await c.query<{
+      id: string; company_id: string; symbol: string; person: string; category: string | null;
+      kind: string | null; quantity: string | null; pct_before: string | null; pct_after: string | null;
+    }>(
+      `SELECT i.id, i.company_id, i.symbol, i.person, i.category, i.kind,
+              i.quantity::text, i.pct_before::text, i.pct_after::text
+         FROM insider_transactions i
+        WHERE i.company_id IS NOT NULL
+          AND i.disclosed_at > now() - ($1 || ' days')::interval
+          AND NOT EXISTS (SELECT 1 FROM alerts a WHERE a.subject_ref = i.id)
+        ORDER BY i.disclosed_at DESC`,
+      [String(maxAgeDays)],
+    );
+
+    let raised = 0;
+    for (const d of rows) {
+      for (const rule of rules) {
+        if (rule.company_id !== null && rule.company_id !== d.company_id) continue;
+        const types = rule.config.types ?? [];
+        const categories = rule.config.categories;
+        if (!types.includes(d.kind ?? '')) continue;
+        if (categories && !categories.includes(d.category ?? '')) continue;
+
+        const shares = d.quantity ? Number(d.quantity).toLocaleString('en-IN') : 'an undisclosed number of';
+        const move =
+          d.pct_before !== null && d.pct_after !== null
+            ? `, ${Number(d.pct_before).toFixed(2)}% to ${Number(d.pct_after).toFixed(2)}%`
+            : '';
+        const ok = await raiseAlert(c, {
+          ruleKey: rule.key,
+          subjectRef: d.id,
+          companyId: d.company_id,
+          severity: rule.severity,
+          title: `${d.symbol}: ${d.category ?? 'an insider'} ${(d.kind ?? '').toLowerCase()}`,
+          detail: `${d.person} — ${shares} shares${move}`,
+        });
+        if (ok) raised++;
+        break;
+      }
+    }
+    return { considered: rows.length, raised };
   });
 }
 
