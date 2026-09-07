@@ -1,0 +1,10 @@
+[Unit]
+Description=Raise alerts after the close
+
+[Timer]
+OnCalendar=Mon..Fri *-*-* 19:30:00 Asia/Kolkata
+Persistent=true
+Unit=trisula-job@alerts.service
+
+[Install]
+WantedBy=timers.target
