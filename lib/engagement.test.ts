@@ -46,7 +46,7 @@ async function story(id: string, title: string, tier = 'sector_term') {
   await serviceTxn('system:news', async (c) => {
     await c.query(
       `INSERT INTO news_items (id,source_key,guid,url,title,published_at)
-       VALUES ($1,'trade',$1,'https://x/a',$2, now())`, [id, title]);
+       VALUES ($1,'trade',$1,'https://x/' || $1,$2, now())`, [id, title]);
     await c.query(
       `INSERT INTO news_matches (id,item_id,company_id,tier,evidence,state,mechanism)
        VALUES ($1,$1,$2,$3,'ethanol','confirmed','It supplies them.')`, [id, CO, tier]);
@@ -105,4 +105,27 @@ test('dismissals are kept, because they say which tier is not working', async ()
   assert.deepEqual(byTier.find((t) => t.tier === 'name'), {
     tier: 'name', confirmed: 1, dismissed: 0,
   });
+});
+
+test('a story several outlets ran says so', async () => {
+  // Deduplicated to one row, but three outlets running a piece is not the same event as one trade
+  // title running it, and the row would otherwise lose that entirely.
+  await serviceTxn('system:news', async (c) => {
+    await c.query(
+      `INSERT INTO news_sources (key,label,url,tier,market)
+       VALUES ('other','Another title','https://y/f',2,'india')
+       ON CONFLICT (key) DO NOTHING`);
+  });
+  await story('n1', 'One story');
+  await serviceTxn('system:news', async (c) => {
+    await c.query(
+      `INSERT INTO news_items (id,source_key,guid,url,title,published_at)
+       VALUES ('n1b','other','n1b','https://x/n1','One story', now())`);
+  });
+  assert.deepEqual((await newsFor(ANA))[0]?.alsoIn, ['Another title']);
+});
+
+test('a story only one outlet ran claims nothing', async () => {
+  await story('n2', 'Only here');
+  assert.deepEqual((await newsFor(ANA))[0]?.alsoIn, []);
 });

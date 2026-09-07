@@ -112,6 +112,15 @@ export default async function NewsPage({
                     <p className="item-kind">
                       <Link href={`/company/${n.symbol}`}>{n.symbol}</Link>
                       <span>{n.source}</span>
+                      {/*
+                        The other outlets that ran the same article. One story, one row — but three
+                        outlets running it is not the same event as one trade title running it.
+                      */}
+                      {n.alsoIn.length > 0 && (
+                        <span title={`The same article also ran in: ${n.alsoIn.join(', ')}`}>
+                          +{n.alsoIn.length} more
+                        </span>
+                      )}
                       <span>{when(n.publishedAt)}</span>
                     </p>
                     <a className="news-title" href={n.url} target="_blank" rel="noreferrer">

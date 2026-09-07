@@ -51,6 +51,13 @@ export interface NewsForReader {
   symbol: string;
   publishedAt: Date | null;
   state: EngagementState | null;
+  /**
+   * The other feeds that carried this same article, deduplicated away before the gate saw it.
+   *
+   * Kept rather than discarded because it says something the single row cannot: a story three
+   * outlets ran independently got pickup, and one that appeared in a single trade title did not.
+   */
+  alsoIn: string[];
 }
 
 /**
@@ -67,7 +74,15 @@ export async function newsFor(
   return readTxn(async (c) => {
     const { rows } = await c.query<NewsForReader>(
       `SELECT m.id, i.title, i.url, s.label AS source, m.mechanism, co.symbol,
-              i.published_at AS "publishedAt", e.state
+              i.published_at AS "publishedAt", e.state,
+              COALESCE((
+                SELECT array_agg(DISTINCT s2.label ORDER BY s2.label)
+                  FROM news_items i2 JOIN news_sources s2 ON s2.key = i2.source_key
+                 WHERE i2.id <> i.id
+                   AND s2.key <> i.source_key
+                   AND (i2.url_key = i.url_key
+                        OR (i2.title_key IS NOT NULL AND i2.title_key = i.title_key))
+              ), '{}') AS "alsoIn"
          FROM news_matches m
          JOIN news_items i ON i.id = m.item_id
          JOIN news_sources s ON s.key = i.source_key

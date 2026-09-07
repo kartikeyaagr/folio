@@ -21,6 +21,11 @@
  *   * **The market anchor, moved to where it belongs.** v2 asked the *headline* whether it
  *     mentioned India; 71 of 135 items from Indian trade titles never do, which cost two real
  *     PRAJIND stories. The source knows its own market, so the source is asked.
+ *
+ * One story yields one candidate even when several feeds carry it. That is deduplication by exact
+ * identity — the article's own URL, or its headline character for character — and not the
+ * clustering that was declined: clustering groups things that are *about* the same subject and was
+ * measured as doing nothing, while this collapses rows that are the same article.
  */
 
 import { createHash } from 'node:crypto';
@@ -215,7 +220,19 @@ export async function loadVocabulary(): Promise<CompanyVocabulary[]> {
 export interface MatchResult {
   items: number;
   candidates: number;
+  /** Items that were the same story as one already matched for that company. */
+  duplicates: number;
 }
+
+/**
+ * How far apart two carriers of one story may be.
+ *
+ * Seven days, from measurement rather than taste: the widest genuine gap in 2,089 real items was
+ * three (Manufacturing Dive on the 1st, Supply Chain Dive on the 4th, one Chobani story). A window
+ * at all is what stops a column that runs under the same headline every week from collapsing into
+ * a single row forever.
+ */
+export const SAME_STORY_DAYS = 7;
 
 /**
  * Match every item that has not been matched yet.
@@ -226,7 +243,7 @@ export interface MatchResult {
  */
 export async function matchNewItems(limit = 2000): Promise<MatchResult> {
   const companies = await loadVocabulary();
-  if (companies.length === 0) return { items: 0, candidates: 0 };
+  if (companies.length === 0) return { items: 0, candidates: 0, duplicates: 0 };
 
   return serviceTxn('system:news', async (c) => {
     const { rows: items } = await c.query<Item>(
@@ -242,8 +259,29 @@ export async function matchNewItems(limit = 2000): Promise<MatchResult> {
     );
 
     let candidates = 0;
+    let duplicates = 0;
     for (const item of items) {
       for (const cand of candidatesFor(item, companies)) {
+        // One story, one candidate. Two feeds carrying the same article would otherwise be judged
+        // twice — two model calls to reach the same answer — and then shown to the reader twice.
+        // Exact equality on the article's own address or its headline, never similarity.
+        const { rows: already } = await c.query<{ id: string }>(
+          `SELECT m.id
+             FROM news_matches m
+             JOIN news_items other ON other.id = m.item_id
+             JOIN news_items this ON this.id = $1
+            WHERE m.company_id = $2
+              AND m.item_id <> $1
+              AND (other.url_key = this.url_key
+                   OR (other.title_key IS NOT NULL AND other.title_key = this.title_key))
+              AND abs(extract(epoch FROM
+                    COALESCE(other.published_at, other.fetched_at)
+                  - COALESCE(this.published_at, this.fetched_at))) < $3 * 86400
+            LIMIT 1`,
+          [cand.itemId, cand.companyId, String(SAME_STORY_DAYS)],
+        );
+        if (already[0]) { duplicates++; continue; }
+
         await c.query(
           `INSERT INTO news_matches (id, item_id, company_id, tier, evidence)
            VALUES ($1,$2,$3,$4,$5)
@@ -259,6 +297,6 @@ export async function matchNewItems(limit = 2000): Promise<MatchResult> {
         [item.id],
       );
     }
-    return { items: items.length, candidates };
+    return { items: items.length, candidates, duplicates };
   });
 }

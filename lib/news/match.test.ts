@@ -1,9 +1,71 @@
-import { test } from 'node:test';
+import { test, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
+import { migrate } from '../../db/migrate.ts';
+import { closePool, readTxn, serviceTxn } from '../db.ts';
 import {
-  candidatesFor, distinctive, mentions, mentionsTerm, nameTerm,
+  candidatesFor, distinctive, matchNewItems, mentions, mentionsTerm, nameTerm,
   type CompanyVocabulary, type Item,
 } from './match.ts';
+
+
+const DB = `trisula_match_${process.pid}`;
+const CO = 'c_praj';
+
+before(async () => {
+  execFileSync('createdb', [DB]);
+  process.env.DATABASE_URL = `postgres:///${DB}`;
+  await migrate();
+  await serviceTxn('system:auth', async (c) => {
+    await c.query(
+      "INSERT INTO companies (id,symbol,name,sector) VALUES ($1,'PRAJIND','Praj Industries Limited','bioenergy')",
+      [CO],
+    );
+  });
+});
+
+after(async () => {
+  await closePool();
+  execFileSync('dropdb', ['--if-exists', DB]);
+});
+
+beforeEach(async () => {
+  await serviceTxn('system:news', async (c) => {
+    await c.query('DELETE FROM news_matches');
+    await c.query('DELETE FROM news_matched_items');
+    await c.query('DELETE FROM news_items');
+    await c.query('DELETE FROM news_sources');
+  });
+});
+
+/** Two feeds of one publisher, both Indian and both in this company's sector. */
+async function twoFeeds(): Promise<void> {
+  await serviceTxn('system:news', async (c) => {
+    for (const key of ['agri', 'economy']) {
+      await c.query(
+        `INSERT INTO news_sources (key,label,url,tier,sector,market)
+         VALUES ($1,$1,'https://x/' || $1, 2,'bioenergy','india')`,
+        [key],
+      );
+    }
+  });
+}
+
+/** A row in the database, as against `item()` above, which builds one in memory. */
+async function storeItem(
+  id: string, source: string, title: string, url: string, daysAgo: number,
+): Promise<void> {
+  await serviceTxn('system:news', async (c) => {
+    await c.query(
+      `INSERT INTO news_items (id,source_key,guid,url,title,published_at)
+       VALUES ($1,$2,$1,$3,$4, now() - ($5 || ' days')::interval)`,
+      [id, source, url, title, String(daysAgo)],
+    );
+  });
+}
+
+const candidateCount = () => readTxn(async (c) =>
+  Number((await c.query<{ n: string }>('SELECT count(*)::text AS n FROM news_matches')).rows[0]!.n));
 
 const PRAJ: CompanyVocabulary = {
   id: 'c_praj', symbol: 'PRAJIND', isin: 'INE074A01025', name: 'Praj Industries Limited',
@@ -139,4 +201,67 @@ test('a name that is an ordinary word does not match on its own', () => {
     aliases: [], sectorTerms: [],
   };
   assert.deepEqual(candidatesFor(item('The Supreme Court ruled today'), [supreme]), []);
+});
+
+// ---- one story, one candidate -----------------------------------------------------------------
+
+test('two feeds carrying one article produce one candidate', async () => {
+  // The Hindu BusinessLine publishes a single article to both its agri-business and economy feeds,
+  // at the same URL. Judging it twice costs two model calls to reach one answer and then shows the
+  // reader the same story twice.
+  await twoFeeds();
+  await storeItem('a1', 'agri', 'Sugar mills asked to file data', 'https://x/story/1', 0);
+  await storeItem('a2', 'economy', 'Sugar mills asked to file data', 'https://x/story/1', 0);
+
+  const r = await matchNewItems();
+  assert.equal(r.candidates, 1);
+  assert.equal(r.duplicates, 1);
+  assert.equal(await candidateCount(), 1);
+});
+
+test('a query string is not part of the article’s identity', async () => {
+  await twoFeeds();
+  await storeItem('b1', 'agri', 'Sugar mills asked to file data', 'https://x/story/2', 0);
+  await storeItem('b2', 'economy', 'Sugar mills asked to file data', 'https://x/story/2?utm_source=rss', 0);
+  const r = await matchNewItems();
+  assert.equal(r.candidates, 1, 'feed and campaign tags do not make a second article');
+});
+
+test('one headline at two addresses is still one story', async () => {
+  // Recycling Today and Waste Today run the same piece; so do Manufacturing Dive and Supply Chain
+  // Dive. Different URLs, identical headline.
+  await twoFeeds();
+  await storeItem('c1', 'agri', 'Casella to acquire an ethanol distillery', 'https://a/1', 0);
+  await storeItem('c2', 'economy', 'Casella to acquire an ethanol distillery', 'https://b/9', 2);
+  const r = await matchNewItems();
+  assert.equal(r.candidates, 1);
+  assert.equal(r.duplicates, 1);
+});
+
+test('the same headline months apart is two stories', async () => {
+  // A column that runs under one headline every week is not one story forever, which is the whole
+  // reason the match is bounded in time rather than being global.
+  await twoFeeds();
+  await storeItem('d1', 'agri', 'Daily ethanol market update', 'https://a/2', 0);
+  await storeItem('d2', 'agri', 'Daily ethanol market update', 'https://a/3', 40);
+  const r = await matchNewItems();
+  assert.equal(r.candidates, 2);
+});
+
+test('two genuinely different stories both stand', async () => {
+  await twoFeeds();
+  await storeItem('e1', 'agri', 'Sugar mills asked to file data', 'https://a/4', 0);
+  await storeItem('e2', 'agri', 'Ethanol blending target raised', 'https://a/5', 0);
+  assert.equal((await matchNewItems()).candidates, 2);
+});
+
+test('a headline in another script is not deduplicated against every other one', async () => {
+  // The trap this guards: an ASCII-only normalisation folds every Gujarati and Hindi headline to
+  // the empty string, and ChiniMandi — which now publishes mostly in those scripts — collapses
+  // into a single story. Caught by writing the measuring query that way first.
+  await twoFeeds();
+  await storeItem('f1', 'agri', 'ખાંડ મિલોને વેચાણ ડેટા ફાઇલ કરવા કહ્યું', 'https://a/6', 0);
+  await storeItem('f2', 'agri', 'चीनी मिलों को बिक्री डेटा दाखिल करने को कहा', 'https://a/7', 0);
+  const r = await matchNewItems();
+  assert.equal(r.duplicates, 0, 'two different headlines, in two different scripts');
 });
