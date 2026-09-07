@@ -1,0 +1,12 @@
+[Unit]
+Description=News feeds, and the net
+
+[Timer]
+# Every two hours through the working day. The feeds carry 10-200 items each and turn over slowly;
+# polling faster would re-read the same headlines and store nothing.
+OnCalendar=*-*-* 07..21:05 Asia/Kolkata
+Persistent=true
+Unit=trisula-job@news-poll.service
+
+[Install]
+WantedBy=timers.target

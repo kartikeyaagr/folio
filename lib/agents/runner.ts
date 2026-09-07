@@ -222,12 +222,19 @@ export async function drain(limit = 10, model: Model = liveModel): Promise<Drain
         return false;
       }
 
+      // A savepoint, because a handler that runs bad SQL poisons the whole transaction — and the
+      // next statement to run in it is the one recording *why the handler failed*. Without this,
+      // that write fails too, the run's real error is replaced by "current transaction is aborted",
+      // and the row sits in `running` until the lease expires half an hour later. Found when a
+      // dossier query named a column that did not exist and said nothing about which one.
+      await c.query('SAVEPOINT handler');
       try {
         const result = await handler({
           c, agent, runId: run.id,
           companyId: run.company_id, subjectRef: run.subject_ref,
           request: run.request, ask: model,
         });
+        await c.query('RELEASE SAVEPOINT handler');
         if ('done' in result) {
           await c.query(
             "UPDATE agent_runs SET status='done', finished_at=now() WHERE id=$1", [run.id],
@@ -241,6 +248,8 @@ export async function drain(limit = 10, model: Model = liveModel): Promise<Drain
           out.drafted++;
         }
       } catch (err) {
+        // Back to a usable transaction before writing anything, whatever the handler did to it.
+        await c.query('ROLLBACK TO SAVEPOINT handler');
         const kind = err instanceof ModelFailure ? err.kind : 'error';
         await fail(c, run.id, kind, String(err instanceof Error ? err.message : err));
         out.failed++;

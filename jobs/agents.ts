@@ -11,14 +11,20 @@ import { closePool } from '../lib/db.ts';
 import { drain, sweepScheduled } from '../lib/agents/runner.ts';
 import * as results from '../lib/agents/results.ts';
 import * as forensics from '../lib/agents/forensics.ts';
-// Imported for their side effect: registering handlers 4 and 5.
+import * as concall from '../lib/agents/concall.ts';
+// Imported for their side effect: registering handlers. Agents 4 and 5 have no sweep of their own
+// (sweepScheduled covers them); agents 3 and 6 are prompted and are enqueued by a person, but every
+// handler must be registered before the queue is drained or a run finds no code to execute.
 import '../lib/agents/notify.ts';
+import '../lib/agents/dossier.ts';
+import '../lib/agents/newsbrief.ts';
 
 async function main(): Promise<void> {
   const limit = Number(process.argv[2] ?? 10);
 
   const queued =
-    (await results.sweep()) + (await forensics.sweep()) + (await sweepScheduled());
+    (await results.sweep()) + (await forensics.sweep()) + (await concall.sweep()) +
+    (await sweepScheduled());
 
   const r = await drain(limit);
   console.log(

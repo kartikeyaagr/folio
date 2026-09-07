@@ -1,0 +1,11 @@
+[Unit]
+Description=News mechanism gate
+
+[Timer]
+# Half-hourly, and cheap: it only ever runs on candidates the net has already narrowed to.
+OnCalendar=*:00/30
+Persistent=true
+Unit=trisula-job@news-gate.service
+
+[Install]
+WantedBy=timers.target

@@ -31,13 +31,19 @@ import pg from 'pg';
  */
 pg.types.setTypeParser(1082, (v: string) => v); // DATE
 
-/** Service principals allowed to act without a person. Closed set on purpose. */
+/**
+ * Service principals allowed to act without a person. Closed set on purpose, and the same closed
+ * set Postgres holds: `audit_fn` raises on an actor it has never been seeded, so a principal added
+ * here without a migration fails at the first write rather than at review.
+ */
 export type ServicePrincipal =
   | 'system:ingest'
   | 'system:agents'
   | 'system:alerts'
   | 'system:auth'
-  | 'system:migration';
+  | 'system:migration'
+  | 'system:news'
+  | 'system:news-gate';
 
 export type Client = pg.PoolClient;
 

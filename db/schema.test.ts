@@ -108,8 +108,11 @@ test('every audited table carries the trigger', async () => {
       -- Each exclusion is deliberate and documented in the migration that created the table:
       -- actors and audit_log would be circular; schema_migrations is the runner's own ledger;
       -- prices is ~2,000 unchanging exchange facts a day whose provenance is ingestion_runs;
-      -- ingestion_runs is that provenance table itself.
-      AND c.relname NOT IN ('actors', 'audit_log', 'schema_migrations', 'prices', 'ingestion_runs')
+      -- ingestion_runs is that provenance table itself; news_items is a copy of somebody else's
+      -- feed, written only by the poller, and one audit row per headline would be the largest
+      -- table here within a month; news_matched_items is a set of item ids and nothing else.
+      AND c.relname NOT IN ('actors', 'audit_log', 'schema_migrations', 'prices', 'ingestion_runs',
+                            'news_items', 'news_matched_items')
       AND NOT EXISTS (
         SELECT 1 FROM pg_trigger t WHERE t.tgrelid = c.oid AND t.tgname = 'audit'
       )`);

@@ -155,6 +155,8 @@ sudo systemctl enable --now \
   trisula-ingest-calendar.timer \
   trisula-ingest-insider.timer \
   trisula-ingest-shareholding.timer \
+  trisula-news-poll.timer \
+  trisula-news-gate.timer \
   trisula-agents.timer \
   trisula-backup.timer \
   trisula-backup-verify.timer
