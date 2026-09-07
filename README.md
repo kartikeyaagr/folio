@@ -37,6 +37,14 @@ so `lib/` must never import from `next/*` — the lint rule in `eslint.config.js
 
 Read `.interface-design/system.md` before adding any screen.
 
+## A constraint worth knowing
+
+Node runs the TypeScript here natively, in **strip-only** mode: it deletes type annotations and
+generates nothing. So three TypeScript features are syntax errors at runtime even though `tsc`
+accepts them — **parameter properties** (`constructor(readonly x: T)`), **enums**, and
+**namespaces**. Declare and assign instead; use a `const` object with `as const` in place of an
+enum. There is no build step and that is the trade.
+
 ## Getting started
 
 Requires Node 22+, pnpm 9, and Postgres 18.

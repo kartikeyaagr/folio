@@ -17,6 +17,7 @@
     "verify-backup": "./ops/verify-backup.sh"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.124.0",
     "@node-rs/argon2": "^2.2.0",
     "fast-xml-parser": "^5.11.1",
     "next": "^15.5.4",
