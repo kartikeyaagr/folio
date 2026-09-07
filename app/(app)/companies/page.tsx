@@ -26,13 +26,20 @@ const STATUS_LABEL: Record<string, string> = {
 export default async function CompaniesPage() {
   await requireUser();
   const rows = await companyList();
-  const held = rows.filter((r) => r.status === 'holding').length;
+  // The count is of positions actually on the book, not of names somebody has marked `holding`.
+  // Status is a judgement and the quantity is a fact; a header reading "0 held" above two rows
+  // showing 5,000 each is the header disagreeing with its own table.
+  const onTheBook = rows.filter((r) => Number(r.quantity ?? 0) > 0).length;
+  const marked = rows.filter((r) => r.status === 'holding').length;
 
   return (
     <>
       <AppHeader
         title="Companies"
-        subtitle={`${rows.length} followed · ${held} held`}
+        subtitle={
+          `${rows.length} followed · ${onTheBook} on the book` +
+          (marked !== onTheBook ? ` · ${marked} marked holding` : '')
+        }
       />
 
       <div className="page">
