@@ -231,7 +231,17 @@ export function parse(content: Buffer | string): Instance {
     if (basis !== 'standalone' && basis !== 'consolidated') {
       // An instant context is a position as at a date, not a reporting period. Its figures were
       // collected above; skip it rather than store a period with no basis and no P&L.
-      if (!('RevenueFromOperations' in facts) && !('ProfitLossForPeriod' in facts)) continue;
+      //
+      // `ProfitLossForThePeriod` — with "The" — is the Non-Ind-AS spelling, which the whole SME
+      // board files under. Without it a Non-Ind-AS report that happened to omit revenue would be
+      // dropped here on the grounds of having no P&L, while carrying a full one.
+      if (
+        !('RevenueFromOperations' in facts) &&
+        !('ProfitLossForPeriod' in facts) &&
+        !('ProfitLossForThePeriod' in facts)
+      ) {
+        continue;
+      }
       basis = basis || 'standalone';
     }
 

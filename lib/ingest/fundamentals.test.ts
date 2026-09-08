@@ -9,6 +9,10 @@ import { parse } from './xbrl.ts';
 
 const DB = `trisula_fun_${process.pid}`;
 const fixture = () => readFileSync(new URL('./__fixtures__/vsttillers-q3fy25.xml', import.meta.url));
+// AERON's FY24 annual, the real thing: the SME board files Non-Ind-AS, which renames most of the
+// P&L and carries a full cash flow statement. Nothing in the corpus exercised either until
+// 08-Sep-2026, because the fetch only ever asked equities/Quarterly.
+const aeron = () => readFileSync(new URL('./__fixtures__/aeron-fy24-annual.xml', import.meta.url));
 
 before(async () => {
   execFileSync('createdb', [DB]);
@@ -44,6 +48,49 @@ test('an unmapped element is dropped rather than guessed at', () => {
   // Symbol and NameOfTheCompany are facts in the instance and are not figures.
   assert.equal(f['Symbol'], undefined);
   assert.equal(f['symbol'], undefined);
+});
+
+test('the Non-Ind-AS profit element is read, not left null', () => {
+  // Ind-AS calls it ProfitLossForPeriod; the SME taxonomy calls it ProfitLossForThePeriod, with
+  // "The". Only the first was mapped, so every SME name stored a row with a null profit.
+  const y = parse(aeron()).reports.find((r) => r.period.kind === 'year')!;
+  const f = canonicalFigures(y);
+  assert.equal(f['revenue'], '1997298000.00');
+  assert.equal(f['profit_after_tax'], '101081000.00');
+});
+
+test('the cash flow statement survives into facts', () => {
+  // Item 1 of the fund's checklist is CFO/EBITDA conversion. canonicalFigures keeps only what is
+  // named, so before these were mapped the whole statement was fetched, parsed and discarded.
+  const y = parse(aeron()).reports.find((r) => r.period.kind === 'year')!;
+  const f = canonicalFigures(y);
+  assert.equal(f['cash_from_operations'], '210527000.00');
+  assert.equal(f['cash_from_investing'], '-142501000.00');
+  assert.equal(f['cash_from_financing'], '-36239000.00');
+});
+
+test('a P&L that is entirely zero is absent, not measured', () => {
+  // The same instance attaches the balance sheet to an Oct-2023..Mar-2024 duration and writes 0.00
+  // into every P&L element. Stored verbatim that is "revenue Rs 0.0 crore" on a company page, and
+  // a zero EBITDA for agent 7 to divide into.
+  const h2 = parse(aeron()).reports.find(
+    (r) => r.period.start === '2023-10-01' && r.period.end === '2024-03-31',
+  )!;
+  const f = canonicalFigures(h2);
+  assert.equal(f['revenue'], undefined, 'absent, not 0.00');
+  assert.equal(f['profit_after_tax'], undefined);
+  assert.equal(f['total_expenses'], undefined);
+  // The balance sheet beside it is real and is kept: it comes from the instant context.
+  assert.equal(f['total_assets'], '1012794000.00');
+  assert.equal(f['inventories'], '250904000.00');
+});
+
+test('a real P&L containing some zeros is untouched', () => {
+  // The rule is "every mapped P&L line is zero", not "any of them is". A filing with a genuine
+  // zero in one line must keep every other figure.
+  const y = parse(aeron()).reports.find((r) => r.period.kind === 'year')!;
+  const f = canonicalFigures(y);
+  assert.equal(f['revenue'], '1997298000.00', 'a real year survives');
 });
 
 test('date columns come back as calendar dates, not as instants', async () => {

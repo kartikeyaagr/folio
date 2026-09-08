@@ -40,6 +40,27 @@ const CANONICAL: Record<string, string> = {
   ComprehensiveIncomeForThePeriod: 'comprehensive_income',
   BasicEarningsLossPerShareFromContinuingAndDiscontinuedOperations: 'eps_basic',
   DilutedEarningsLossPerShareFromContinuingAndDiscontinuedOperations: 'eps_diluted',
+
+  // --- Non-Ind-AS aliases. Later entries win, and the two taxonomies are mutually exclusive: a
+  // filing declares one or the other in the feed's `indAs` field, so no instance carries both.
+  //
+  // The SME board files under the older taxonomy, which renames most of the P&L. Measured on
+  // AERON's FY24 annual instance (NONINDAS_112687_1250294): 108 facts, of which the Ind-AS names
+  // above recognised almost none. Every SME name would have stored a row with a null profit.
+  //
+  // `ProfitLossForPeriodBeforeMinorityInterest` is deliberately NOT mapped. AERON reports it as
+  // 1010.81 against a ProfitLossForThePeriod of 101,081,000 — the same figure in lakhs. Mapping it
+  // would put a number 100,000x too small into a profit column, which is the dangerous direction.
+  ProfitLossForThePeriod: 'profit_after_tax',
+  DepreciationAndAmortisationExpense: 'depreciation',
+
+  // --- Cash flow. Item 1 of the fund's forensic checklist is CFO/EBITDA conversion, and agent 7
+  // reads `facts`. The statement is present in annual instances and was being thrown away, because
+  // canonicalFigures keeps only what is named here. Absent from most quarterlies, which is fine:
+  // absent means absent, and the checklist says so rather than guessing.
+  CashFlowsFromUsedInOperatingActivities: 'cash_from_operations',
+  CashFlowsFromUsedInInvestingActivities: 'cash_from_investing',
+  CashFlowsFromUsedInFinancingActivities: 'cash_from_financing',
 };
 
 /**
@@ -72,13 +93,33 @@ function numeric(raw: string | undefined): string | null {
   return Number.isFinite(Number(t)) ? t : null;
 }
 
-/** Every element we understand, flattened. Absent means absent from the filing. */
+/**
+ * Every element we understand, flattened. Absent means absent from the filing.
+ *
+ * **A P&L that is entirely zero is treated as absent, not as measured.** Some filers attach the
+ * balance sheet to a duration context and write `0.00` into every profit-and-loss element rather
+ * than omitting them. Measured on AERON's FY24 annual instance: the Oct-2023..Mar-2024 duration
+ * carries revenue, every expense line, tax, PAT and both EPS figures all at exactly 0.00, while
+ * the instant facts beside them — inventories, total assets, cash — are real and non-zero.
+ *
+ * Storing that verbatim puts "revenue ₹0.0 crore" on a company page as a fact somebody could act
+ * on, and hands agent 7 a zero EBITDA to divide into. A dormant shell would reach the same branch,
+ * and absent is the honest answer there too: the filing did not say.
+ *
+ * The balance sheet is kept either way — it is real, and it comes from a different context.
+ */
 export function canonicalFigures(report: Report): Record<string, string> {
   const out: Record<string, string> = {};
+
+  const pnl: Record<string, string> = {};
   for (const [element, column] of Object.entries(CANONICAL)) {
     const v = numeric(report.facts[element]);
-    if (v !== null) out[column] = v;
+    if (v !== null) pnl[column] = v;
   }
+  const values = Object.values(pnl);
+  const allZero = values.length > 0 && values.every((v) => Number(v) === 0);
+  if (!allZero) Object.assign(out, pnl);
+
   for (const [element, column] of Object.entries(BALANCE_SHEET)) {
     const v = numeric(report.instantFacts[element]);
     if (v !== null) out[column] = v;
@@ -93,29 +134,74 @@ export interface ResultsFiling {
   periodEnd: string | null;
 }
 
-/** The results feed, filtered to instances that actually exist. */
+/**
+ * Every board and period the feed actually serves.
+ *
+ * Measured against the live endpoint 08-Sep-2026, one call per combination:
+ *
+ *   equities · Quarterly     3816 rows      sme · Quarterly      680 rows
+ *   equities · Annual          29 rows      sme · Half-Yearly   3135 rows
+ *   equities · Half-Yearly      0 rows      sme · Annual        1715 rows
+ *
+ * `equities · Half-Yearly` is absent by design, not by accident: LODR has mainboard companies file
+ * quarterly, and half-yearly is the SME concession. It is not fetched, so its emptiness can never
+ * be mistaken for a dead feed.
+ *
+ * **The spelling is `Half-Yearly`, hyphenated.** `Half Yearly` with a space returns zero rows at
+ * HTTP 200 — no error, no warning. The trap is that the rows NSE sends back carry
+ * `relatingTo: "Half Yearly"` *with the space*, so copying the spelling out of the response into
+ * the query is the natural thing to do and yields nothing forever. This is L1's sixth instance
+ * waiting to happen, which is why the pairs are a named constant rather than inline strings.
+ */
+const RESULT_FEEDS: ReadonlyArray<{ index: string; period: string }> = [
+  { index: 'equities', period: 'Quarterly' },
+  { index: 'equities', period: 'Annual' },
+  { index: 'sme', period: 'Quarterly' },
+  { index: 'sme', period: 'Half-Yearly' },
+  { index: 'sme', period: 'Annual' },
+];
+
+/**
+ * The results feed, filtered to instances that actually exist.
+ *
+ * Until 08-Sep-2026 this asked for `equities`/`Quarterly` alone, which is why AERON — an
+ * `nse_emerge` half-yearly filer — could never have financial history at all, why `fundamentals`
+ * held nothing longer than 274 days, and why agent 7, which fires on annual filings, had never
+ * once had a subject to work on.
+ */
 export async function fetchResultsIndex(session?: NseSession): Promise<ResultsFiling[]> {
   const s = session ?? (await NseSession.open());
-  const rows = await s.rows<Record<string, unknown>>('corporates-financial-results', {
-    index: 'equities',
-    period: 'Quarterly',
-  });
   const out: ResultsFiling[] = [];
-  for (const r of rows) {
-    const url = String(r['xbrl'] ?? '').trim();
-    // NSE writes a bare "-" where there is no instance.
-    if (!url.startsWith('http')) continue;
-    out.push({
-      symbol: String(r['symbol'] ?? '').trim().toUpperCase(),
-      isin: String(r['isin'] ?? '').trim() || null,
-      xbrlUrl: url,
-      periodEnd: String(r['toDate'] ?? '').trim() || null,
+  const seen = new Set<string>();
+
+  for (const { index, period } of RESULT_FEEDS) {
+    const rows = await s.rows<Record<string, unknown>>('corporates-financial-results', {
+      index,
+      period,
     });
+    for (const r of rows) {
+      const url = String(r['xbrl'] ?? '').trim();
+      // NSE writes a bare "-" where there is no instance.
+      if (!url.startsWith('http')) continue;
+      // One instance can be served by more than one feed; the URL is the identity.
+      if (seen.has(url)) continue;
+      seen.add(url);
+      out.push({
+        symbol: String(r['symbol'] ?? '').trim().toUpperCase(),
+        // Null for the entire SME board, so downstream links by symbol. See filings.linked_by.
+        isin: String(r['isin'] ?? '').trim() || null,
+        xbrlUrl: url,
+        // equities returns 01-Oct-2024, sme returns 01-APR-2024. Case differs by board.
+        periodEnd: String(r['toDate'] ?? '').trim() || null,
+      });
+    }
   }
   return out;
 }
 
 export interface IngestResult {
+  /** Rows the feed served, before filtering to followed names. Zero here is a dead feed. */
+  indexRows: number;
   candidates: number;
   parsed: number;
   stored: number;
@@ -228,5 +314,5 @@ export async function ingestFundamentals(
     }
   }
 
-  return { candidates: mine.length, parsed, stored, failed, disagreed };
+  return { indexRows: all.length, candidates: mine.length, parsed, stored, failed, disagreed };
 }
