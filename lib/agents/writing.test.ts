@@ -16,7 +16,6 @@ import { acceptDraft, pendingDrafts } from './review.ts';
 import { briefs, brief, pendingBrief } from '../briefs.ts';
 import { drain, enqueue } from './runner.ts';
 import * as concall from './concall.ts';
-import './dossier.ts';
 import './newsbrief.ts';
 
 const DB = `trisula_wr_${process.pid}`;
@@ -76,6 +75,17 @@ async function transcript(id: string, title: string, marker: string, writtenAt: 
 }
 
 // ---- agent 2 ------------------------------------------------------------------------------------
+
+async function newsItem(id: string, title: string, state: string, mechanism: string | null) {
+  await serviceTxn('system:news', async (c) => {
+    await c.query(
+      `INSERT INTO news_items (id,source_key,guid,url,title,published_at)
+       VALUES ($1,'trade',$1,'https://x/a',$2, now())`, [id, title]);
+    await c.query(
+      `INSERT INTO news_matches (id,item_id,company_id,tier,evidence,state,mechanism)
+       VALUES ($1,$1,$2,'sector_term','ethanol',$3,$4)`, [id, CO, state, mechanism]);
+  });
+}
 
 test('a transcript too short to be one is never queued', async () => {
   await serviceTxn('system:agents', async (c) => {
@@ -145,58 +155,6 @@ test('the draft records that nothing checked it', async () => {
 
 // ---- agent 3 ------------------------------------------------------------------------------------
 
-test('the dossier prompt states what is missing, section by section', async () => {
-  // The danger is fluency over an empty record: a dossier that reads complete on a company nobody
-  // has researched is worse than a short one.
-  await enqueue({ agentKey: 'company-dossier', companyId: CO, requestedBy: ME });
-  const model = scriptedModel([scriptedOk({
-    business: 'Unclear from the record.', financial_history: 'None held.', ownership: 'None held.',
-    recent_events: [], open_questions: ['What does it actually sell?'],
-    gaps: ['No results parsed', 'No filings held', 'Nobody has written a note'],
-  })]);
-  await drain(1, model);
-
-  const task = model.calls[0]!.task;
-  assert.match(task, /REPORTED PERIODS:\n {2}none held/);
-  assert.match(task, /none — nobody here has written anything on this company yet/);
-  assert.match(task, /belongs in `gaps`/);
-  assert.match(task, /percentages OF THE PROMOTER HOLDING/, 'the trap travels with the number');
-});
-
-test('the dossier draft carries the counts it was built from', async () => {
-  await serviceTxn('system:ingest', async (c) => {
-    await c.query(
-      `INSERT INTO filings (id, company_id, symbol, category, announced_at)
-       VALUES ('f1',$1,'PRAJIND','Outcome of Board Meeting', now())`, [CO]);
-  });
-  await enqueue({ agentKey: 'company-dossier', companyId: CO, requestedBy: ME });
-  await drain(1, scriptedModel([scriptedOk({
-    business: 'x', financial_history: 'x', ownership: 'x', recent_events: [], open_questions: [], gaps: [],
-  })]));
-  const sources = await readTxn(async (c) => {
-    const { rows } = await c.query<{ sources: { kind: string; count?: number }[] }>(
-      'SELECT sources FROM ai_drafts',
-    );
-    return rows[0]!.sources;
-  });
-  assert.equal(sources.find((s) => s.kind === 'filings')?.count, 1);
-  assert.equal(sources.find((s) => s.kind === 'fundamentals')?.count, 0,
-    'a zero here is how a reviewer sees the dossier claimed more than the record holds');
-});
-
-// ---- agent 6 ------------------------------------------------------------------------------------
-
-async function newsItem(id: string, title: string, state: string, mechanism: string | null) {
-  await serviceTxn('system:news', async (c) => {
-    await c.query(
-      `INSERT INTO news_items (id,source_key,guid,url,title,published_at)
-       VALUES ($1,'trade',$1,'https://x/a',$2, now())`, [id, title]);
-    await c.query(
-      `INSERT INTO news_matches (id,item_id,company_id,tier,evidence,state,mechanism)
-       VALUES ($1,$1,$2,'sector_term','ethanol',$3,$4)`, [id, CO, state, mechanism]);
-  });
-}
-
 test('the brief leads with filings, because for an SME they are the news', async () => {
   await serviceTxn('system:ingest', async (c) => {
     await c.query(
@@ -249,13 +207,17 @@ test('a handler that runs bad SQL records why, rather than being swallowed', asy
   // The transaction the handler works in is the same one that records its failure. Without a
   // savepoint the failing statement poisons it, the record fails too, and the run's error reads
   // "current transaction is aborted" — which names nothing and sends you to read schemas.
+  // Deliberately an agent whose real handler this file never loads. `registerHandler` replaces a
+  // handler globally, so breaking one this file also exercises breaks every later test that uses
+  // it — which is what happened when this was moved off `company-dossier` (cut in 0034) onto
+  // `news-brief`. The key must still name a live agent: `agent_runs.agent_key` is a foreign key.
   const { registerHandler } = await import('./runner.ts');
-  registerHandler('company-dossier', async (ctx) => {
+  registerHandler('forensics-review', async (ctx) => {
     await ctx.c.query('SELECT column_that_does_not_exist FROM companies');
     return { done: true };
   });
 
-  await enqueue({ agentKey: 'company-dossier', companyId: CO, requestedBy: ME });
+  await enqueue({ agentKey: 'forensics-review', companyId: CO, requestedBy: ME });
   const r = await drain(1, scriptedModel([]));
   assert.equal(r.failed, 1);
 

@@ -163,7 +163,6 @@ async function landForensics(
  */
 const DOCUMENT_KIND: Record<string, string> = {
   'news-brief': 'brief',
-  'company-dossier': 'memo',
 };
 
 /** A title somebody can pick out of a list, without opening it. */

@@ -16,7 +16,6 @@ import * as concall from '../lib/agents/concall.ts';
 // (sweepScheduled covers them); agents 3 and 6 are prompted and are enqueued by a person, but every
 // handler must be registered before the queue is drained or a run finds no code to execute.
 import '../lib/agents/notify.ts';
-import '../lib/agents/dossier.ts';
 import '../lib/agents/newsbrief.ts';
 
 async function main(): Promise<void> {
