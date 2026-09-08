@@ -98,8 +98,30 @@ function fitsSchema(value: unknown, schema: Record<string, unknown>): string | n
   return missing.length > 0 ? `missing required: ${missing.join(', ')}` : null;
 }
 
+/**
+ * Set `additionalProperties: false` on every object in a schema, at every depth.
+ *
+ * Structured outputs reject a schema without it: *"For 'object' type, 'additionalProperties' must
+ * be explicitly set to false"* — a 400 before the model is ever reached. Measured 08-Sep-2026 on
+ * the first live call this system ever made: setting it only on the root object fails identically,
+ * so it is genuinely every object and not just the top one.
+ *
+ * Done here rather than in each agent's schema because it is a property of the transport, not of
+ * anything an agent means. Ten of the eleven object schemas in this tree lacked it, which is what
+ * a rule every caller has to remember gets you — and only the news gate's happened to have it.
+ */
+export function sealObjects(node: unknown): unknown {
+  if (Array.isArray(node)) return node.map(sealObjects);
+  if (typeof node !== 'object' || node === null) return node;
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(node as Record<string, unknown>)) out[k] = sealObjects(v);
+  if (out['type'] === 'object') out['additionalProperties'] = false;
+  return out;
+}
+
 export const liveModel: Model = async (input) => {
   const maxTokens = input.maxTokens ?? DEFAULT_MAX_TOKENS;
+  const schema = sealObjects(input.schema);
 
   const call = (max: number) =>
     anthropic().messages.create({
@@ -110,7 +132,7 @@ export const liveModel: Model = async (input) => {
       thinking: { type: 'adaptive' },
       output_config: {
         effort: input.effort ?? 'high',
-        format: { type: 'json_schema', schema: input.schema },
+        format: { type: 'json_schema', schema },
       },
     } as Anthropic.MessageCreateParamsNonStreaming);
 
