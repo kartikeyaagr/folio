@@ -5,6 +5,7 @@ import {
 } from '@/lib/portfolio-view.ts';
 import { listCompanies } from '@/lib/companies.ts';
 import { DialogButton } from '@/components/DialogButton.tsx';
+import { TradeForm } from '@/components/TradeForm.tsx';
 import {
   AppHeader, Blank, Card, Empty, Seg, Stat, StatRow, crore, inr, signedPct,
 } from '@/components/ui.tsx';
@@ -67,66 +68,7 @@ export default async function PortfolioPage({
   // checked server-side — just the day somebody recording a trade almost always means.
   const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
 
-  const tradeForm = (
-    <form action={recordTradeAction} className="form-grid">
-      <label className="lbl">
-        Company
-        <select className="field" name="companyId" defaultValue="" required>
-          <option value="" disabled>
-            Pick a name
-          </option>
-          {names.map((co) => (
-            <option key={co.id} value={co.id}>
-              {co.symbol} — {co.name}
-            </option>
-          ))}
-        </select>
-      </label>
-      <div className="form-row">
-        <label className="lbl">
-          Side
-          <select className="field" name="side" defaultValue="buy" required>
-            <option value="buy">Buy</option>
-            <option value="sell">Sell</option>
-          </select>
-        </label>
-        <label className="lbl">
-          Trade date
-          <input className="field" type="date" name="tradeDate" defaultValue={today} required />
-        </label>
-      </div>
-      <div className="form-row">
-        <label className="lbl">
-          Quantity
-          <input className="field" name="quantity" inputMode="decimal" required />
-        </label>
-        <label className="lbl">
-          Price
-          <input className="field" name="price" inputMode="decimal" required />
-        </label>
-        <label className="lbl">
-          Fees
-          <input className="field" name="fees" inputMode="decimal" defaultValue="0" />
-        </label>
-      </div>
-      {/* Said before it is needed. An identical fill is refused by a unique index, which is what
-          turns a double-submitted form into an error instead of a doubled position — and a genuine
-          second fill on the same day at the same price is routine enough to need a way through. */}
-      <p className="picker-none">
-        An identical fill on the same day is refused as a double submission. For a genuine second
-        fill, put 2 here.
-      </p>
-      <label className="lbl">
-        Fill number
-        <input className="field" name="seq" inputMode="numeric" placeholder="1" />
-      </label>
-      <div className="form-actions">
-        <button type="submit" className="btn btn-primary">
-          Record the trade
-        </button>
-      </div>
-    </form>
-  );
+  const tradeForm = <TradeForm names={names} today={today} action={recordTradeAction} />;
 
   const capitalForm = (
     <form action={recordCapitalAction} className="form-grid">
@@ -342,7 +284,7 @@ export default async function PortfolioPage({
                   </thead>
                   <tbody>
                     {trades.map((t) => (
-                      <tr key={t.id} className={t.reversedAt ? 'is-reversed' : undefined}>
+                      <tr key={t.id} className={t.reversedAt ? 'pf-void' : undefined}>
                         <td className="num">{t.tradeDate}</td>
                         <td><Link href={`/company/${t.symbol}`}>{t.symbol}</Link></td>
                         <td>{t.side}</td>
@@ -356,9 +298,9 @@ export default async function PortfolioPage({
                             not remove it. Its own cell can opt out; a nested span cannot. */}
                         <td className="cell-note">
                           {t.reversedAt ? (
-                            // Struck through and kept. A corrected entry that vanished would leave
-                            // a book nobody could reconcile against a broker note — so the row
-                            // stays, and its reason stays legible, being the explanation rather
+                            // Faded and kept. A corrected entry that vanished would leave a book
+                            // nobody could reconcile against a broker note — so the row stays,
+                            // and its reason stays at full strength, being the explanation rather
                             // than the mistake.
                             <span className="cell-sub">
                               reversed — {t.reversalReason ?? 'no reason recorded'}
@@ -373,8 +315,8 @@ export default async function PortfolioPage({
                                 <input type="hidden" name="id" value={t.id} />
                                 <p className="picker-none">
                                   {t.tradeDate} · {t.side} {inr(t.quantity, 0)} at {inr(t.price)}.
-                                  The row stays on the book, struck through with this reason, and
-                                  the position is replayed without it.
+                                  The row stays on the book, faded, with this reason beside it,
+                                  and the position is replayed without it.
                                 </p>
                                 {/* Required by the library too, and asked for here rather than
                                     only refused there: a reversal with no reason leaves a book

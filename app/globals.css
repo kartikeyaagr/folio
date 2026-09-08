@@ -632,18 +632,12 @@ select:focus-visible {
 .cell-note {
   white-space: normal;
 }
-/* A reversed trade stays on the book and stays legible: it is still a fact about what was entered, */
-/* and a row that vanished would leave a book nobody could reconcile against a broker note.          */
-.tbl tr.is-reversed td {
-  color: var(--muted);
-  text-decoration: line-through;
-  text-decoration-color: color-mix(in srgb, var(--red) 55%, transparent);
-}
-/* The reason is the explanation, not the mistake, so its cell opts out. It has to be the cell and  */
-/* not a span inside one: a decoration set on an ancestor is drawn over every descendant, and       */
-/* `text-decoration: none` on a child does not remove it.                                            */
-.tbl tr.is-reversed td.cell-note {
-  text-decoration: none;
+/* A reversed trade stays on the book, faded — `.pf-void` in styles/portfolio.css. Its reason is    */
+/* the explanation rather than the mistake, so that cell keeps full strength. It has to be the cell */
+/* and not a span inside one: opacity applies to the box that sets it and everything under it, and  */
+/* a child cannot raise what its parent lowered.                                                    */
+.tbl tr.pf-void td.cell-note {
+  opacity: 1;
 }
 
 /* --- Chip ------------------------------------------------------------------------------------ */
