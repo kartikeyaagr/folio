@@ -7,6 +7,9 @@ OnFailure=trisula-alert@%n.service
 
 [Service]
 Type=oneshot
+# Without this a hung socket holds the unit in "activating" forever: it never fails, so
+# OnFailure= never fires and the job simply never runs again.
+TimeoutStartSec=30min
 User=trisula
 WorkingDirectory=/srv/trisula
 EnvironmentFile=/etc/trisula/trisula.env

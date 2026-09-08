@@ -7,7 +7,10 @@ Wants=network-online.target
 Type=simple
 User=trisula
 WorkingDirectory=/srv/trisula
-EnvironmentFile=/etc/trisula/env
+EnvironmentFile=/etc/trisula/trisula.env
+# postgres:///trisula parses to an empty host, so pg falls through to PGHOST and then to
+# localhost:5432 over TCP — which §4 deliberately never opens. The job units already set this.
+Environment=PGHOST=/var/run/postgresql
 # TZ on the unit, like every job. Every date this system computes is an Indian trading date, and
 # inheriting the box's timezone is how a reporting period silently moves a day.
 Environment=TZ=Asia/Kolkata

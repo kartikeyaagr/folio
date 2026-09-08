@@ -28,7 +28,12 @@ age-keygen -o "$KEY" 2>/dev/null
 RECIPIENT="$(age-keygen -y "$KEY")"
 
 echo "==> dump and encrypt"
-BACKUP_AGE_RECIPIENT="$RECIPIENT" BACKUP_DIR="$WORK" "$(dirname "${BASH_SOURCE[0]}")/backup.sh" "$SRC" >/dev/null
+# S3 is cleared explicitly. Under systemd this script inherits the shared env file, and
+# backup.sh uploads whenever BACKUP_S3_BUCKET is set — so without this the weekly drill
+# puts a throwaway-key archive in the real bucket beside the ones you can actually decrypt.
+BACKUP_AGE_RECIPIENT="$RECIPIENT" BACKUP_DIR="$WORK" \
+  BACKUP_S3_BUCKET= BACKUP_S3_ENDPOINT= \
+  "$(dirname "${BASH_SOURCE[0]}")/backup.sh" "$SRC" >/dev/null
 ARCHIVE="$(find "$WORK" -name "${SRC}-*.dump.age" | head -1)"
 [ -n "$ARCHIVE" ] || { echo "no archive produced" >&2; exit 1; }
 

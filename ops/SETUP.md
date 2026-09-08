@@ -23,7 +23,12 @@ milliseconds away.
 | Type | `t4g.small` — 2 vCPU, 2 GB. Enough for 3 users, 40 names, end-of-day |
 | AMI | Ubuntu 24.04 LTS, **arm64** |
 | Storage | 40 GB gp3 |
-| Key pair | Create one, download the `.pem`, `chmod 400` it |
+| Key pair | **Import your own.** `ssh-keygen -t ed25519 -f ~/.ssh/trisula`, then import the `.pub` |
+
+**Import rather than download.** Creating the key pair in the console has AWS generate your private
+key and hand it back over a browser download. Generating it on the laptop and importing only the
+public half means the private key never exists anywhere but your own disk — the same property §7
+insists on for the backup key, for the same reason.
 
 `t4g` is burstable and this workload is bursty by nature — idle most of the day, busy at 18:45.
 If the ingest ever feels slow, `t4g.medium` is a stop-and-restart away, not a rebuild.
@@ -33,7 +38,7 @@ If you want the web app on the public internet instead, add 443 and put a revers
 but Tailscale is fewer moving parts and no certificate to renew.
 
 ```bash
-ssh -i ~/.ssh/trisula.pem ubuntu@<public-ip>
+ssh -i ~/.ssh/trisula ubuntu@<public-ip>
 ```
 
 ## 2. System packages
@@ -41,9 +46,14 @@ ssh -i ~/.ssh/trisula.pem ubuntu@<public-ip>
 ```bash
 sudo apt update && sudo apt upgrade -y
 sudo apt install -y curl git build-essential age unzip
+
+# backup.sh calls `aws s3 cp`. apt ships v1; this is v2, for Graviton.
+curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-aarch64.zip" -o /tmp/awscliv2.zip
+unzip -q /tmp/awscliv2.zip -d /tmp && sudo /tmp/aws/install && aws --version
 ```
 
-`age` is the backup encryption. It must be present before §7.
+`age` is the backup encryption. It must be present before §7, and the AWS CLI before the first
+nightly upload — without it `backup.sh` writes the local copy and then fails at the `aws` call.
 
 ## 3. Node 22+ and pnpm
 
@@ -80,11 +90,35 @@ sudo -u postgres createdb --owner=trisula trisula
 ## 5. The application user and code
 
 ```bash
-sudo useradd --system --create-home --home-dir /srv/trisula --shell /bin/bash trisula
-sudo mkdir -p /var/lib/trisula/{backups,attachments} /etc/trisula
+# NOT --create-home: it fills /srv/trisula from /etc/skel, and `git clone` into a
+# non-empty directory is a fatal error. The clone needs the directory empty.
+sudo useradd --system --home-dir /srv/trisula --shell /bin/bash trisula
+sudo mkdir -p /srv/trisula /var/lib/trisula/{backups,attachments} /etc/trisula
 sudo chown -R trisula:trisula /srv/trisula /var/lib/trisula
+```
 
-sudo -u trisula git clone <your-repo-url> /srv/trisula
+The repo is **private**, so the box needs its own credential. Use a **read-only deploy key**: it
+reaches this one repo and cannot write to it. Keep it outside the repo directory, or the clone has
+the same non-empty-target problem.
+
+```bash
+sudo ssh-keygen -t ed25519 -f /etc/trisula/deploy_key -N "" -C "trisula-vm"
+sudo chown trisula:trisula /etc/trisula/deploy_key /etc/trisula/deploy_key.pub
+cat /etc/trisula/deploy_key.pub
+```
+
+Add that public key to the repo under **Settings → Deploy keys → Add deploy key**, with *Allow
+write access* left unchecked. A personal access token in the clone URL also works and is worse: it
+grants everything the token can reach, and it persists in `git remote -v` and in shell history.
+
+```bash
+export GSC='ssh -i /etc/trisula/deploy_key -o IdentitiesOnly=yes'
+sudo -u trisula GIT_SSH_COMMAND="$GSC" \
+  git clone git@github.com:kartikeyaagr/trisula-v3.git /srv/trisula
+
+# Persist it, so `git pull` on later deploys uses the same key.
+sudo -u trisula git -C /srv/trisula config core.sshCommand "$GSC"
+
 cd /srv/trisula
 sudo -u trisula pnpm install --frozen-lockfile
 ```
@@ -160,12 +194,8 @@ misconfiguration away from the fund's positions being on the internet.
 `pnpm build` runs on the VM rather than being shipped as an artefact: the tree is small, the build
 is under a minute, and a box that can rebuild itself is a box that can be recovered from git alone.
 
-There is no signup route. Create the first account here, which prints a claim URL and a set of
-recovery codes exactly once:
-
-```bash
-sudo -u trisula pnpm exec tsx jobs/seed-user.ts --email you@trisulacapital.com --name "Your Name"
-```
+Accounts are created in §11, **after** the migrations run. Seeding here would fail: there is no
+`users` table yet.
 
 ## 9. Schedules
 
@@ -185,6 +215,7 @@ sudo systemctl enable --now \
   trisula-news-poll.timer \
   trisula-news-gate.timer \
   trisula-agents.timer \
+  trisula-alerts.timer \
   trisula-backup.timer \
   trisula-backup-verify.timer
 
@@ -226,7 +257,10 @@ sudo -u trisula bash -c 'set -a; . /etc/trisula/trisula.env; set +a; \
   pnpm exec tsx jobs/refresh-securities.ts'
 
 # Three accounts. There is no signup route; this is the only way one exists.
-# Prints a temporary password and eight recovery codes, ONCE. Put them in the password manager.
+# Prints a TEMPORARY PASSWORD and eight recovery codes, ONCE. Put them in the password manager.
+# Note: nothing in the app can change that password yet, and no route redeems a recovery code —
+# both functions exist in lib/auth.ts with no caller. Until that is wired, the seeded password
+# IS the password. Audited 08-Sep-2026.
 sudo -u trisula bash -c 'set -a; . /etc/trisula/trisula.env; set +a; \
   pnpm exec tsx jobs/seed-user.ts --email you@trisulacapital.com --name "Your Name"'
 ```
