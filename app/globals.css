@@ -610,6 +610,42 @@ select:focus-visible {
   color: var(--muted);
 }
 
+/* A second line inside a cell: the company's name under its symbol, an agent's key under its       */
+/* title. A block, not an inline span — these were spans with no rule behind them, so every one     */
+/* read as run-on text: "TCLTransformers and Rectifiers".                                           */
+.cell-sub {
+  display: block;
+  margin-top: 2px;
+  font-size: 11.5px;
+  font-weight: 400;
+  line-height: 1.35;
+  color: var(--muted);
+}
+/* A cell holding prose rather than a figure. Given a width so it wraps somewhere sensible instead  */
+/* of squeezing every other column out of the table.                                                */
+.cell-wrap {
+  white-space: normal;
+  min-width: 200px;
+}
+/* The cell that ends a row: the control for it, or the note that stands in once the control has    */
+/* been used and there is nothing left to do.                                                        */
+.cell-note {
+  white-space: normal;
+}
+/* A reversed trade stays on the book and stays legible: it is still a fact about what was entered, */
+/* and a row that vanished would leave a book nobody could reconcile against a broker note.          */
+.tbl tr.is-reversed td {
+  color: var(--muted);
+  text-decoration: line-through;
+  text-decoration-color: color-mix(in srgb, var(--red) 55%, transparent);
+}
+/* The reason is the explanation, not the mistake, so its cell opts out. It has to be the cell and  */
+/* not a span inside one: a decoration set on an ancestor is drawn over every descendant, and       */
+/* `text-decoration: none` on a child does not remove it.                                            */
+.tbl tr.is-reversed td.cell-note {
+  text-decoration: none;
+}
+
 /* --- Chip ------------------------------------------------------------------------------------ */
 
 .chip {
@@ -787,6 +823,14 @@ select.field {
   flex-wrap: wrap;
   gap: 8px;
   align-items: center;
+}
+/* The quiet line inside a panel or a form that says what the control will do, or that a search    */
+/* matched nothing. Set below the body size so it reads as the caption it is.                       */
+.picker-none {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted);
 }
 /* Something went wrong, said in place. */
 .alert {
