@@ -933,3 +933,159 @@ details.chk-stage > .chk-stage-head:hover {
 .stmt-bar .spacer {
   flex: 1;
 }
+
+/* --- The price chart ------------------------------------------------------------------------ */
+/* An SVG drawn on the server: a polyline over scaled points, no library and no client script.
+   The y-axis is not zero-based — a stock at 700 that moved 40 is a 6% move, and anchoring at zero
+   flattens it — so the low and high are labelled and the scale is stated rather than inferred. */
+
+.chart {
+  display: grid;
+  gap: 10px;
+}
+.chart-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 10px;
+}
+.chart-head .spacer,
+.chart-foot .spacer {
+  flex: 1;
+}
+.chart-last {
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+.chart-move {
+  font-size: 13px;
+  font-weight: 700;
+}
+.chart-move.is-up {
+  color: var(--teal);
+}
+.chart-move.is-down {
+  color: var(--red);
+}
+.chart-span {
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+.chart-ranges {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface-2);
+}
+.chart-ranges a {
+  padding: 3px 10px;
+  border-radius: 999px;
+  color: var(--ink-2);
+  font-size: 11.5px;
+  font-weight: 600;
+  text-decoration: none;
+  transition: background 0.15s var(--ease), color 0.15s var(--ease);
+}
+.chart-ranges a:hover {
+  background: var(--surface);
+  color: var(--ink);
+}
+.chart-ranges a:focus-visible {
+  outline: 2px solid var(--navy);
+  outline-offset: 1px;
+}
+.chart-ranges a[aria-current='true'] {
+  background: var(--navy);
+  color: var(--on-navy);
+}
+
+/* preserveAspectRatio="none" stretches the viewBox to the box, so the line fills whatever width
+   the card has. vector-effect keeps the stroke one pixel through that stretch. */
+.chart-svg {
+  display: block;
+  width: 100%;
+  height: 200px;
+}
+.chart-svg .line {
+  fill: none;
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+.chart-svg .line.is-up {
+  stroke: var(--teal);
+}
+.chart-svg .line.is-down {
+  stroke: var(--red);
+}
+.chart-foot {
+  display: flex;
+  gap: 12px;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+/* --- Sections that scroll rather than push the page down ------------------------------------- */
+/* `max-height`, never `height`: a card with two filings is two filings tall and a card with forty
+   is capped and scrolls. The cap is in rem so it tracks the reader's text size, and it is set to
+   about three items of ordinary length — which is what "three stories, then scroll" means when the
+   headlines are not all the same length. */
+
+.scroll-box {
+  /* The rem cap is the fallback, used until a measured one arrives and whenever nothing measures.
+     `--rows-cap` is set by FilterList from the real height of the nth row. */
+  max-height: var(--rows-cap, 19rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+/* A scrolled region needs a focus ring of its own: it is keyboard-reachable and, without one,
+   a keyboard reader has no idea what has focus. */
+.scroll-box:focus-visible {
+  outline: 2px solid var(--navy);
+  outline-offset: 2px;
+}
+
+.filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.filter-bar .field {
+  flex: 1 1 200px;
+  min-width: 0;
+  height: 30px;
+  font-size: 12.5px;
+}
+.filter-count {
+  font-size: 11.5px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+/* --- News, inside a company card ------------------------------------------------------------ */
+/* The news page gives each item 14px/18px of its own padding because there it is the whole card.
+   Nested in a card body that already pads, that doubles up — which is the whitespace. */
+
+.news-compact .news-item {
+  padding: 9px 0;
+  gap: 8px;
+}
+.news-compact .news-title {
+  font-size: 13px;
+  line-height: 1.35;
+}
+.news-compact .news-why {
+  margin-top: 2px;
+  font-size: 11.5px;
+  line-height: 1.4;
+}
+.news-compact .item-kind {
+  margin-bottom: 2px;
+  font-size: 10.5px;
+}

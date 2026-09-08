@@ -3,12 +3,15 @@ import { notFound } from 'next/navigation';
 
 import { companyPage } from '@/lib/company-view.ts';
 import { financials, type Basis } from '@/lib/financials.ts';
+import { isRange, priceSeries, type Range } from '@/lib/prices.ts';
 import { filings } from '@/lib/filings.ts';
 import { newsFor } from '@/lib/engagement.ts';
 import {
   AppHeader, Blank, Card, Chip, Empty, Fact, Facts, Seg, Tabs, crore, inr, type Tone,
 } from '@/components/ui.tsx';
 import { Statement } from '@/components/Statement.tsx';
+import { PriceChart } from '@/components/PriceChart.tsx';
+import { FilterList } from '@/components/FilterList.tsx';
 
 import { requireUser } from '../../../_lib/session.ts';
 
@@ -39,7 +42,7 @@ export default async function CompanyPage({
   params: Promise<{ symbol: string }>;
   // Both live in the URL, so a refresh lands where you were and a link to "PRAJIND consolidated,
   // yearly" is a link somebody can send.
-  searchParams: Promise<{ basis?: string; pnl?: string }>;
+  searchParams: Promise<{ basis?: string; pnl?: string; range?: string }>;
 }) {
   const user = await requireUser();
   const { symbol } = await params;
@@ -49,19 +52,25 @@ export default async function CompanyPage({
   const sp = await searchParams;
   const wanted = sp.basis === 'standalone' || sp.basis === 'consolidated' ? (sp.basis as Basis) : undefined;
 
-  const [recentFilings, news, fin] = await Promise.all([
+  const range: Range = isRange(sp.range) ? sp.range : '1y';
+
+  const [recentFilings, news, fin, prices] = await Promise.all([
     filings({ companyId: co.id, days: 180, limit: 25 }),
     newsFor(user.userId, { companyId: co.id, days: 90 }),
     financials(co.id, wanted),
+    priceSeries(co.id, range),
   ]);
 
   // Whichever period kind the company actually files, defaulting to the longest it has — a year
   // says more about a business than a quarter, and an SME half-yearly filer has no quarters at all.
   const pnlTab = fin.pnl.find((p) => p.kind === sp.pnl) ?? fin.pnl[0];
-  const href = (next: { basis?: string; pnl?: string }): string => {
+  // One builder for every link on the page, so changing the range does not silently reset the
+  // basis and a link carries the whole view rather than one third of it.
+  const href = (next: { basis?: string; pnl?: string; range?: string }): string => {
     const q = new URLSearchParams();
     q.set('basis', next.basis ?? fin.basis);
     if (next.pnl ?? pnlTab?.kind) q.set('pnl', next.pnl ?? pnlTab!.kind);
+    q.set('range', next.range ?? range);
     return `?${q.toString()}`;
   };
 
@@ -112,6 +121,10 @@ export default async function CompanyPage({
             {co.status === 'exited' ? 'Exited' : 'Passed'}: {co.closedReason}
           </p>
         )}
+
+        <Card title="Price">
+          <PriceChart series={prices} href={(r) => href({ range: r })} />
+        </Card>
 
         <Card
           title="Financials"
@@ -208,7 +221,7 @@ export default async function CompanyPage({
           {co.insider.length === 0 ? (
             <Empty>No PIT disclosures are held for this company.</Empty>
           ) : (
-            <div className="tbl-scroll">
+            <div className="tbl-scroll scroll-box" tabIndex={0}>
               <table className="tbl">
                 <thead>
                   <tr>
@@ -241,9 +254,16 @@ export default async function CompanyPage({
           {recentFilings.length === 0 ? (
             <Empty>Nothing filed in the last six months.</Empty>
           ) : (
-            <ul className="item-plain">
+            <FilterList placeholder="Filter filings…" label="Filter filings" show={5}>
+            <ul className="item-plain scroll-box" tabIndex={0}>
               {recentFilings.map((f) => (
-                <li key={f.id}>
+                <li
+                  key={f.id}
+                  // The haystack is chosen: the category and the summary, which is what somebody
+                  // means when they type "auditor". The date is excluded — nobody filters a
+                  // six-month list by typing a timestamp.
+                  data-text={`${f.category ?? ''} ${f.summary ?? ''}`.toLowerCase()}
+                >
                   <span className="num">{ist(f.announcedAt)}</span>
                   <b>{f.category ?? 'filing'}</b>
                   <span>{f.summary ?? ''}</span>
@@ -253,6 +273,7 @@ export default async function CompanyPage({
                 </li>
               ))}
             </ul>
+            </FilterList>
           )}
         </Card>
 
@@ -263,9 +284,14 @@ export default async function CompanyPage({
               mechanism appear anywhere in the app.
             </Empty>
           ) : (
-            <ul className="news-list">
+            <FilterList placeholder="Filter news…" label="Filter news" show={3}>
+            <ul className="news-list news-compact scroll-box" tabIndex={0}>
               {news.map((n) => (
-                <li key={n.id} className="news-item">
+                <li
+                  key={n.id}
+                  className="news-item"
+                  data-text={`${n.title} ${n.source}`.toLowerCase()}
+                >
                   <div className="news-main">
                     <p className="item-kind">
                       <span>{n.source}</span>
@@ -277,6 +303,7 @@ export default async function CompanyPage({
                 </li>
               ))}
             </ul>
+            </FilterList>
           )}
         </Card>
 
@@ -284,7 +311,7 @@ export default async function CompanyPage({
           {co.events.length === 0 ? (
             <Empty>Nothing scheduled, and nothing in the last month.</Empty>
           ) : (
-            <ul className="desk-soon">
+            <ul className="desk-soon scroll-box" tabIndex={0}>
               {co.events.map((e) => (
                 <li key={e.id}>
                   <span className="desk-soon-when">{e.onDate}</span>
