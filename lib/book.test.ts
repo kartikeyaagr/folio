@@ -57,6 +57,27 @@ after(async () => {
 
 // ---- the arithmetic, with no database in the way ------------------------------------------------
 
+test('a dividend is paid on the position at the record date, not at confirmation', () => {
+  // Hold 10,000, buy 5,000 more after the record date, confirm the dividend late. Folding the
+  // whole history pays on 15,000 and writes a ledger row for Rs 37,500 against a receipt for
+  // Rs 25,000 — a cash figure nothing else in the system would ever contradict.
+  const trades = [
+    { trade_date: '2026-01-10', side: 'buy' as const, quantity: '10000', price: '100', fees: '0', created_at: new Date(1) },
+    { trade_date: '2026-04-01', side: 'buy' as const, quantity: '5000', price: '110', fees: '0', created_at: new Date(2) },
+  ];
+  assert.equal(replay(trades, []).quantity, 15000, 'today');
+  assert.equal(replay(trades, [], '2026-03-01').quantity, 10000, 'at the record date');
+});
+
+test('an event on the record date itself is included', () => {
+  // The boundary is inclusive: a trade settling on the record date is held on the record date.
+  const trades = [
+    { trade_date: '2026-03-01', side: 'buy' as const, quantity: '1000', price: '100', fees: '0', created_at: new Date(1) },
+  ];
+  assert.equal(replay(trades, [], '2026-03-01').quantity, 1000);
+  assert.equal(replay(trades, [], '2026-02-28').quantity, 0);
+});
+
 test('a buy sets the average to what was paid, fees included', () => {
   const p = replay([trade('2026-01-05', 'buy', 100, 50, 200)], []);
   assert.equal(p.quantity, 100);

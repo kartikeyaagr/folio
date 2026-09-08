@@ -7,6 +7,7 @@
  * way every time.
  */
 
+import { positionAsOf } from './book.ts';
 import { readTxn } from './db.ts';
 
 export interface HoldingRow {
@@ -98,4 +99,58 @@ export async function cash(limit = 100): Promise<{ rows: CashRow[]; balance: str
     );
     return { rows, balance: total[0]!.balance };
   });
+}
+
+export interface PendingAction {
+  id: string;
+  symbol: string;
+  name: string;
+  kind: string;
+  recordDate: string;
+  ratioFrom: string | null;
+  ratioTo: string | null;
+  amountPerShare: string | null;
+  companyId: string;
+  /** The position on the record date. What the action will actually act on, shown before it does. */
+  quantityAtRecord: number;
+}
+
+/**
+ * Corporate actions the feed has announced and nobody has confirmed.
+ *
+ * B5's confirm step exists because an exchange announcing a bonus is not the same as the bonus
+ * having happened to us. Nothing an ingest writes touches a position until a person says so.
+ *
+ * The quantity shown is the position **as of the record date**, which is what the action will act
+ * on — so a reader can see the number before agreeing to it rather than afterwards in the ledger.
+ *
+ * It is replayed rather than counted. Summing the fills up to the record date looks equivalent and
+ * is not: on a name that has already taken a bonus, the sum of its fills is the quantity from
+ * before that bonus, while `confirmAction` applies the new one to the quantity after it. The
+ * screen would then state one number and the ledger record another, with nothing to say which was
+ * meant. One replay each, at most fifty of them, which is cheaper than that disagreement.
+ */
+export async function pendingActions(): Promise<PendingAction[]> {
+  const rows = await readTxn(async (c) => {
+    const { rows } = await c.query<Omit<PendingAction, 'quantityAtRecord'>>(
+      `SELECT a.id, a.company_id AS "companyId", co.symbol, co.name, a.kind,
+              a.record_date::text AS "recordDate",
+              a.ratio_from::text AS "ratioFrom",
+              a.ratio_to::text AS "ratioTo",
+              a.amount_per_share::text AS "amountPerShare"
+         FROM corporate_actions a
+         JOIN companies co ON co.id = a.company_id
+        WHERE a.applied_at IS NULL
+        ORDER BY a.record_date DESC
+        LIMIT 50`,
+    );
+    return rows;
+  });
+
+  return Promise.all(
+    rows.map(async (r) => ({
+      ...r,
+      quantityAtRecord: (await positionAsOf(r.companyId, r.recordDate)).quantity,
+    })),
+  );
 }

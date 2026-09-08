@@ -64,7 +64,7 @@ export interface Position {
  * An action applies to the quantity held **as of its record date**, so on a shared date the trades
  * settle first and the action then acts on the resulting position.
  */
-export function replay(trades: Trade[], actions: Action[]): Position {
+export function replay(trades: Trade[], actions: Action[], asOf?: string): Position {
   type Event =
     | { on: string; order: 0; kind: 'trade'; t: Trade }
     | { on: string; order: 1; kind: 'action'; a: Action };
@@ -72,7 +72,13 @@ export function replay(trades: Trade[], actions: Action[]): Position {
   const events: Event[] = [
     ...trades.map((t): Event => ({ on: t.trade_date, order: 0, kind: 'trade', t })),
     ...actions.map((a): Event => ({ on: a.record_date, order: 1, kind: 'action', a })),
-  ].sort((x, y) => (x.on === y.on ? x.order - y.order : x.on < y.on ? -1 : 1));
+  ]
+    // `asOf` stops the fold at a date. A dividend is paid on the quantity held on its **record
+    // date**, not on the quantity held whenever somebody got round to confirming it: hold 10,000,
+    // buy 5,000 more, confirm a Rs 2.50 dividend late, and folding to today pays Rs 37,500 against
+    // a receipt for Rs 25,000. The comparison is on ISO dates, which sort as strings.
+    .filter((e) => asOf === undefined || e.on <= asOf)
+    .sort((x, y) => (x.on === y.on ? x.order - y.order : x.on < y.on ? -1 : 1));
 
   let quantity = 0;
   let costTotal = 0;
@@ -115,7 +121,7 @@ export function replay(trades: Trade[], actions: Action[]): Position {
   };
 }
 
-async function loadAndReplay(c: Client, companyId: string): Promise<Position> {
+async function loadAndReplay(c: Client, companyId: string, asOf?: string): Promise<Position> {
   const { rows: trades } = await c.query<Trade>(
     `SELECT trade_date, side, quantity::text, price::text, fees::text, created_at
        FROM transactions
@@ -130,7 +136,20 @@ async function loadAndReplay(c: Client, companyId: string): Promise<Position> {
       ORDER BY record_date`,
     [companyId],
   );
-  return replay(trades, actions);
+  return replay(trades, actions, asOf);
+}
+
+/**
+ * The position as it stood on a date.
+ *
+ * Exported so a screen can show what an action is about to act on, and show it by running the
+ * same replay the confirm will run. A screen that counted the trades itself would be right until
+ * the first company that had already taken a bonus: the sum of its fills is the quantity before
+ * that bonus, and the confirm applies the dividend to the quantity after it. One code path, so
+ * the number a person reads and the number the book uses cannot drift apart.
+ */
+export async function positionAsOf(companyId: string, on: string): Promise<Position> {
+  return readTxn((c) => loadAndReplay(c, companyId, on));
 }
 
 /** Rebuild one company's holding from its whole history. Called after every change. */
@@ -249,8 +268,10 @@ export async function confirmAction(actionId: string, actorId: string): Promise<
     const a = rows[0];
     if (!a) return null;
     if (a.kind === 'dividend') {
-      // Paid on the quantity held as of the record date, which the replay already knows.
-      const p = await loadAndReplay(c, a.company_id);
+      // Paid on the quantity held as of the record date. The replay knows how — it sorts by date
+      // already — but it had to be *asked*: this folded the whole history and paid on today's
+      // position, under a comment claiming it did not.
+      const p = await loadAndReplay(c, a.company_id, a.record_date);
       const amount = p.quantity * n(a.amount_per_share);
       await c.query(
         `INSERT INTO cash_ledger (id, on_date, kind, amount, company_id, action_id, note)
