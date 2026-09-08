@@ -25,6 +25,15 @@ import { requireUser } from '../../../_lib/session.ts';
 
 export const dynamic = 'force-dynamic';
 
+/** The taxonomy's categories, in words a reader uses. */
+const HOLDER_LABEL: Record<string, string> = {
+  promoter: 'Promoter',
+  mutual_fund: 'Mutual fund',
+  fpi: 'FPI',
+  insurance: 'Insurance',
+  other: 'Other',
+};
+
 const STATUS_TONE: Record<string, Tone> = {
   holding: 'good', working: 'navy', watching: 'neutral', exited: 'warn', passed: 'neutral',
 };
@@ -215,6 +224,51 @@ export default async function CompanyPage({
           <p className="hint">
             Pledge and encumbrance are percentages of the promoter holding, not of the company.
           </p>
+        </Card>
+
+        <Card
+          title="Shareholders"
+          action={
+            co.holders.length > 0 ? (
+              <span className="muted">everyone above 1%, as filed</span>
+            ) : undefined
+          }
+        >
+          {co.holders.length === 0 ? (
+            <Empty>
+              No shareholding pattern is held for this name yet. When one is, LODR requires it to
+              name every holder above 1% and each promoter individually.
+            </Empty>
+          ) : (
+            <div className="tbl-scroll scroll-box" tabIndex={0}>
+              <table className="tbl">
+                <thead>
+                  <tr>
+                    <th>Holder</th><th>Category</th>
+                    <th className="num">Shares</th><th className="num">Holding</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {co.holders.map((h) => (
+                    <tr key={h.name}>
+                      <td className="cell-wrap">{h.name}</td>
+                      <td>
+                        <Chip tone={h.category === 'promoter' ? 'navy' : 'neutral'}>
+                          {HOLDER_LABEL[h.category] ?? h.category}
+                        </Chip>
+                      </td>
+                      <td className="num">
+                        {h.shares ? inr(h.shares, 0) : <Blank why="Not stated for this holder" />}
+                      </td>
+                      <td className="num">
+                        {h.pct ? `${Number(h.pct).toFixed(2)}%` : <Blank why="Not stated for this holder" />}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </Card>
 
         <Card title="Insider and pledge disclosures">

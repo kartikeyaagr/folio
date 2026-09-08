@@ -59,6 +59,10 @@ export interface CompanyPage extends CompanyListRow {
     asOf: string; promoterPct: string | null; pledgePct: string | null;
     encumberedPct: string | null; fiiPct: string | null; diiPct: string | null;
   }[];
+  /** Named holders from the latest pattern. LODR names everyone above 1%; promoters always. */
+  holders: {
+    name: string; category: string; shares: string | null; pct: string | null;
+  }[];
   insider: {
     id: string; disclosedAt: Date; person: string; category: string | null; kind: string | null;
     quantity: string | null; pctBefore: string | null; pctAfter: string | null;
@@ -93,6 +97,17 @@ export async function companyPage(symbol: string): Promise<CompanyPage | null> {
                 promoter_encumbered_pct::text AS "encumberedPct",
                 fii_pct::text AS "fiiPct", dii_pct::text AS "diiPct"
            FROM shareholding_patterns WHERE company_id = $1 ORDER BY as_of DESC LIMIT 8`,
+      ),
+      holders: await rows(
+        // Ordered on the *table* column, not the output one. `SELECT pct::text` names its output
+        // column `pct`, and ORDER BY prefers an output name over a table column — so a bare
+        // `ORDER BY pct DESC` sorts the text, and 7.83 comes above 24.97. It renders as a list
+        // that looks almost sorted, which is the kind of wrong that survives a glance.
+        `SELECT name, category, shares::text, pct::text
+           FROM shareholders
+          WHERE company_id = $1
+            AND as_of = (SELECT max(as_of) FROM shareholders WHERE company_id = $1)
+          ORDER BY shareholders.pct DESC NULLS LAST`,
       ),
       insider: await rows(
         `SELECT id, disclosed_at AS "disclosedAt", person, category, kind, quantity::text,

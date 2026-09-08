@@ -24,7 +24,7 @@
  * own XBRL says INE074A01025 — the feed carries a stale identifier, so an ISIN join drops the name.
  */
 
-import { createHash } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { serviceTxn } from '../db.ts';
 import { NseSession } from './nse.ts';
 
@@ -103,6 +103,72 @@ const flag = (xml: string, name: string): boolean | null => {
   return v === null ? null : v.toLowerCase() === 'true';
 };
 
+export interface Holder {
+  name: string;
+  category: 'promoter' | 'mutual_fund' | 'fpi' | 'insurance' | 'other';
+  shares: number | null;
+  pct: number | null;
+}
+
+/**
+ * Which part of the pattern a context belongs to.
+ *
+ * Read from the context name, never from the shareholder's own name: a fund called
+ * "… Individual …" is still a fund, and a person whose name contains "Trust" is still a person.
+ */
+function categoryOf(context: string, isPromoter: boolean): Holder['category'] {
+  if (isPromoter) return 'promoter';
+  if (context.includes('MutualFundsOrUTI')) return 'mutual_fund';
+  if (context.includes('ForeignPortfolioInvestor')) return 'fpi';
+  if (context.includes('InsuranceCompanies')) return 'insurance';
+  return 'other';
+}
+
+/**
+ * Every shareholder the filing names.
+ *
+ * LODR Reg 31 requires each holder above 1% to be named and promoters to be named individually, so
+ * this is the first-party source for something usually taken from a screener — which parses this
+ * same file. Eleven names in PRAJIND's June quarter.
+ *
+ * The names sit in a `D_<Category>_ContextN` and the numbers in the `<Category>_ContextN` beside
+ * it: two contexts per holder, paired by everything after the prefix. Measured 08-Sep-2026 —
+ * nothing in the taxonomy says so, and reading the name context alone gets you eleven people and
+ * no holdings.
+ *
+ * A promoter is identified by `TypeOfPromoterShareholding` being present in the name context,
+ * because `IndividualsOrHUF` is also where large public individuals appear.
+ */
+export function parseHolders(xml: string): Holder[] {
+  const out: Holder[] = [];
+
+  for (const m of xml.matchAll(
+    /<[A-Za-z0-9_-]+:NameOfTheShareholder[^>]*contextRef="(D_[^"]+)"[^>]*>([^<]*)</g,
+  )) {
+    const [, context, raw] = m;
+    const name = (raw ?? '').trim();
+    if (!name) continue;
+
+    const paired = context!.slice(2);
+    const isPromoter =
+      new RegExp(`<[A-Za-z0-9_-]+:TypeOfPromoterShareholding[^>]*contextRef="${context}"`).test(xml);
+
+    const shares = fact(xml, 'NumberOfShares', paired);
+    out.push({
+      name,
+      category: categoryOf(paired, isPromoter),
+      shares: shares !== null && Number.isFinite(Number(shares)) ? Number(shares) : null,
+      // The same helper the totals use, so the fraction-to-percentage conversion lives in one place
+      // rather than being repeated with a chance of being repeated differently.
+      pct: pct(xml, 'ShareholdingAsAPercentageOfTotalNumberOfShares', paired),
+    });
+  }
+
+  // Largest first. A holder list read top-down should start with whoever matters most, and the
+  // filing's own order is by category rather than by size.
+  return out.sort((a, b) => (b.pct ?? -1) - (a.pct ?? -1));
+}
+
 /**
  * Read one filing.
  *
@@ -162,12 +228,38 @@ export async function storeShareholding(companyId: string, s: Shareholding): Pro
 }
 
 export interface ShareholdingResult {
+  /** Named holders stored. Zero on a filing that names nobody is possible and not a failure. */
+  named: number;
   submissions: number;
   ours: number;
   stored: number;
 }
 
 /** Fetch the index, then one XBRL per followed name that filed. */
+/**
+ * Replace the named holders for one quarter.
+ *
+ * Deleted and re-inserted rather than upserted: a holder who fell below 1% since the last filing
+ * is absent from the new one, and an upsert would leave them standing as though they were still
+ * there. The set is the fact, not each row.
+ */
+export async function storeHolders(companyId: string, asOf: string, holders: Holder[]): Promise<number> {
+  if (holders.length === 0) return 0;
+  return serviceTxn('system:ingest', async (c) => {
+    await c.query('DELETE FROM shareholders WHERE company_id = $1 AND as_of = $2', [companyId, asOf]);
+    for (const h of holders) {
+      await c.query(
+        `INSERT INTO shareholders (id, company_id, as_of, name, category, shares, pct)
+         VALUES ($1,$2,$3,$4,$5,$6,$7)
+         ON CONFLICT (company_id, as_of, name) DO UPDATE
+            SET category = EXCLUDED.category, shares = EXCLUDED.shares, pct = EXCLUDED.pct`,
+        [randomBytes(16).toString('hex'), companyId, asOf, h.name, h.category, h.shares, h.pct],
+      );
+    }
+    return holders.length;
+  });
+}
+
 export async function ingestShareholding(): Promise<ShareholdingResult> {
   const session = await NseSession.open();
   const index = await fetchIndex(session);
@@ -180,11 +272,17 @@ export async function ingestShareholding(): Promise<ShareholdingResult> {
 
   const mine = index.filter((s) => bySymbol.has(s.symbol));
   let stored = 0;
+  let named = 0;
   for (const sub of mine) {
-    const parsed = parseShareholding(await session.text(sub.xbrlUrl));
+    const xml = await session.text(sub.xbrlUrl);
+    const parsed = parseShareholding(xml);
     if (!parsed) continue;
-    await storeShareholding(bySymbol.get(sub.symbol)!, parsed);
+    const companyId = bySymbol.get(sub.symbol)!;
+    await storeShareholding(companyId, parsed);
+    // The names in the same pass, from the same bytes. Fetching this file twice to read two halves
+    // of it would be two chances for the two halves to disagree about which quarter they describe.
+    named += await storeHolders(companyId, parsed.asOf, parseHolders(xml));
     stored++;
   }
-  return { submissions: index.length, ours: mine.length, stored };
+  return { submissions: index.length, ours: mine.length, stored, named };
 }
