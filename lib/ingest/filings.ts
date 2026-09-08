@@ -24,7 +24,7 @@
  */
 
 import { NseSession } from './nse.ts';
-import { serviceTxn } from '../db.ts';
+import { serviceTxn, type Client } from '../db.ts';
 
 export type Board = 'nse_equities' | 'nse_sme';
 
@@ -62,6 +62,16 @@ function asTimestamp(value: string): Date | null {
 const ddmmyyyy = (d: Date): string =>
   `${String(d.getDate()).padStart(2, '0')}-${String(d.getMonth() + 1).padStart(2, '0')}-${d.getFullYear()}`;
 
+/**
+ * Rows without a `seq_id` are dropped, because it is the primary key and there is nothing else
+ * stable to store them under.
+ *
+ * Measured on PRAJIND's full history 08-Sep-2026: 1,031 rows served, 186 without a `seq_id`, and
+ * **every one of those 186 is dated 2004-2013** — NSE did not assign the field before about 2013.
+ * All 845 that have one are distinct, and every date parses. Of the dropped rows only 24 carry an
+ * attachment, all `.zip`. So the loss is a decade-old tail rather than a parser fault, but the
+ * caller is told the number rather than left to infer it from a total that looks complete.
+ */
 export function parseAnnouncements(board: Board, rows: Record<string, unknown>[]): Filing[] {
   const out: Filing[] = [];
   for (const r of rows) {
@@ -99,6 +109,37 @@ export async function fetchAnnouncements(days = 14, session?: NseSession): Promi
     out.push(...parseAnnouncements(board, rows));
   }
   return out;
+}
+
+/**
+ * Every announcement one company has ever filed.
+ *
+ * The endpoint takes a `symbol` and, given one, serves the company's whole history rather than the
+ * date window `fetchAnnouncements` is bounded by. Measured 08-Sep-2026: `symbol=PRAJIND` returns
+ * 1,031 rows and `symbol=AERON` 135, each entirely that company. A 30-day window 36 months back
+ * still answers with 13,376 rows, so the archive genuinely goes back years.
+ *
+ * **This is the opposite of `corporates-pit`**, where a symbol with no window is capped at 20 rows
+ * and only a symbol *with* a wide window returns everything. Same exchange, same shape of query,
+ * contradictory behaviour — which is why both are measured and written down rather than assumed
+ * from one another.
+ *
+ * Without this a followed name arrives holding only whatever the rolling window happened to catch:
+ * two names, two weeks, seven filings between them. Transcripts and investor presentations are
+ * filed as announcements, so the document corpus is bounded by exactly this call.
+ */
+export async function fetchAnnouncementsForSymbol(
+  symbol: string,
+  board: Board,
+  session?: NseSession,
+): Promise<{ filings: Filing[]; served: number; skipped: number }> {
+  const s = session ?? (await NseSession.open());
+  const index = board === 'nse_sme' ? 'sme' : 'equities';
+  const rows = await s.rows('corporate-announcements', { index, symbol: symbol.toUpperCase() });
+  const filings = parseAnnouncements(board, rows);
+  // Reported, not swallowed: 18% of PRAJIND's history has no seq_id and a caller that only saw
+  // the parsed count would read a complete-looking number and never know.
+  return { filings, served: rows.length, skipped: rows.length - filings.length };
 }
 
 export interface StoreResult {
@@ -163,22 +204,58 @@ export async function storeFilings(filings: Filing[]): Promise<StoreResult> {
 }
 
 /**
+ * The linking itself, against a caller's client.
+ *
+ * Takes a `Client` so `addCompany` can link inside the transaction that creates the company,
+ * attributed to the person who added it, rather than opening a second one underneath.
+ */
+export async function linkFilingsIn(c: Client, companyId: string): Promise<number> {
+  const { rowCount } = await c.query(
+    `UPDATE filings f
+        SET company_id = c.id,
+            linked_by  = CASE WHEN f.isin IS NOT NULL AND f.isin = c.isin THEN 'isin' ELSE 'symbol' END
+       FROM companies c
+      WHERE c.id = $1
+        AND f.company_id IS NULL
+        AND ((f.isin IS NOT NULL AND f.isin = c.isin) OR (f.isin IS NULL AND f.symbol = c.symbol))`,
+    [companyId],
+  );
+  return rowCount ?? 0;
+}
+
+/**
  * Attach filings that arrived before their company was followed.
  *
  * Adding a name should bring its history with it, and the announcement rows are already stored
- * with an ISIN. Called after `addCompany`.
+ * with an ISIN.
  */
 export async function linkFilingsForCompany(companyId: string): Promise<number> {
+  return serviceTxn('system:ingest', (c) => linkFilingsIn(c, companyId));
+}
+
+/**
+ * Link every unlinked filing that belongs to a followed name.
+ *
+ * This ran nowhere until 08-Sep-2026, and the cost was exact: `filings` held 11,053 rows of which
+ * **7** carried a `company_id`. `storeFilings`' ON CONFLICT can only attach a link to a row the
+ * feed happens to re-serve, so a filing that arrived before its company was followed stayed
+ * orphaned for good — and everything downstream reads through `company_id`. The filings screen,
+ * the alert evaluator's haystack, agent 3's sources and the attachment download all saw almost
+ * nothing.
+ *
+ * Asks "what has no link yet" — `company_id IS NULL` — rather than "what arrived since I last
+ * looked", so it is idempotent, self-healing, and cannot lose a row to a window. Cheap enough to
+ * run on every announcement ingest: the predicate is indexed and the working set is one UPDATE.
+ */
+export async function linkAllFollowed(): Promise<number> {
   return serviceTxn('system:ingest', async (c) => {
     const { rowCount } = await c.query(
       `UPDATE filings f
           SET company_id = c.id,
               linked_by  = CASE WHEN f.isin IS NOT NULL AND f.isin = c.isin THEN 'isin' ELSE 'symbol' END
          FROM companies c
-        WHERE c.id = $1
-          AND f.company_id IS NULL
+        WHERE f.company_id IS NULL
           AND ((f.isin IS NOT NULL AND f.isin = c.isin) OR (f.isin IS NULL AND f.symbol = c.symbol))`,
-      [companyId],
     );
     return rowCount ?? 0;
   });

@@ -8,7 +8,7 @@
  *   pnpm exec tsx jobs/ingest-intraday.ts [days]
  */
 import { closePool, serviceTxn } from '../lib/db.ts';
-import { fetchAnnouncements, storeFilings } from '../lib/ingest/filings.ts';
+import { fetchAnnouncements, storeFilings, linkAllFollowed } from '../lib/ingest/filings.ts';
 
 async function main(): Promise<void> {
   const days = Number(process.argv[2] ?? 14);
@@ -32,8 +32,12 @@ async function main(): Promise<void> {
     // A feed that parses but returns nothing is a failure, not a quiet day.
     if (filings.length === 0) throw new Error('announcement feed returned zero rows');
     const r = await storeFilings(filings);
-    await finish('ok', r.stored, `${r.stored} stored, ${r.ours} for followed names`);
-    console.log(`${r.seen} announcements  ${r.stored} stored  ${r.ours} ours`);
+    // Attach anything that arrived before its company was followed. storeFilings can only link a
+    // row the feed re-serves, so without this an orphaned filing stays orphaned — which is how
+    // 11,053 rows came to carry 7 company_ids. Idempotent, so it runs every time.
+    const linked = await linkAllFollowed();
+    await finish('ok', r.stored, `${r.stored} stored, ${r.ours} for followed names, ${linked} back-linked`);
+    console.log(`${r.seen} announcements  ${r.stored} stored  ${r.ours} ours  ${linked} back-linked`);
   } catch (err) {
     await finish('failed', 0, String(err instanceof Error ? err.message : err).slice(0, 500));
     throw err;
