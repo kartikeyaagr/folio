@@ -67,6 +67,27 @@ after(async () => {
   execFileSync('dropdb', ['--if-exists', DB]);
 });
 
+test('NSE\u2019s bare hyphen placeholder is stored as no attachment', () => {
+  // 176 of the filings held carried a literal "-" as their attachment URL, which `fetch` rejects
+  // with "Failed to parse URL" — so the download sweep threw on each of them, every run, forever,
+  // because nothing sets a sha on a failure. The column means a URL; a reader who sees a value
+  // should be able to follow it.
+  const [row] = parseAnnouncements('nse_equities', [
+    { seq_id: '1', an_dt: '01-Sep-2026 10:00:00', symbol: 'TCL', attchmntFile: '-' },
+  ]);
+  assert.equal(row?.attachmentUrl, null);
+
+  const [real] = parseAnnouncements('nse_equities', [
+    {
+      seq_id: '2',
+      an_dt: '01-Sep-2026 10:00:00',
+      symbol: 'TCL',
+      attchmntFile: 'https://nsearchives.nseindia.com/corporate/x.pdf',
+    },
+  ]);
+  assert.equal(real?.attachmentUrl, 'https://nsearchives.nseindia.com/corporate/x.pdf');
+});
+
 test('the announcement timestamp is read as IST, not as whatever the box is set to', () => {
   const [f] = parseAnnouncements('nse_equities', EQUITIES);
   // 17:25:18 IST is 11:55:18 UTC.

@@ -136,6 +136,17 @@ BACKUP_DIR=/var/lib/trisula/backups
 BACKUP_S3_BUCKET=
 BACKUP_S3_ENDPOINT=
 
+# Mail. Without SMTP_HOST and SMTP_FROM, `lib/notify.ts` returns null and the outbox fills without
+# draining — every alert, reminder and finished backfill becomes a row nobody is told about. That is
+# a valid state and no job fails over it, but it is the difference between the system telling you
+# something happened and you going to look. SMTP_USER and SMTP_PASSWORD are optional; a relay on
+# the same private network usually needs neither.
+SMTP_HOST=
+SMTP_PORT=587
+SMTP_FROM=trisula@yourdomain
+SMTP_USER=
+SMTP_PASSWORD=
+
 # Set to 1 ONLY if a reverse proxy on this box rewrites x-forwarded-for. Under Tailscale with no
 # proxy, leave it unset: the header would then be whatever the client typed, and a rate-limit key
 # the caller chooses lets them both evade the limit and lock somebody else out of the login page.

@@ -86,7 +86,9 @@ export function parseAnnouncements(board: Board, rows: Record<string, unknown>[]
       category: clean(r['desc']) || null,
       // The announcement text runs long and is stored rather than re-fetched.
       summary: clean(r['attchmntText']).slice(0, 4000) || null,
-      attachmentUrl: clean(r['attchmntFile']) || null,
+      // A bare "-" is how NSE says "no attachment". Stored as null rather than as a hyphen: the
+      // column means a URL, and a reader who sees a value should be able to follow it.
+      attachmentUrl: clean(r['attchmntFile']).startsWith('http') ? clean(r['attchmntFile']) : null,
       hasXbrl: ['true', 'yes', '1'].includes(String(r['hasXbrl']).toLowerCase()),
       announcedAt,
     });

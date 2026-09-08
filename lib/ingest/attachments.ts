@@ -117,10 +117,12 @@ export async function fetchAttachments(limit = 200): Promise<FetchResult> {
         WHERE f.company_id IS NOT NULL
           AND f.attachment_url IS NOT NULL
           AND f.attachment_sha256 IS NULL
-          -- NSE writes a bare "-" where a filing has no attachment, which arrives here as a URL
-          -- ending in a slash-hyphen and 404s. Excluded rather than retried: nothing sets a sha on
-          -- a failure, so without this the same dead URL is fetched again on every run, for good.
-          AND f.attachment_url NOT LIKE '%/-'
+          -- NSE writes a bare "-" where a filing has no attachment. It arrives here either as the
+          -- hyphen itself, which fetch rejects outright with "Failed to parse URL", or as a URL
+          -- ending in a slash-hyphen, which 404s. Both are excluded by requiring an actual URL,
+          -- rather than by naming the two shapes the placeholder has been seen to take. Nothing
+          -- sets a sha on a failure, so without this the same dead value is retried every run.
+          AND f.attachment_url LIKE 'http%'
         ORDER BY f.announced_at DESC
         LIMIT $1`,
       [limit],
