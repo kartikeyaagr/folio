@@ -55,7 +55,14 @@ export async function followCompany(form: FormData): Promise<void> {
     // Says what happened and as whom. `addCompany` attaches any filings already held for the name
     // in the same transaction, so the count is a fact at the moment of writing rather than a
     // promise about a later job.
-    await flash(`Now following ${company.symbol} — ${company.name}, added by ${user.email}`);
+    // Says what actually happened rather than what a reader would assume. `addCompany` attaches
+    // the filings already stored for the symbol, which is whatever the 14-day announcement window
+    // happened to catch — not the company's history. Fetching that is one call to NSE, which does
+    // not belong inside a request, so the command is named rather than the gap left silent.
+    await flash(
+      `Now following ${company.symbol} — ${company.name}, added by ${user.email}. ` +
+        `For its filing history: pnpm exec tsx jobs/backfill-filings.ts --symbol ${company.symbol}`,
+    );
   } catch (err) {
     // Both of these are things a person did, not faults: say so in place and leave the page
     // usable. Anything else is a real error and is allowed to reach the error boundary.
