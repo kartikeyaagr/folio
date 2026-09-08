@@ -309,6 +309,57 @@ export async function changePassword(
   });
 }
 
+export class BadRecoveryCode extends Error {}
+
+/**
+ * Get back in with a recovery code.
+ *
+ * **Email and code together, in one query.** Redeeming on the code alone would mean a code found
+ * on a desk is enough without knowing whose it is, and it would also burn the code on a mismatch —
+ * so a wrong guess about the address would destroy a working code. Matching both first, then
+ * marking it used, avoids each.
+ *
+ * The same refusal for an unknown address, a wrong code and a used one: they are the same fact to
+ * the caller — you are not getting in — and telling them apart would say whether an address has an
+ * account here.
+ *
+ * Every session is revoked, including any the attacker may hold. A password reset that leaves a
+ * live session open has reset nothing.
+ */
+export async function resetWithRecoveryCode(
+  email: string,
+  code: string,
+  next: string,
+): Promise<void> {
+  if (next.length < 12) throw new WeakPassword('A password needs at least 12 characters.');
+
+  const userId = await serviceTxn('system:auth', async (c) => {
+    const { rows } = await c.query<{ user_id: string }>(
+      `UPDATE recovery_codes rc SET used_at = now()
+         FROM users u
+        WHERE rc.user_id = u.id
+          AND rc.code_sha256 = $1
+          AND rc.used_at IS NULL
+          AND lower(u.email) = lower($2)
+          AND u.disabled_at IS NULL
+        RETURNING rc.user_id`,
+      [sha256(code.trim()), email],
+    );
+    return rows[0]?.user_id ?? null;
+  });
+
+  if (!userId) throw new BadRecoveryCode('That address and recovery code do not match.');
+
+  const encoded = await hashPassword(next);
+  await writeTxn(userId, async (c) => {
+    await c.query('UPDATE users SET password_hash = $1 WHERE id = $2', [encoded, userId]);
+    await c.query(
+      'UPDATE sessions SET revoked_at = now() WHERE user_id = $1 AND revoked_at IS NULL',
+      [userId],
+    );
+  });
+}
+
 /** Used when claiming an account and after a recovery code is redeemed. */
 export async function setPassword(userId: string, plain: string, actorId: string): Promise<void> {
   const encoded = await hashPassword(plain);

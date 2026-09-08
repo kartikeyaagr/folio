@@ -129,6 +129,15 @@ export default async function SignupPage({
             <p className="hint">
               Already have an account? <Link href="/login">Sign in</Link>.
             </p>
+            {/* Separated from the request form above by a rule, because they are different things:
+                one asks somebody to make a decision, the other needs no decision from anybody. */}
+            <hr />
+            <div>
+              <p className="sub">Lost the password to an account you already have?</p>
+              <Link href="/reset" className="btn btn-lg">
+                Reset with a recovery code
+              </Link>
+            </div>
           </form>
         )}
       </section>

@@ -10,7 +10,7 @@ import { SESSION_COOKIE } from '@/app/_lib/session-cookie.ts';
  * `requireUser()` in the (app) layout. This exists so an unauthenticated visitor gets a login page
  * without a database round trip first.
  */
-const PUBLIC = new Set(['/login', '/signup']);
+const PUBLIC = new Set(['/login', '/signup', '/reset']);
 
 export function middleware(request: NextRequest): NextResponse {
   const { pathname, search } = request.nextUrl;
@@ -19,8 +19,9 @@ export function middleware(request: NextRequest): NextResponse {
   // reachability, and gating it would mean the monitor only ever proved that /login renders.
   if (pathname === '/api/health') return NextResponse.next();
 
-  // The two unauthenticated pages. `/signup` records a request and creates no account — see
-  // migration 0032 for why the no-signup rule was reversed and what keeps the reversal narrow.
+  // The three unauthenticated pages. `/signup` records a request and creates no account;
+  // `/reset` redeems a recovery code somebody already holds and can mail nothing. Migration 0032
+  // and the header of reset/page.tsx record why each reversal was made and what keeps it narrow.
   if (!request.cookies.has(SESSION_COOKIE) && !PUBLIC.has(pathname)) {
     const url = request.nextUrl.clone();
     url.pathname = '/login';

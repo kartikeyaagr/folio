@@ -24,6 +24,8 @@ import {
   WrongPassword,
   WeakPassword,
   TooManyAttempts,
+  resetWithRecoveryCode,
+  BadRecoveryCode,
   verifyPassword,
 } from './auth.ts';
 import { reset as resetLimits } from './rate-limit.ts';
@@ -197,6 +199,71 @@ test('issuing a fresh set invalidates the old printout', async () => {
   const first = await issueRecoveryCodes(USER, 'system:auth');
   await issueRecoveryCodes(USER, 'system:auth');
   assert.equal(await redeemRecoveryCode(first[0]!), null);
+});
+
+test('a recovery code resets the password and ends every session', async () => {
+  resetLimits();
+  const [code] = await issueRecoveryCodes(USER, 'system:auth');
+  const live = await issueSession(USER);
+
+  await resetWithRecoveryCode('t@example.com', code!, 'a brand new long password');
+
+  assert.ok(await login('t@example.com', 'a brand new long password'), 'the new password works');
+  assert.equal(await resolveSession(live.token), null, 'the session that existed is revoked');
+  await setPassword(USER, 'correct horse battery staple', 'system:auth');
+  resetLimits();
+});
+
+test('a code belonging to a different address is refused, and NOT used up', async () => {
+  // The reason email and code are matched in one statement. Redeeming on the code alone would
+  // mean a code found on a desk is enough without knowing whose it is — and a wrong guess about
+  // the address would destroy a code that still worked.
+  const [code] = await issueRecoveryCodes(USER, 'system:auth');
+  await assert.rejects(
+    () => resetWithRecoveryCode('somebody@else.com', code!, 'a brand new long password'),
+    BadRecoveryCode,
+  );
+  // Still good: the same code now works for the right address.
+  resetLimits();
+  await resetWithRecoveryCode('t@example.com', code!, 'another long enough password');
+  assert.ok(await login('t@example.com', 'another long enough password'));
+  await setPassword(USER, 'correct horse battery staple', 'system:auth');
+  resetLimits();
+});
+
+test('a code works once, and the second attempt is refused', async () => {
+  const [code] = await issueRecoveryCodes(USER, 'system:auth');
+  await resetWithRecoveryCode('t@example.com', code!, 'first long enough password');
+  await assert.rejects(
+    () => resetWithRecoveryCode('t@example.com', code!, 'second long enough password'),
+    BadRecoveryCode,
+  );
+  await setPassword(USER, 'correct horse battery staple', 'system:auth');
+  resetLimits();
+});
+
+test('a short new password is refused before the code is spent', async () => {
+  const [code] = await issueRecoveryCodes(USER, 'system:auth');
+  await assert.rejects(() => resetWithRecoveryCode('t@example.com', code!, 'short'), WeakPassword);
+  // The code survives, so a fumbled password does not cost somebody one of their eight.
+  await resetWithRecoveryCode('t@example.com', code!, 'a long enough password now');
+  await setPassword(USER, 'correct horse battery staple', 'system:auth');
+  resetLimits();
+});
+
+test('a disabled account cannot be reset into', async () => {
+  const [code] = await issueRecoveryCodes(USER, 'system:auth');
+  await serviceTxn('system:auth', async (c) => {
+    await c.query('UPDATE users SET disabled_at = now() WHERE id = $1', [USER]);
+  });
+  await assert.rejects(
+    () => resetWithRecoveryCode('t@example.com', code!, 'a long enough password'),
+    BadRecoveryCode,
+  );
+  await serviceTxn('system:auth', async (c) => {
+    await c.query('UPDATE users SET disabled_at = NULL WHERE id = $1', [USER]);
+  });
+  resetLimits();
 });
 
 test('an unknown recovery code returns null', async () => {

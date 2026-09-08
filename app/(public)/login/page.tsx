@@ -52,7 +52,7 @@ async function attemptLogin(formData: FormData): Promise<void> {
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; next?: string }>;
+  searchParams: Promise<{ error?: string; next?: string; reset?: string }>;
 }) {
   if (await currentUser()) redirect('/');
   const params = await searchParams;
@@ -85,6 +85,12 @@ export default async function LoginPage({
             <p className="sub">Accounts are created on the VM, never by signing up.</p>
           </div>
 
+          {params.reset && !params.error && (
+            <p role="status" className="hint">
+              Password set. Sign in with it — every other session has been signed out.
+            </p>
+          )}
+
           {params.error && (
             <p role="alert" className="alert">
               {params.error === 'rate'
@@ -112,7 +118,7 @@ export default async function LoginPage({
             Sign in <span aria-hidden="true">→</span>
           </button>
           <p className="hint">
-            Lost your password? Ask someone with VM access for a recovery code. No account?{' '}
+            Lost your password? <Link href="/reset">Use a recovery code</Link>. No account?{' '}
             <Link href="/signup">Ask for access</Link>.
           </p>
         </form>
