@@ -32,11 +32,21 @@ async function main(): Promise<void> {
   const days = Number(arg('--days') ?? 90);
   if (!Number.isFinite(days) || days < 1) throw new Error('--days must be a positive number');
 
+  const only = arg('--symbol')?.trim().toUpperCase();
+
   // Which days are already held. Asked once rather than per day: a set membership test beats 1,250
   // round trips to answer a question the database can answer in one.
+  //
+  // **Scoped to the symbol when one is named.** `storePrices` keeps only followed companies, so a
+  // day fetched before a name was followed holds nothing for it — and a global "already held" set
+  // would skip exactly the days a newly added company needs. Getting this wrong would make the
+  // on-add backfill a no-op that reported success.
   const held = await readTxn(async (c) => {
     const { rows } = await c.query<{ day: string }>(
-      "SELECT DISTINCT to_char(on_date, 'YYYY-MM-DD') AS day FROM prices",
+      `SELECT DISTINCT to_char(p.on_date, 'YYYY-MM-DD') AS day
+         FROM prices p
+        WHERE $1::text IS NULL OR p.symbol = $1`,
+      [only ?? null],
     );
     return new Set(rows.map((r) => r.day));
   });
@@ -57,7 +67,10 @@ async function main(): Promise<void> {
     });
 
   try {
-    const session = await NseSession.open();
+    // Re-primed rather than opened once. A first run died at "fetch failed" after about seventy
+    // requests: NSE drops the cookie, or the connection, partway through a long walk backwards. A
+    // twenty-minute job that has to be restarted by hand is a job nobody runs twice.
+    let session = await NseSession.open();
     const today = new Date();
     let traded = 0;
     let quiet = 0;
@@ -86,17 +99,35 @@ async function main(): Promise<void> {
         traded++;
         if (traded % 25 === 0) console.log(`  ${day}  ${traded} trading days so far, ${stored} closes`);
       } catch (err) {
-        // Only a 404 reaches here as NoBhavcopy now; anything else is a real failure and stops the
-        // run rather than being counted as a holiday.
-        if (!(err instanceof NoBhavcopy)) throw err;
-        quiet++;
+        // A 404 is a non-trading day and is not retried: the file will not appear on a second ask.
+        if (err instanceof NoBhavcopy) {
+          quiet++;
+          continue;
+        }
+        // Anything else gets one retry behind a fresh session. Twice in a row on the same day is a
+        // real failure and stops the run rather than being counted as a holiday.
+        console.error(`  ${day}  ${err instanceof Error ? err.message : String(err)} — re-priming`);
+        await sleep(3000);
+        session = await NseSession.open();
+        try {
+          const rows = await fetchBhavcopy(on, session);
+          const out = await storePrices(on, rows);
+          stored += out.stored;
+          traded++;
+        } catch (again) {
+          if (again instanceof NoBhavcopy) {
+            quiet++;
+            continue;
+          }
+          throw again;
+        }
       }
       // NSE is being asked for a file a second for twenty minutes. Politeness is cheap and being
       // blocked is not.
       await sleep(400);
     }
 
-    const detail = `${days} days back: ${traded} trading days fetched, ${stored} closes stored, ${skipped} already held, ${quiet} non-trading`;
+    const detail = `${only ?? 'all names'}, ${days} days back: ${traded} trading days fetched, ${stored} closes stored, ${skipped} already held, ${quiet} non-trading`;
     // Every day answering 404 over a long window means the archive moved, not that the exchange
     // shut for a quarter.
     if (traded === 0 && skipped === 0 && quiet > 20) {

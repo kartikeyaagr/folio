@@ -120,9 +120,12 @@ export async function addCompany(symbol: string, actorId: string): Promise<Compa
     if (existing.length > 0) throw new AlreadyFollowed(`${upper} is already followed`);
 
     const id = randomBytes(16).toString('hex');
+    // `added_by` is recorded here and nowhere else: it is who the finished-backfill notice goes to,
+    // and by the time the job runs, minutes later, there is nobody in the request to ask.
+    // `backfilled_at` stays null, which is what puts the name in the backfill queue.
     await c.query(
-      'INSERT INTO companies (id, symbol, isin, name, status) VALUES ($1, $2, $3, $4, $5)',
-      [id, s.symbol, s.isin, s.name, 'watching'],
+      'INSERT INTO companies (id, symbol, isin, name, status, added_by) VALUES ($1, $2, $3, $4, $5, $6)',
+      [id, s.symbol, s.isin, s.name, 'watching', actorId],
     );
     // The registered name is an alias too, so the news matcher has it without a special case.
     await c.query(
