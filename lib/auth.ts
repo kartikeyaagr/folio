@@ -17,6 +17,7 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { hash as argonHash, verify as argonVerify } from '@node-rs/argon2';
 import { readTxn, serviceTxn, writeTxn, type Client } from './db.ts';
+import { clear as clearLimit, hit, type Limit } from './rate-limit.ts';
 
 /** 30 days. Three people on a private network; re-authenticating weekly buys nothing real. */
 const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
@@ -64,6 +65,8 @@ export interface Session {
   name: string;
   email: string;
   expiresAt: Date;
+  /** Sees model, effort and spend on the agents page. Granted only from the VM. */
+  isAdmin: boolean;
 }
 
 /** The plaintext token is returned once and never stored. Only its digest reaches the database. */
@@ -93,8 +96,9 @@ export async function resolveSession(token: string | undefined): Promise<Session
       name: string;
       email: string;
       expires_at: Date;
+      is_admin: boolean;
     }>(
-      `SELECT s.user_id, u.name, u.email, s.expires_at
+      `SELECT s.user_id, u.name, u.email, s.expires_at, u.is_admin
          FROM sessions s
          JOIN users u ON u.id = s.user_id
         WHERE s.token_sha256 = $1
@@ -105,7 +109,13 @@ export async function resolveSession(token: string | undefined): Promise<Session
     );
     const row = rows[0];
     return row
-      ? { userId: row.user_id, name: row.name, email: row.email, expiresAt: row.expires_at }
+      ? {
+          userId: row.user_id,
+          name: row.name,
+          email: row.email,
+          expiresAt: row.expires_at,
+          isAdmin: row.is_admin,
+        }
       : null;
   });
 }
@@ -191,10 +201,47 @@ let dummyHash: Promise<string> | undefined;
 const getDummyHash = (): Promise<string> =>
   (dummyHash ??= argonHash(randomBytes(32).toString('hex'), ARGON));
 
+export class TooManyAttempts extends Error {
+  // Declared and assigned, not a parameter property: Node runs this file in strip-only mode, where
+  // `constructor(public readonly x)` is a runtime syntax error rather than a style preference. tsc
+  // accepts it, so the type checker will not catch this one for you.
+  readonly retryAfter: number;
+
+  constructor(retryAfter: number) {
+    super(`Too many attempts. Try again in ${Math.ceil(retryAfter / 60)} minute(s).`);
+    this.retryAfter = retryAfter;
+  }
+}
+
+/**
+ * Two limits, because they defend against different things.
+ *
+ * The per-email one stops a password being guessed. The per-address one stops the endpoint being
+ * used as a way to spend the box's CPU: every attempt is a 64 MiB Argon2id verify, Node's libuv
+ * threadpool defaults to four, and `t4g.small` is burstable — so an unthrottled login is both a
+ * brute-force path and a cheap outage. The address allowance is the looser of the two because
+ * three people behind one office address fumbling passwords is ordinary.
+ */
+const PER_EMAIL: Limit = { max: 8, windowMs: 15 * 60 * 1000 };
+const PER_ADDRESS: Limit = { max: 30, windowMs: 15 * 60 * 1000 };
+
 export async function login(
   email: string,
   password: string,
+  address?: string,
 ): Promise<{ token: string; expiresAt: Date; userId: string } | null> {
+  // Checked before any hashing, and refused *fast*. Burning the same wall clock on a refusal
+  // would preserve a timing property that is not at risk — being told you are rate limited says
+  // nothing about whether the account exists, because you caused the limit yourself — while
+  // handing back exactly the CPU cost this exists to deny.
+  const emailKey = `login:email:${email.trim().toLowerCase()}`;
+  const addressKey = address ? `login:addr:${address}` : null;
+  const byEmail = hit(emailKey, PER_EMAIL);
+  const byAddress = addressKey ? hit(addressKey, PER_ADDRESS) : { allowed: true, retryAfter: 0 };
+  if (!byEmail.allowed || !byAddress.allowed) {
+    throw new TooManyAttempts(Math.max(byEmail.retryAfter, byAddress.retryAfter));
+  }
+
   const user = await readTxn(async (c) => {
     const { rows } = await c.query<{ id: string; password_hash: string | null }>(
       'SELECT id, password_hash FROM users WHERE lower(email) = lower($1) AND disabled_at IS NULL',
@@ -206,8 +253,60 @@ export async function login(
   const ok = await verifyPassword(user?.password_hash ?? (await getDummyHash()), password);
   if (!ok || !user || user.password_hash === null) return null;
 
+  // A fumbled password should not count against you once you get it right.
+  clearLimit(emailKey);
+  if (addressKey) clearLimit(addressKey);
+
   const { token, expiresAt } = await issueSession(user.id);
   return { token, expiresAt, userId: user.id };
+}
+
+export class WrongPassword extends Error {}
+export class WeakPassword extends Error {}
+
+/**
+ * Change your own password.
+ *
+ * **The current password is required even though the caller is already signed in.** A session
+ * cookie proves the browser was authenticated at some point in the last thirty days; it does not
+ * prove the person at the keyboard is the account holder. Without this check a borrowed laptop is
+ * a permanent account takeover, and the session TTL is long precisely because this is a private
+ * network — the two decisions have to hold together.
+ *
+ * Every session but the current one is revoked afterwards. If the reason for changing a password
+ * is that somebody else may know it, leaving their session alive defeats the change.
+ */
+export async function changePassword(
+  userId: string,
+  current: string,
+  next: string,
+  keepToken: string,
+): Promise<void> {
+  // 12 is a floor, not a policy. There is no rotation, no character-class rule and no history:
+  // those push people towards passwords they can predict, and this system has three users and a
+  // password manager rather than a compliance department.
+  if (next.length < 12) throw new WeakPassword('A password needs at least 12 characters.');
+
+  const encoded = await readTxn(async (c) => {
+    const { rows } = await c.query<{ password_hash: string | null }>(
+      'SELECT password_hash FROM users WHERE id = $1 AND disabled_at IS NULL',
+      [userId],
+    );
+    return rows[0]?.password_hash ?? null;
+  });
+  if (!encoded || !(await verifyPassword(encoded, current))) {
+    throw new WrongPassword('That is not the current password.');
+  }
+
+  const hashed = await hashPassword(next);
+  await writeTxn(userId, async (c) => {
+    await c.query('UPDATE users SET password_hash = $1 WHERE id = $2', [hashed, userId]);
+    await c.query(
+      `UPDATE sessions SET revoked_at = now()
+        WHERE user_id = $1 AND revoked_at IS NULL AND token_sha256 <> $2`,
+      [userId, sha256(keepToken)],
+    );
+  });
 }
 
 /** Used when claiming an account and after a recovery code is redeemed. */

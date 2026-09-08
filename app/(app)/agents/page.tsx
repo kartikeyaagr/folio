@@ -52,12 +52,19 @@ const TRIGGER_TONE: Record<string, Tone> = {
 };
 
 export default async function AgentsPage() {
-  await requireUser();
+  // Kept rather than discarded: model, effort and spend are admin-only. Everything else on this
+  // page is what an agent is and what it has done, which is research context anybody needs.
+  const user = await requireUser();
   const [agents, drafts, failed, names] = await Promise.all([
     registry(), pendingDrafts(), failedRuns(), listCompanies(),
   ]);
 
-  const totalSpend = agents.reduce((n, a) => n + Number(a.spend ?? 0), 0);
+  // `sum()` skips NULLs and `?? 0` turns "unknown" into "nothing", which is how v2's Fleet page
+  // came to report $0.00 with a full price table missing behind it. The unpriced are counted and
+  // said, and where nothing is priced at all the figure is <Blank> rather than a confident zero.
+  const priced = agents.filter((a) => a.model !== 'none' && a.spend !== null);
+  const unpriced = agents.filter((a) => a.model !== 'none' && a.spend === null);
+  const totalSpend = priced.reduce((n, a) => n + Number(a.spend), 0);
   const prompted = agents.filter((a) => a.trigger === 'prompt' && a.enabled);
 
   return (
@@ -80,7 +87,19 @@ export default async function AgentsPage() {
             value={String(failed.length)}
             tone={failed.length > 0 ? 'bad' : undefined}
           />
-          <Stat label="Spend to date" value={`$${totalSpend.toFixed(4)}`} />
+          {user.isAdmin && (
+            <Stat
+              label="Spend to date"
+              value={priced.length === 0 ? '—' : `$${totalSpend.toFixed(4)}`}
+              sub={
+                priced.length === 0
+                  ? 'nothing priced yet'
+                  : unpriced.length > 0
+                    ? `${unpriced.length} agent${unpriced.length === 1 ? '' : 's'} unpriced, excluded`
+                    : undefined
+              }
+            />
+          )}
         </StatRow>
 
         <Card title="The registry" padded={false}>
@@ -88,9 +107,10 @@ export default async function AgentsPage() {
             <table className="tbl">
               <thead>
                 <tr>
-                  <th>Agent</th><th>Fires</th><th>Model</th><th>Effort</th>
+                  <th>Agent</th><th>Fires</th>
+                  {user.isAdmin && <><th>Model</th><th>Effort</th></>}
                   <th>Reads</th><th className="num">Runs</th><th className="num">Failed</th>
-                  <th className="num">Spend</th>
+                  {user.isAdmin && <th className="num">Spend</th>}
                 </tr>
               </thead>
               <tbody>
@@ -104,20 +124,26 @@ export default async function AgentsPage() {
                       <Chip tone={TRIGGER_TONE[a.trigger] ?? 'neutral'}>{a.trigger}</Chip>
                       {a.minInterval && <span className="cell-sub">every {a.minInterval}m</span>}
                     </td>
-                    <td>{a.model === 'none' ? <span className="muted">no model</span> : a.model}</td>
-                    <td>{a.effort ?? <span className="muted">—</span>}</td>
+                    {user.isAdmin && (
+                      <>
+                        <td>{a.model === 'none' ? <span className="muted">no model</span> : a.model}</td>
+                        <td>{a.effort ?? <span className="muted">—</span>}</td>
+                      </>
+                    )}
                     <td className="cell-wrap">
                       {a.dataScope.length === 0 ? <span className="muted">nothing</span> : a.dataScope.join(', ')}
                     </td>
                     <td className="num">{a.runs || ''}</td>
                     <td className="num">{a.failures || ''}</td>
-                    <td className="num">
-                      {a.model === 'none'
-                        ? ''
-                        : a.spend
-                          ? `$${Number(a.spend).toFixed(4)}`
-                          : <Blank why="No draft from this agent has recorded a cost yet" />}
-                    </td>
+                    {user.isAdmin && (
+                      <td className="num">
+                        {a.model === 'none'
+                          ? ''
+                          : a.spend
+                            ? `$${Number(a.spend).toFixed(4)}`
+                            : <Blank why="No draft from this agent has recorded a cost yet" />}
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>

@@ -34,7 +34,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
       <Rail
         badges={shell.badges}
         themeToggle={<ThemeToggle theme={theme} action={setTheme} />}
-        menu={<AvatarMenu email={user.email} name={shell.name} />}
+        menu={<AvatarMenu email={user.email} name={shell.name} isAdmin={user.isAdmin} />}
       />
       <div className="app-main">{children}</div>
       <Toast message={message} />

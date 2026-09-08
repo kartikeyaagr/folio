@@ -180,9 +180,17 @@
   border-top: 1px solid var(--line);
   margin: 10px 0;
 }
-.rail-menu-pop a {
+/* The menu's two actions read alike whether one navigates and the other opens a dialog. */
+.rail-menu-pop a,
+.rail-menu-pop .btn-link {
+  display: block;
+  padding: 0;
   font-size: 13px;
   font-weight: 600;
+  text-align: left;
+}
+.rail-menu-pop .btn-link {
+  margin-bottom: 8px;
 }
 
 /* --- Header ---------------------------------------------------------------------------------- */

@@ -24,6 +24,20 @@ export async function requireUser(): Promise<Session> {
   return session;
 }
 
+/**
+ * The admin boundary, and the only one.
+ *
+ * Redirects rather than 404s: a person who lost admin between opening the page and submitting is
+ * not an intruder, and sending them somewhere useful beats a dead end. Every admin action calls
+ * this itself — a server action is its own entry point, reachable without ever rendering the page
+ * that hosts it, so gating only the page would gate nothing.
+ */
+export async function requireAdmin(): Promise<Session> {
+  const session = await requireUser();
+  if (!session.isAdmin) redirect('/');
+  return session;
+}
+
 export async function setSessionCookie(token: string, expiresAt: Date): Promise<void> {
   const jar = await cookies();
   jar.set(SESSION_COOKIE, token, {

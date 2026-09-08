@@ -2,7 +2,9 @@
 
 import { redirect } from 'next/navigation';
 
-import { login, revokeSession } from '@/lib/auth.ts';
+import { login, revokeSession, TooManyAttempts } from '@/lib/auth.ts';
+
+import { clientAddress } from '../client-address.ts';
 
 import { clearSessionCookie, setSessionCookie } from '../session.ts';
 
@@ -20,7 +22,13 @@ export async function signIn(_prev: string | null, form: FormData): Promise<stri
 
   if (!email || !password) return 'Enter your email address and password.';
 
-  const session = await login(email, password);
+  let session: Awaited<ReturnType<typeof login>>;
+  try {
+    session = await login(email, password, await clientAddress());
+  } catch (err) {
+    if (err instanceof TooManyAttempts) return err.message;
+    throw err;
+  }
   if (!session) return 'That email address and password do not match.';
 
   await setSessionCookie(session.token, session.expiresAt);

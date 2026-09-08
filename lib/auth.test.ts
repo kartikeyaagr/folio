@@ -20,8 +20,13 @@ import {
   resolveSession,
   revokeSession,
   setPassword,
+  changePassword,
+  WrongPassword,
+  WeakPassword,
+  TooManyAttempts,
   verifyPassword,
 } from './auth.ts';
+import { reset as resetLimits } from './rate-limit.ts';
 
 const DB = `trisula_auth_${process.pid}`;
 const USER = 'p1';
@@ -72,6 +77,43 @@ test('a wrong password and an unknown account both return null', async () => {
   assert.equal(await login('nobody@example.com', 'correct horse battery staple'), null);
 });
 
+test('changing a password needs the current one, even with a live session', async () => {
+  // A session cookie proves the browser authenticated at some point in the last thirty days. It
+  // does not prove the person at the keyboard is the account holder, and without this check a
+  // borrowed laptop is a permanent takeover.
+  const { token } = await issueSession(USER);
+  await assert.rejects(
+    () => changePassword(USER, 'not the password', 'a much longer replacement', token),
+    WrongPassword,
+  );
+  // and the old one still works, so a failed attempt changed nothing
+  assert.ok(await login('t@example.com', 'correct horse battery staple'));
+});
+
+test('a new password shorter than the floor is refused', async () => {
+  const { token } = await issueSession(USER);
+  await assert.rejects(
+    () => changePassword(USER, 'correct horse battery staple', 'short', token),
+    WeakPassword,
+  );
+});
+
+test('changing a password revokes every other session but the current one', async () => {
+  const mine = await issueSession(USER);
+  const other = await issueSession(USER);
+  await changePassword(USER, 'correct horse battery staple', 'a much longer replacement', mine.token);
+
+  assert.ok(await resolveSession(mine.token), 'the session that made the change survives');
+  assert.equal(await resolveSession(other.token), null, 'every other session is revoked');
+
+  // The new password works and the old one does not.
+  assert.ok(await login('t@example.com', 'a much longer replacement'));
+  assert.equal(await login('t@example.com', 'correct horse battery staple'), null);
+
+  // Put it back, so the tests after this one still see the fixture's password.
+  await setPassword(USER, 'correct horse battery staple', 'system:auth');
+});
+
 test('an absent or unknown token resolves to null', async () => {
   assert.equal(await resolveSession(undefined), null);
   assert.equal(await resolveSession('not-a-real-token'), null);
@@ -104,6 +146,43 @@ test('a disabled user stops resolving, without revoking anything', async () => {
     await c.query('UPDATE users SET disabled_at = NULL WHERE id = $1', [USER]);
   });
   assert.ok(await resolveSession(token), 'and it comes back when re-enabled');
+});
+
+test('guessing is refused after enough wrong attempts', async () => {
+  resetLimits();
+  // Eight are allowed against one address, then the ninth is refused before any hashing happens —
+  // which is the point: every attempt is a 64 MiB Argon2 verify, so an unthrottled endpoint is a
+  // way to spend the box's CPU as much as a way to guess a password.
+  for (let i = 0; i < 8; i++) {
+    assert.equal(await login('t@example.com', `wrong ${i}`), null);
+  }
+  await assert.rejects(() => login('t@example.com', 'wrong again'), TooManyAttempts);
+
+  // Even the correct password is refused while the window is open: the limit is on the attempt,
+  // not on the outcome, or an attacker simply keeps going until they are right.
+  await assert.rejects(
+    () => login('t@example.com', 'correct horse battery staple'),
+    TooManyAttempts,
+  );
+  resetLimits();
+});
+
+test('the limit is per address, so one locked account does not lock the others', async () => {
+  resetLimits();
+  for (let i = 0; i < 9; i++) await login('someone@example.com', 'wrong').catch(() => undefined);
+  // A different address is unaffected, because the key is the email being attacked.
+  assert.ok(await login('t@example.com', 'correct horse battery staple'));
+  resetLimits();
+});
+
+test('getting it right clears the count, so a fumble is not held against you', async () => {
+  resetLimits();
+  for (let i = 0; i < 5; i++) await login('t@example.com', 'wrong');
+  assert.ok(await login('t@example.com', 'correct horse battery staple'), 'succeeds on the sixth');
+  // Five more must not now trip a limit that had five against it a moment ago.
+  for (let i = 0; i < 5; i++) assert.equal(await login('t@example.com', 'wrong'), null);
+  assert.ok(await login('t@example.com', 'correct horse battery staple'));
+  resetLimits();
 });
 
 test('a recovery code works once', async () => {

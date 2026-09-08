@@ -1,6 +1,9 @@
+import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
-import { login } from '@/lib/auth.ts';
+import { login, TooManyAttempts } from '@/lib/auth.ts';
+
+import { clientAddress } from '../../_lib/client-address.ts';
 
 import { currentUser, setSessionCookie } from '../../_lib/session.ts';
 
@@ -17,16 +20,28 @@ async function attemptLogin(formData: FormData): Promise<void> {
   'use server';
 
   const next = String(formData.get('next') ?? '');
-  const session = await login(
-    String(formData.get('email') ?? ''),
-    String(formData.get('password') ?? ''),
-  );
+  const tail = next ? `&next=${encodeURIComponent(next)}` : '';
+
+  let session: Awaited<ReturnType<typeof login>>;
+  try {
+    session = await login(
+      String(formData.get('email') ?? ''),
+      String(formData.get('password') ?? ''),
+      await clientAddress(),
+    );
+  } catch (err) {
+    // Said apart from a wrong password on purpose. Being told you are rate limited reveals nothing
+    // about whether the account exists — you caused the limit — and a person locked out by their
+    // own typing needs to know to wait rather than to keep guessing.
+    if (err instanceof TooManyAttempts) redirect(`/login?error=rate${tail}`);
+    throw err;
+  }
 
   // One message for every failure. `login()` already spends the same work whether or not the
   // address exists — it verifies against a computed dummy hash — and a message that distinguished
   // them would hand back the timing equivalence for nothing.
   if (!session) {
-    redirect(`/login?error=1${next ? `&next=${encodeURIComponent(next)}` : ''}`);
+    redirect(`/login?error=1${tail}`);
   }
 
   await setSessionCookie(session.token, session.expiresAt);
@@ -67,12 +82,14 @@ export default async function LoginPage({
         <form action={attemptLogin} className="login-form">
           <div>
             <h2>Sign in</h2>
-            <p className="sub">No signup here. Accounts are created on the VM.</p>
+            <p className="sub">Accounts are created on the VM, never by signing up.</p>
           </div>
 
           {params.error && (
             <p role="alert" className="alert">
-              That email address and password do not match.
+              {params.error === 'rate'
+                ? 'Too many attempts from here. Wait a few minutes and try again.'
+                : 'That email address and password do not match.'}
             </p>
           )}
 
@@ -94,7 +111,10 @@ export default async function LoginPage({
           <button type="submit" className="btn btn-primary btn-lg">
             Sign in <span aria-hidden="true">→</span>
           </button>
-          <p className="hint">Lost your password? Ask someone with VM access for a recovery code.</p>
+          <p className="hint">
+            Lost your password? Ask someone with VM access for a recovery code. No account?{' '}
+            <Link href="/signup">Ask for access</Link>.
+          </p>
         </form>
       </section>
     </main>
