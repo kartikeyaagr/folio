@@ -2,11 +2,13 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 
 import { companyPage } from '@/lib/company-view.ts';
+import { financials, type Basis } from '@/lib/financials.ts';
 import { filings } from '@/lib/filings.ts';
 import { newsFor } from '@/lib/engagement.ts';
 import {
-  AppHeader, Blank, Card, Chip, Empty, Fact, Facts, crore, inr, type Tone,
+  AppHeader, Blank, Card, Chip, Empty, Fact, Facts, Seg, Tabs, crore, inr, type Tone,
 } from '@/components/ui.tsx';
+import { Statement } from '@/components/Statement.tsx';
 
 import { requireUser } from '../../../_lib/session.ts';
 
@@ -30,16 +32,38 @@ function ist(at: Date): string {
   }).format(at);
 }
 
-export default async function CompanyPage({ params }: { params: Promise<{ symbol: string }> }) {
+export default async function CompanyPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ symbol: string }>;
+  // Both live in the URL, so a refresh lands where you were and a link to "PRAJIND consolidated,
+  // yearly" is a link somebody can send.
+  searchParams: Promise<{ basis?: string; pnl?: string }>;
+}) {
   const user = await requireUser();
   const { symbol } = await params;
   const co = await companyPage(symbol);
   if (!co) notFound();
 
-  const [recentFilings, news] = await Promise.all([
+  const sp = await searchParams;
+  const wanted = sp.basis === 'standalone' || sp.basis === 'consolidated' ? (sp.basis as Basis) : undefined;
+
+  const [recentFilings, news, fin] = await Promise.all([
     filings({ companyId: co.id, days: 180, limit: 25 }),
     newsFor(user.userId, { companyId: co.id, days: 90 }),
+    financials(co.id, wanted),
   ]);
+
+  // Whichever period kind the company actually files, defaulting to the longest it has — a year
+  // says more about a business than a quarter, and an SME half-yearly filer has no quarters at all.
+  const pnlTab = fin.pnl.find((p) => p.kind === sp.pnl) ?? fin.pnl[0];
+  const href = (next: { basis?: string; pnl?: string }): string => {
+    const q = new URLSearchParams();
+    q.set('basis', next.basis ?? fin.basis);
+    if (next.pnl ?? pnlTab?.kind) q.set('pnl', next.pnl ?? pnlTab!.kind);
+    return `?${q.toString()}`;
+  };
 
   const latest = co.shareholding[0];
   const value =
@@ -89,45 +113,58 @@ export default async function CompanyPage({ params }: { params: Promise<{ symbol
           </p>
         )}
 
-        <Card title="Reported periods">
-          {co.quarters.length === 0 ? (
-            <Empty>No results have been parsed for this company yet.</Empty>
+        <Card
+          title="Financials"
+          action={
+            fin.bases.length > 1 ? (
+              // Only offered when the company files both. A switch with one live position is a
+              // control that teaches you it does nothing.
+              <Seg
+                small
+                current={href({})}
+                options={fin.bases.map((b) => ({
+                  href: href({ basis: b }),
+                  label: b === 'consolidated' ? 'Consolidated' : 'Standalone',
+                }))}
+              />
+            ) : (
+              <span className="muted">{fin.basis}</span>
+            )
+          }
+        >
+          {fin.pnl.length === 0 ? (
+            <Empty>
+              No results have been parsed for this company yet. They arrive from the results feed
+              once it has filed, and the whole history follows a backfill.
+            </Empty>
           ) : (
-            <div className="tbl-scroll">
-              <table className="tbl">
-                <thead>
-                  <tr>
-                    <th>Period</th><th>Kind</th><th>Basis</th>
-                    <th className="num">Revenue</th><th className="num">PAT</th><th />
-                  </tr>
-                </thead>
-                <tbody>
-                  {co.quarters.map((q) => (
-                    <tr key={q.id}>
-                      <td className="num">{q.periodStart} → {q.periodEnd}</td>
-                      <td>{q.periodKind}</td>
-                      <td>{q.basis}</td>
-                      <td className="num">
-                        {q.revenue ? crore(q.revenue) : <Blank why="Not reported in this filing" />}
-                      </td>
-                      <td className="num">
-                        {q.profitAfterTax ? crore(q.profitAfterTax) : <Blank why="Not reported in this filing" />}
-                      </td>
-                      <td>
-                        {q.contextDatesDisagreed && (
-                          <Chip tone="warn">
-                            <span title="The XBRL context declared this period's dates but carried a different span of figures. The dates here come from the reported facts, not from the context.">
-                              dates from facts
-                            </span>
-                          </Chip>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <>
+              {fin.pnl.length > 1 && (
+                <Tabs
+                  current={href({})}
+                  tabs={fin.pnl.map((p) => [href({ pnl: p.kind }), p.label])}
+                />
+              )}
+              <Statement
+                data={pnlTab!.statement}
+                empty="Nothing reported for this period kind."
+              />
+            </>
           )}
+        </Card>
+
+        <Card title="Balance sheet">
+          <Statement
+            data={fin.balanceSheet}
+            empty="No filing held for this company carries a balance sheet. Quarterly results do not; the annual one does."
+          />
+        </Card>
+
+        <Card title="Cash flow">
+          <Statement
+            data={fin.cashFlow}
+            empty="No filing held for this company carries a cash flow statement. It comes with the annual results."
+          />
         </Card>
 
         <Card title="Ownership">

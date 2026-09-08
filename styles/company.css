@@ -880,3 +880,56 @@ details.chk-stage > .chk-stage-head:hover {
   color: var(--ink-2);
   min-width: 0;
 }
+
+/* --- The three statements ------------------------------------------------------------------- */
+/* Periods across, line items down — the layout every filing uses, and the only one a trend can be
+   read from. The first column is sticky because a table wide enough to be worth scrolling is one
+   where you lose track of which line you are on. */
+
+.stmt {
+  min-width: max-content;
+}
+.stmt th.num,
+.stmt td.num {
+  min-width: 88px;
+  white-space: nowrap;
+}
+.stmt .stmt-item {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  min-width: 190px;
+  background: var(--surface);
+  white-space: nowrap;
+}
+.stmt thead .stmt-item {
+  z-index: 3;
+  font-weight: 600;
+  color: var(--muted);
+}
+/* A subtotal reads as one. Without this a P&L is fourteen equal rows and the eye finds no shape. */
+.stmt tr.is-strong td {
+  font-weight: 700;
+  background: var(--surface-2);
+}
+.stmt-flag {
+  margin-left: 6px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--muted);
+  cursor: help;
+}
+
+/* The basis switch and the period tabs sit on one line above the table. */
+.stmt-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.stmt-bar .spacer {
+  flex: 1;
+}
