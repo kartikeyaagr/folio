@@ -1,22 +1,31 @@
 import { headers } from 'next/headers';
 
 /**
- * The caller's address, for rate limiting.
+ * The caller's address, for rate limiting — and **only when something we run put it there**.
  *
- * **Only as trustworthy as what sits in front of the app.** `ops/SETUP.md` §8 binds the server to
- * `127.0.0.1` and reaches it over Tailscale or a reverse proxy on the same box, so the leftmost
- * `x-forwarded-for` entry is written by something we run. If the app is ever exposed directly,
- * this header becomes attacker-controlled and the per-address limit becomes decorative.
+ * `x-forwarded-for` is a request header. Unless a proxy we control overwrites it, the client
+ * chooses its value, and a rate-limit key the attacker chooses is not a rate limit. Worse than
+ * useless, in fact: an attacker who can set the header can rotate it to evade the limit *and* can
+ * forge a colleague's address to lock them out. A forgeable key hands out a denial-of-service.
  *
- * That is why the per-address limit is the looser of the two and the per-email one is the limit
- * that actually protects an account: the email key cannot be forged, because it is the thing being
- * attacked. This returns null rather than a placeholder when no header is present — a shared
- * constant would put every caller in one bucket and lock everybody out at once.
+ * So it is trusted only when `TRUST_PROXY_HEADER=1`, which the operator sets when — and only when
+ * — a reverse proxy on the box is overwriting the header. `ops/SETUP.md` §8 binds the app to
+ * loopback and reaches it over Tailscale with no proxy in between, so the default is *not* to
+ * trust it, and the per-address limit is simply not applied.
+ *
+ * That leaves the per-email limit, which is the one that protects an account and which cannot be
+ * forged: the email is the thing being attacked. Losing the address limit costs the CPU protection
+ * against a single attacker, which is real; claiming a protection that does not hold would be
+ * worse, and the lockout vector worse still.
  */
 export async function clientAddress(): Promise<string | undefined> {
+  if (process.env['TRUST_PROXY_HEADER'] !== '1') return undefined;
+
   const h = await headers();
   const forwarded = h.get('x-forwarded-for');
   if (forwarded) {
+    // Leftmost is the client where a trusted proxy appends. Only meaningful because the header was
+    // rewritten by something we run — which is exactly what the flag above asserts.
     const first = forwarded.split(',')[0]?.trim();
     if (first) return first;
   }

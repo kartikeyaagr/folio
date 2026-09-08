@@ -237,6 +237,15 @@ export async function evaluateInsider(maxAgeDays = 60): Promise<EvaluateResult> 
   });
 }
 
+/**
+ * How far back a *newly* seen move may be raised.
+ *
+ * The same 60 days the filings evaluator uses, and for the same reason: this is not a window over
+ * what to consider — `NOT EXISTS` decides that — it is a bound on how old a thing may be before
+ * raising it stops being useful. A three-month-old price move is history, not an interruption.
+ */
+const FLOOR_DAYS = 60;
+
 /** A close that moved more than the rule's threshold against the previous close held. */
 export async function evaluatePrices(): Promise<EvaluateResult> {
   return serviceTxn('system:alerts', async (c) => {
@@ -261,8 +270,19 @@ export async function evaluatePrices(): Promise<EvaluateResult> {
          FROM ranked
         WHERE prev IS NOT NULL AND prev > 0
           AND abs((close - prev) / prev * 100) >= $1
-          AND on_date > current_date - 7`,
-      [threshold],
+          -- What has no alert yet, never what is new since I last looked. The filings and insider
+          -- evaluators above both do this; this one used a seven-day window and was the single
+          -- place in the system still using one, which CLAUDE.md names as the rule a window can
+          -- only lose things against. Backfill a nine-day outage and every move older than six
+          -- days was dropped, permanently, while the run recorded zero considered and said ok.
+          AND NOT EXISTS (
+            SELECT 1 FROM alerts a
+             WHERE a.subject_ref = ranked.company_id || ':' || ranked.on_date
+          )
+          -- A floor, not a window: without one, the first backfill of a new company's price
+          -- history would dredge up every move it ever made and raise them all at once.
+          AND on_date > current_date - ($2::int)`,
+      [threshold, FLOOR_DAYS],
     );
 
     let raised = 0;

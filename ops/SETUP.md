@@ -136,6 +136,11 @@ BACKUP_DIR=/var/lib/trisula/backups
 BACKUP_S3_BUCKET=
 BACKUP_S3_ENDPOINT=
 
+# Set to 1 ONLY if a reverse proxy on this box rewrites x-forwarded-for. Under Tailscale with no
+# proxy, leave it unset: the header would then be whatever the client typed, and a rate-limit key
+# the caller chooses lets them both evade the limit and lock somebody else out of the login page.
+TRUST_PROXY_HEADER=
+
 # Agents — see §9. Leave blank until then; agent runs will queue and retry.
 ANTHROPIC_AWS_WORKSPACE_ID=
 AWS_REGION=ap-south-1

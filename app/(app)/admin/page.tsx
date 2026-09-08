@@ -148,8 +148,25 @@ export default async function AdminPage({
                                   <button className="btn btn-sm">Refuse</button>
                                 </form>
                               </div>
+                            ) : r.status === 'approved' && !r.accountExists ? (
+                              // The command lives on the row, not in the toast that announced it.
+                              // A flash clears itself after thirty seconds and the approver looks
+                              // away; then the only record of what to run next is gone, and the
+                              // request reads "approved" with no account behind it and no
+                              // instruction anywhere. It disappears once the account exists.
+                              <div>
+                                <span className="cell-sub">Approved {when(r.decidedAt)}. Run on the VM:</span>
+                                <code className="cell-wrap">
+                                  pnpm exec tsx jobs/seed-user.ts --email {r.email} --name &quot;{r.name}&quot;
+                                </code>
+                              </div>
                             ) : (
-                              <span className="muted">{when(r.decidedAt)}</span>
+                              <span className="muted">
+                                {when(r.decidedAt)}
+                                {r.status === 'approved' && r.accountExists && (
+                                  <span className="cell-sub">account created</span>
+                                )}
+                              </span>
                             )}
                           </td>
                         </tr>

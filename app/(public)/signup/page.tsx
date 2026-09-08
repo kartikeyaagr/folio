@@ -26,9 +26,14 @@ async function submitRequest(formData: FormData): Promise<void> {
   // Same limiter as login. This writes a row for anyone who can reach the page, and while the page
   // is only reachable over Tailscale, "on the tailnet" is not the same as "should be able to fill
   // the approver's queue".
+  // Skipped rather than bucketed under a placeholder when the address is not trustworthy: one
+  // shared key would let the first five requests of the hour lock out everybody else, which is a
+  // denial of service dressed as a rate limit. See app/_lib/client-address.ts.
   const address = await clientAddress();
-  const verdict = hit(`signup:${address ?? 'unknown'}`, { max: 5, windowMs: 60 * 60 * 1000 });
-  if (!verdict.allowed) redirect('/signup?error=rate');
+  if (address) {
+    const verdict = hit(`signup:${address}`, { max: 5, windowMs: 60 * 60 * 1000 });
+    if (!verdict.allowed) redirect('/signup?error=rate');
+  }
 
   await requestAccess(
     String(formData.get('email') ?? ''),

@@ -24,11 +24,14 @@ export interface AccessRequest {
   decidedAt: Date | null;
   decidedByName: string | null;
   decidedNote: string | null;
+  /** True once an account exists for the address. An approval is not an account. */
+  accountExists: boolean;
 }
 
 const SELECT = `
   SELECT r.id, r.email, r.name, r.note, r.status, r.requested_at, r.decided_at,
-         u.name AS decided_by_name, r.decided_note
+         u.name AS decided_by_name, r.decided_note,
+         EXISTS (SELECT 1 FROM users x WHERE lower(x.email) = lower(r.email)) AS account_exists
     FROM access_requests r
     LEFT JOIN users u ON u.id = r.decided_by`;
 
@@ -42,6 +45,7 @@ interface Row {
   decided_at: Date | null;
   decided_by_name: string | null;
   decided_note: string | null;
+  account_exists: boolean;
 }
 
 const toRequest = (r: Row): AccessRequest => ({
@@ -54,6 +58,7 @@ const toRequest = (r: Row): AccessRequest => ({
   decidedAt: r.decided_at,
   decidedByName: r.decided_by_name,
   decidedNote: r.decided_note,
+  accountExists: r.account_exists,
 });
 
 /**

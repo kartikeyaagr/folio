@@ -37,7 +37,11 @@ async function attemptReset(formData: FormData): Promise<void> {
   // Two keys, the same reasoning as login: the address key stops one account being ground at, the
   // caller key stops the endpoint being used to spend the box's CPU on Argon2 hashes.
   const byEmail = hit(`reset:email:${email.toLowerCase()}`, { max: 5, windowMs: 15 * 60 * 1000 });
-  const byAddress = hit(`reset:addr:${address ?? 'unknown'}`, { max: 15, windowMs: 15 * 60 * 1000 });
+  // The address key only exists when a proxy we run put it there. Under a placeholder it would be
+  // one bucket for everybody, and fifteen attempts by anyone would lock out the rest.
+  const byAddress = address
+    ? hit(`reset:addr:${address}`, { max: 15, windowMs: 15 * 60 * 1000 })
+    : { allowed: true, retryAfter: 0 };
   if (!byEmail.allowed || !byAddress.allowed) redirect('/reset?error=rate');
 
   try {

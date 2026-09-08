@@ -20,7 +20,15 @@ const HEADERS: Record<string, string> = {
   Referer: `${BASE}/`,
 };
 
-export class NseError extends Error {}
+export class NseError extends Error {
+  /** Declared and assigned: strip-only mode rejects a parameter property at runtime. */
+  readonly status: number | undefined;
+
+  constructor(message: string, status?: number) {
+    super(message);
+    this.status = status;
+  }
+}
 
 /**
  * A session holding NSE's homepage cookie.
@@ -66,7 +74,7 @@ export class NseSession {
 
     const headers = referer ? { ...this.headers(), Referer: referer } : this.headers();
     const res = await fetch(url, { headers, redirect: 'follow' });
-    if (!res.ok) throw new NseError(`${res.status} from ${url.pathname}`);
+    if (!res.ok) throw new NseError(`${res.status} from ${url.pathname}`, res.status);
 
     return pickRows<T>(await res.json());
   }
@@ -74,7 +82,7 @@ export class NseSession {
   /** Raw bytes from anywhere on NSE, archives included. */
   async bytes(url: string): Promise<Buffer> {
     const res = await fetch(url, { headers: this.headers(), redirect: 'follow' });
-    if (!res.ok) throw new NseError(`${res.status} fetching ${url}`);
+    if (!res.ok) throw new NseError(`${res.status} fetching ${url}`, res.status);
     return Buffer.from(await res.arrayBuffer());
   }
 

@@ -17,7 +17,7 @@
 
 import { inflateRawSync } from 'node:zlib';
 import { serviceTxn } from '../db.ts';
-import { NseSession, parseCsv } from './nse.ts';
+import { NseError, NseSession, parseCsv } from './nse.ts';
 
 const URL_TEMPLATE =
   'https://nsearchives.nseindia.com/content/cm/BhavCopy_NSE_CM_0_0_0_{yyyymmdd}_F_0000.csv.zip';
@@ -51,8 +51,12 @@ const num = (v: string | undefined): string | null => {
  * piece is walking the local file header to find where the deflate stream starts — about twenty
  * lines against a dependency, and the reuse ladder says the standard library first.
  */
+export class UnreadableBhavcopy extends Error {}
+
 export function unzipSingle(buf: Buffer): string {
-  if (buf.readUInt32LE(0) !== 0x04034b50) throw new NoBhavcopy('not a zip file');
+  // Not a NoBhavcopy: the archive answered 200 with something that is not a zip, which is a broken
+  // feed rather than a day with no trading. A captive portal and an error page both land here.
+  if (buf.readUInt32LE(0) !== 0x04034b50) throw new UnreadableBhavcopy('not a zip file');
   const method = buf.readUInt16LE(8);
   const nameLen = buf.readUInt16LE(26);
   const extraLen = buf.readUInt16LE(28);
@@ -69,7 +73,7 @@ export function unzipSingle(buf: Buffer): string {
   // inflateRaw expects. Fabricating a gzip header instead fails: that format also needs a
   // trailing CRC and length, which the zip entry does not carry here.
   if (method === 8) return inflateRawSync(body).toString('utf8');
-  throw new NoBhavcopy(`unsupported zip compression method ${method}`);
+  throw new UnreadableBhavcopy(`unsupported zip compression method ${method}`);
 }
 
 export function parseBhavcopy(csv: string): PriceRow[] {
@@ -99,8 +103,15 @@ export async function fetchBhavcopy(on: Date, session?: NseSession): Promise<Pri
   try {
     raw = await s.bytes(url);
   } catch (err) {
-    // A weekend, a holiday, or a date the exchange has not published yet.
-    throw new NoBhavcopy(`no bhavcopy for ${on.toISOString().slice(0, 10)}: ${String(err)}`);
+    // **Only a 404 means "not published".** Every failure of `s.bytes` used to be rethrown as
+    // NoBhavcopy — 503, DNS, a TLS reset, a timeout — and the job records that as `ok` with the
+    // detail "no bhavcopy published". So a dead archive and a public holiday were the same row,
+    // which is the one thing this system says a feed must never do. Worse, `jobs/alerts.ts` reads
+    // that `ok` and runs the price evaluator against yesterday's closes as though they were today's.
+    if (err instanceof NseError && err.status === 404) {
+      throw new NoBhavcopy(`no bhavcopy published for ${on.toISOString().slice(0, 10)}`);
+    }
+    throw err;
   }
   return parseBhavcopy(unzipSingle(raw));
 }
