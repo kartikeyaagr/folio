@@ -9,6 +9,7 @@
 
 import { randomBytes } from 'node:crypto';
 import { readTxn, writeTxn, type Client } from './db.ts';
+import { linkFilingsIn } from './ingest/filings.ts';
 
 export const STATUSES = ['watching', 'working', 'holding', 'exited', 'passed'] as const;
 export type Status = (typeof STATUSES)[number];
@@ -65,6 +66,42 @@ const toCompany = (r: Row): Company => ({
  * and the ISIN and registered name are read from the exchange's own list. A symbol that is not
  * listed is a typo far more often than it is a gap in the master, so it raises.
  */
+export interface SecurityHit {
+  symbol: string;
+  name: string;
+  /** `mainboard` or `nse_emerge`. Which board a name is on changes what arrives for it. */
+  platform: string;
+  followed: boolean;
+}
+
+/**
+ * Names to follow, out of the exchange's security master.
+ *
+ * The other direction from `searchCompanies`, which is for reaching a name the fund already has.
+ * This one exists to find one it does not.
+ *
+ * **Already-followed names are returned, flagged, not filtered out.** Someone who types a symbol
+ * and sees an empty list concludes it does not exist; the true answer is that it exists and is
+ * already on the list, and that is a different thing to be told.
+ */
+export async function searchSecurities(query: string): Promise<SecurityHit[]> {
+  const q = query.trim().slice(0, 60);
+  if (q.length < 1) return [];
+  return readTxn(async (c: Client) => {
+    const { rows } = await c.query<SecurityHit>(
+      `SELECT s.symbol, s.name, s.platform, (co.id IS NOT NULL) AS followed
+         FROM securities s
+         LEFT JOIN companies co ON co.symbol = s.symbol
+        WHERE s.delisted_at IS NULL
+          AND (s.symbol ILIKE $1 OR s.name ILIKE $1)
+        ORDER BY (s.symbol ILIKE $2) DESC, length(s.symbol), s.symbol
+        LIMIT 8`,
+      [`%${q}%`, `${q}%`],
+    );
+    return rows;
+  });
+}
+
 export async function addCompany(symbol: string, actorId: string): Promise<Company> {
   const upper = symbol.trim().toUpperCase();
   return writeTxn(actorId, async (c: Client) => {
@@ -92,6 +129,11 @@ export async function addCompany(symbol: string, actorId: string): Promise<Compa
       "INSERT INTO company_aliases (company_id, alias, kind) VALUES ($1, $2, 'name')",
       [id, s.name],
     );
+
+    // Adding a name brings its filings with it. In the same transaction, so a company that exists
+    // is a company whose history is attached — attributed to the person who added it, because they
+    // are what caused the write.
+    await linkFilingsIn(c, id);
 
     const { rows } = await c.query<Row>(`${SELECT_COMPANY} WHERE c.id = $1`, [id]);
     return toCompany(rows[0]!);

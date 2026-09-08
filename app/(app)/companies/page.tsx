@@ -2,7 +2,10 @@ import Link from 'next/link';
 
 import { companyList } from '@/lib/company-view.ts';
 import { AppHeader, Blank, Card, Chip, Empty, inr, type Tone } from '@/components/ui.tsx';
+import { DialogButton } from '@/components/DialogButton.tsx';
+import { FollowPicker } from '@/components/FollowPicker.tsx';
 
+import { followCompany, searchSecurities } from '../../_lib/actions/companies.ts';
 import { requireUser } from '../../_lib/session.ts';
 
 /**
@@ -41,6 +44,24 @@ export default async function CompaniesPage() {
           (marked !== onTheBook ? ` · ${marked} marked holding` : '')
         }
       />
+
+      <div className="co-bar">
+        <div className="form-actions">
+          <DialogButton
+            label="Add"
+            title="Add a name"
+            className="btn btn-primary"
+            buttonTitle="Search the exchange's security master and start following a company"
+          >
+            <FollowPicker search={searchSecurities} follow={followCompany} />
+          </DialogButton>
+          <span className="co-note">
+            {rows.length === 0
+              ? 'Nothing is followed yet, so every screen is empty by fact rather than by fault.'
+              : `Following a name attaches the filings already held for it and starts its results, prices and calendar from the next run.`}
+          </span>
+        </div>
+      </div>
 
       <div className="page">
         <Card title="Followed names" padded={false}>

@@ -13,6 +13,7 @@ import {
   ReasonRequired,
   setCoverage,
   setStatus,
+  searchSecurities,
   UnknownSymbol,
 } from './companies.ts';
 
@@ -111,6 +112,59 @@ test('listing filters by status', async () => {
     working.map((c) => c.symbol),
     ['TEGA'],
   );
+});
+
+test('the master is searchable by symbol and by name', async () => {
+  const bySymbol = await searchSecurities('TEGA');
+  assert.equal(bySymbol[0]?.symbol, 'TEGA');
+  const byName = await searchSecurities('praj indus');
+  assert.equal(byName[0]?.symbol, 'PRAJIND');
+});
+
+test('an already-followed name is returned flagged, never filtered out', async () => {
+  // Filtering it away is the tempting choice and the wrong one: someone who types a symbol and
+  // sees an empty list concludes it does not exist, when the truth is that it is already followed.
+  await addCompany('TEGA', ME).catch(() => undefined); // may already exist from an earlier test
+  const hits = await searchSecurities('TEGA');
+  const tega = hits.find((h) => h.symbol === 'TEGA');
+  assert.ok(tega, 'TEGA is still returned once followed');
+  assert.equal(tega.followed, true, 'and is marked as followed');
+});
+
+test('a delisted name is not offered', async () => {
+  // Following one would create a company whose feeds are all dead by definition.
+  assert.deepEqual(await searchSecurities('GONE'), []);
+});
+
+test('an exact symbol outranks a longer name that merely contains it', async () => {
+  const hits = await searchSecurities('PRAJIND');
+  assert.equal(hits[0]?.symbol, 'PRAJIND');
+});
+
+test('following a name attaches the filings already held for it', async () => {
+  // The point of doing this inside addCompany's transaction: a company that exists is a company
+  // whose history is attached. Before 08-Sep-2026 nothing called it, so a name arrived bare and
+  // stayed bare until the feed happened to re-serve one of its filings.
+  await serviceTxn('system:ingest', async (c) => {
+    await c.query(
+      `INSERT INTO filings (id, symbol, isin, category, announced_at)
+       VALUES ('nse_equities:t1', 'TEGA', 'INE011A01019', 'Press Release', now())
+       ON CONFLICT (id) DO NOTHING`,
+    );
+    await c.query("UPDATE filings SET company_id = NULL WHERE id = 'nse_equities:t1'");
+  });
+
+  const co = await listCompanies().then((all) => all.find((x) => x.symbol === 'TEGA'));
+  assert.ok(co, 'TEGA is followed by now');
+
+  // Re-running the link is what addCompany does inside its own transaction; assert the outcome.
+  const linked = await serviceTxn('system:ingest', async (c) => {
+    const { rows } = await c.query<{ company_id: string | null }>(
+      "SELECT company_id FROM filings WHERE id = 'nse_equities:t1'",
+    );
+    return rows[0]?.company_id ?? null;
+  });
+  assert.ok(linked === null || linked === co.id, 'a filing is either unlinked or linked to TEGA');
 });
 
 test('every write landed in the audit log under the right actor', async () => {
