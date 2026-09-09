@@ -219,6 +219,23 @@ test('two feeds carrying one article produce one candidate', async () => {
   assert.equal(await candidateCount(), 1);
 });
 
+test('a retired source contributes nothing, its backlog included', async () => {
+  // Switching a feed off has to reach what it already fetched. The sweep asks which items have no
+  // match row, which has no window to fall out of, so without the active test a retired title's
+  // stories would go on being matched and gated for as long as the rows exist. This is what the
+  // 21 sector-tagged trade titles were retired by.
+  await twoFeeds();
+  await storeItem('e1', 'agri', 'Sugar mills asked to file data', 'https://x/story/8', 0);
+  await storeItem('e2', 'economy', 'Ethanol blending target raised', 'https://x/story/9', 0);
+  await serviceTxn('system:news', async (c) => {
+    await c.query("UPDATE news_sources SET active = false WHERE key = 'economy'");
+  });
+
+  const r = await matchNewItems();
+  assert.equal(r.candidates, 1, 'only the live feed is read');
+  assert.equal(await candidateCount(), 1);
+});
+
 test('a query string is not part of the article’s identity', async () => {
   await twoFeeds();
   await storeItem('b1', 'agri', 'Sugar mills asked to file data', 'https://x/story/2', 0);

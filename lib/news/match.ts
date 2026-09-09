@@ -251,7 +251,12 @@ export async function matchNewItems(limit = 2000): Promise<MatchResult> {
               s.sector AS "sourceSector", s.market AS "sourceMarket"
          FROM news_items i
          JOIN news_sources s ON s.key = i.source_key
-        WHERE NOT EXISTS (SELECT 1 FROM news_matches m WHERE m.item_id = i.id)
+        -- A source that has been switched off contributes nothing, including what it already
+        -- fetched. Without this the question below — which asks what has no match row, and so has
+        -- no window to fall out of — would go on matching and gating a retired feed's backlog for
+        -- as long as the rows exist. Turning a feed off has to mean off.
+        WHERE s.active
+          AND NOT EXISTS (SELECT 1 FROM news_matches m WHERE m.item_id = i.id)
           AND NOT EXISTS (SELECT 1 FROM news_matched_items d WHERE d.item_id = i.id)
         ORDER BY i.fetched_at
         LIMIT $1`,
