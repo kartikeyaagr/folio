@@ -320,17 +320,27 @@ export function Tabs({
   current,
   bar,
 }: {
-  tabs: readonly (readonly [string, ReactNode])[];
+  /** `[href, label]`, or `[href, label, why]` for a tab that exists and has nothing behind it. */
+  tabs: readonly (readonly [string, ReactNode] | readonly [string, ReactNode, string])[];
   current: string;
   bar?: boolean;
 }) {
   return (
     <nav className={bar ? 'tabs tabs-bar' : 'tabs'}>
-      {tabs.map(([href, label]) => (
-        <a key={href} href={href} aria-current={href === current ? 'page' : undefined}>
-          {label}
-        </a>
-      ))}
+      {tabs.map(([href, label, why]) =>
+        // Same reasoning as `Seg`: a tab that is not drawn leaves a reader unable to tell whether
+        // the view is missing or the data is, and the page stops looking the same from one company
+        // to the next.
+        why ? (
+          <span key={href} aria-disabled="true" title={why}>
+            {label}
+          </span>
+        ) : (
+          <a key={href} href={href} aria-current={href === current ? 'page' : undefined}>
+            {label}
+          </a>
+        ),
+      )}
     </nav>
   );
 }

@@ -26,9 +26,13 @@ export interface Financials {
   filed: Basis[];
   basis: Basis;
   pnl: { kind: PeriodKind; label: string; statement: Statement }[];
+  /** Every period kind, so the tabs are the same on every company page. `has` says which are real. */
+  periodKinds: { kind: PeriodKind; label: string; has: boolean }[];
   balanceSheet: Statement;
   cashFlow: Statement;
 }
+
+const KINDS: PeriodKind[] = ['year', 'half_year', 'quarter', 'year_to_date'];
 
 const KIND_LABEL: Record<PeriodKind, string> = {
   year: 'Yearly',
@@ -87,7 +91,7 @@ export async function financials(companyId: string, want?: Basis): Promise<Finan
 
     // Only the period kinds this company actually files. An SME half-yearly filer has no quarters,
     // and an empty "Quarterly" tab is an invitation to wonder what went wrong.
-    const pnl = (['year', 'half_year', 'quarter', 'year_to_date'] as PeriodKind[])
+    const pnl = KINDS
       .map((kind) => {
         const rows = of(kind);
         return {
@@ -125,6 +129,11 @@ export async function financials(companyId: string, want?: Basis): Promise<Finan
       bases,
       filed,
       basis,
+      periodKinds: KINDS.map((kind) => ({
+        kind,
+        label: KIND_LABEL[kind],
+        has: pnl.some((p) => p.kind === kind),
+      })),
       pnl,
       balanceSheet: statement(periodsOf(withBalance), factsOf(withBalance), BALANCE_SHEET),
       cashFlow: statement(periodsOf(withCash), factsOf(withCash), CASH_FLOW),

@@ -291,12 +291,17 @@ export default async function CompanyPage({
             </Empty>
           ) : (
             <>
-              {fin.pnl.length > 1 && (
-                <Tabs
-                  current={href({})}
-                  tabs={fin.pnl.map((p) => [href({ pnl: p.kind }), p.label])}
-                />
-              )}
+              {/* All four, always, so every company page reads the same and only its data differs.
+                  An SME files half-yearly by law and has no quarters — a fact about the company,
+                  which is worth saying rather than leaving as a tab that is simply not there. */}
+              <Tabs
+                current={href({})}
+                tabs={fin.periodKinds.map((p) =>
+                  p.has
+                    ? ([href({ pnl: p.kind }), p.label] as const)
+                    : ([href({}), p.label, `${co.symbol} has filed no ${p.label.toLowerCase()} results that this system holds.`] as const),
+                )}
+              />
               <Statement
                 data={pnlTab!.statement}
                 empty="Nothing reported for this period kind."

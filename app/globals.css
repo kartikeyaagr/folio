@@ -470,6 +470,22 @@ select:focus-visible {
 .tabs::-webkit-scrollbar {
   display: none;
 }
+/* A tab that exists and has nothing behind it — see components/ui.tsx. */
+.tabs [aria-disabled='true'] {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  height: 38px;
+  padding: 0 12px;
+  margin-bottom: -1px;
+  border-bottom: 2px solid transparent;
+  color: var(--muted);
+  opacity: 0.45;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: not-allowed;
+}
 .tabs a,
 .tabs button {
   flex: none;
