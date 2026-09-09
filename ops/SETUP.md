@@ -253,21 +253,104 @@ a day.
 
 ## 10. Claude Platform on AWS (the agents)
 
-Separate from everything above, and skippable until you want agents running.
+Separate from everything above, and skippable until you want agents running. Steps 1 and 2 are
+account-wide and done once; step 3 onwards is per-box.
 
-1. Subscribe to Claude on the AWS Marketplace and note the **workspace id**.
-2. Put it in `ANTHROPIC_AWS_WORKSPACE_ID`, with `AWS_REGION=ap-south-1`.
-3. Credentials come from the ordinary AWS chain, so the instance role is enough — no secret on disk.
+**This is not Amazon Bedrock**, which is a different product: AWS-operated, `anthropic.`-prefixed
+model ids, and a narrower feature set. Claude Platform on AWS is Anthropic-operated, answers at
+`aws-external-anthropic.{region}.api.aws`, takes the bare model ids already in
+`lib/agents/model.ts`, and supports structured outputs — which every agent here needs, because
+every agent passes a schema and `askModel` parses the reply as JSON.
+
+### 1. Turn on outbound web identity federation (once per account)
+
+The gateway calls `sts:GetWebIdentityToken` server-side to mint the JWT it forwards to Anthropic,
+and that STS capability is **off by default on every AWS account**. It is the most common setup
+error, and it surfaces as *"Outbound web identity federation is disabled for your account"* on
+every request rather than as anything about federation.
+
+```bash
+aws iam enable-outbound-web-identity-federation
+aws iam get-outbound-web-identity-federation-info   # expect "JwtVendingEnabled": true
+```
+
+Done for 577483323158 on 09-Sep-2026; `JwtVendingEnabled` is true.
+
+### 2. Sign up, and create the workspace (once per account, Console only)
+
+There is no CLI for this — it is an AWS Marketplace subscription and it has to be accepted by a
+person. In the **AWS Console**, go to the **Claude Platform on AWS** service page and choose **Sign
+up** → **Continue**. Stay on the page; it takes a few minutes and redirects itself.
+
+Until that is done, every call returns a 400 saying so:
+
+> `Your account has not subscribed to this service yet.`
+
+Verified 09-Sep-2026 — SigV4 signing, the endpoint and the region are all fine, and this is the one
+thing missing. Then open the Claude Console from that page and read the **workspace id** out of
+**Workspaces** (`wrkspc_…`). A default workspace is provisioned per region at sign-up. **Workspaces
+are bound to one region**, so take the `ap-south-1` one.
+
+### 3. Tell the box
+
+```
+ANTHROPIC_AWS_WORKSPACE_ID=wrkspc_…
+AWS_REGION=ap-south-1
+```
+
+Both, in `/etc/trisula/trisula.env`. The region has no default — it is part of the endpoint
+hostname — and `lib/agents/client.ts` refuses to build a client without it rather than pointing at
+nowhere and failing later.
+
+### 4. Let the instance role call it
+
+Credentials come from the ordinary AWS chain, so the instance role is enough and **no model secret
+is ever written to this box.** That is the reason for using it. The role is `trisula-backup`
+(instance profile of the same name, already attached to `i-055f70b1b15723f9b`); it needs one
+policy, scoped to the workspace so a leaked role cannot reach any other:
+
+```bash
+aws iam put-role-policy --role-name trisula-backup \
+  --policy-name trisula-claude-inference \
+  --policy-document '{
+    "Version": "2012-10-17",
+    "Statement": [{
+      "Effect": "Allow",
+      "Action": [
+        "aws-external-anthropic:CreateInference",
+        "aws-external-anthropic:CountTokens",
+        "aws-external-anthropic:GetModel",
+        "aws-external-anthropic:ListModels",
+        "aws-external-anthropic:GetWorkspace"
+      ],
+      "Resource": "arn:aws:aws-external-anthropic:ap-south-1:577483323158:workspace/WORKSPACE_ID"
+    }]
+  }'
+```
+
+Written out rather than using the `AnthropicInferenceAccess` managed policy: that one grants
+`Get*` and `List*` across the whole namespace, which includes `GetFile` — downloading file bytes —
+and `GetMemoryStore`, on every workspace in the account. This box only ever calls `messages.create`.
+
+### 5. Check it
+
+```bash
+sudo -u trisula bash -c 'set -a; . /etc/trisula/trisula.env; set +a; \
+  cd /srv/trisula && pnpm exec tsx jobs/agents.ts 1'
+```
 
 **The presence of the workspace id is what selects the backend.** There is deliberately no second
 "which backend" setting, because a setting can disagree with the credentials actually present, and
 that failure reads as an auth error at the far end rather than as the misconfiguration it is.
+`lib/agents/client.ts` is where that choice lives, and `client.test.ts` asserts on the endpoint the
+client actually points at — the previous version of this was a comment claiming a mechanism the
+code did not have.
 
-**This is not Amazon Bedrock**, which is a different product: prefixed model ids, and no structured
-outputs on Opus 5 or Sonnet 5. Every agent here passes a schema, so Bedrock would not work.
-
-The alternative is a plain `ANTHROPIC_API_KEY`, used when no workspace id is set. One or the other,
-never both.
+The alternative is a plain `ANTHROPIC_API_KEY`, used when no workspace id is set. That is the
+laptop's path, so `pnpm dev` works on a machine with no AWS credentials. **On this box it is
+neither set nor wanted:** a key on disk is the thing the instance role exists to avoid. If both are
+present the workspace id wins, because an `ANTHROPIC_API_KEY` left in somebody's shell profile must
+not quietly outrank the box's own configuration.
 
 ## 11. First run
 

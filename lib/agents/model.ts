@@ -21,6 +21,8 @@
 
 import Anthropic from '@anthropic-ai/sdk';
 
+import { modelClient } from './client.ts';
+
 export type Effort = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 
 /**
@@ -76,18 +78,6 @@ export interface AskInput {
 export type Model = (input: AskInput) => Promise<Answer>;
 
 const DEFAULT_MAX_TOKENS = 16_000;
-
-let client: Anthropic | undefined;
-function anthropic(): Anthropic {
-  // The presence of a workspace id selects Claude Platform on AWS. A second setting saying which
-  // backend to use would be a thing that can disagree with the credentials actually present, and
-  // that failure reads as an auth error at the far end rather than as the misconfiguration it is.
-  //
-  // Deliberately NOT Amazon Bedrock, which is a different product: prefixed model ids, and no
-  // structured outputs on Opus 5 or Sonnet 5. Every agent here passes a schema.
-  client ??= new Anthropic();
-  return client;
-}
 
 /**
  * Shallow structural check against the schema's required top-level keys.
@@ -227,7 +217,7 @@ export async function askModel(client: MessagesClient, input: AskInput): Promise
   };
 }
 
-export const liveModel: Model = (input) => askModel(anthropic(), input);
+export const liveModel: Model = (input) => askModel(modelClient(), input);
 
 /**
  * A model that answers from a script, recording every call.

@@ -20,6 +20,7 @@
     "onlyBuiltDependencies": []
   },
   "dependencies": {
+    "@anthropic-ai/aws-sdk": "^0.7.0",
     "@anthropic-ai/sdk": "^0.124.0",
     "@node-rs/argon2": "^2.2.0",
     "fast-xml-parser": "^5.11.1",
