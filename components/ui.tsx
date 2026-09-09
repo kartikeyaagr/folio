@@ -195,18 +195,34 @@ export function Seg({
   current,
   small,
 }: {
-  options: readonly { href: string; label: ReactNode; count?: number | string }[];
+  options: readonly {
+    href: string;
+    label: ReactNode;
+    count?: number | string;
+    /** Offered but not available. Rendered in place, with `why` as its title. */
+    disabled?: boolean;
+    why?: string;
+  }[];
   current: string;
   small?: boolean;
 }) {
   return (
     <div className={small ? 'seg seg-sm' : 'seg'}>
-      {options.map((o) => (
-        <a key={o.href} href={o.href} aria-current={o.href === current ? 'true' : undefined}>
-          {o.label}
-          {o.count !== undefined && <span className="seg-n">{o.count}</span>}
-        </a>
-      ))}
+      {options.map((o) =>
+        // A position that exists and cannot be taken, rather than one that is not drawn. Hiding it
+        // makes a reader wonder whether the control is missing or the data is, which is the thing
+        // they then go looking for.
+        o.disabled ? (
+          <span key={o.href} aria-disabled="true" title={o.why}>
+            {o.label}
+          </span>
+        ) : (
+          <a key={o.href} href={o.href} aria-current={o.href === current ? 'true' : undefined}>
+            {o.label}
+            {o.count !== undefined && <span className="seg-n">{o.count}</span>}
+          </a>
+        ),
+      )}
     </div>
   );
 }

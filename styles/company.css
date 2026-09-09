@@ -912,6 +912,56 @@ details.chk-stage > .chk-stage-head:hover {
   font-weight: 700;
   background: var(--surface-2);
 }
+/* Screener's striping. On a table this wide the eye loses its row between the sticky first column
+   and a figure eight columns out; alternating the ground is what keeps them on the same line. The
+   sticky cell needs the same treatment explicitly, because it paints its own background over the
+   row's. */
+.stmt tbody tr.stmt-stripe td {
+  background: color-mix(in srgb, var(--surface-2) 55%, var(--surface));
+}
+.stmt tbody tr.stmt-stripe .stmt-item {
+  background: color-mix(in srgb, var(--surface-2) 55%, var(--surface));
+}
+
+/* A line with detail folded into it. The label is the control, so the whole thing is the target
+   rather than a separate chevron nobody aims at. */
+.stmt-expand {
+  border: 0;
+  padding: 0;
+  background: none;
+  font: inherit;
+  color: var(--ink);
+  cursor: pointer;
+  text-align: left;
+}
+.stmt-expand span {
+  display: inline-block;
+  min-width: 12px;
+  margin-left: 4px;
+  font-weight: 700;
+  color: var(--teal);
+}
+.stmt-expand:hover {
+  color: var(--teal);
+}
+.stmt-expand:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
+/* What the expander revealed: indented, lighter, and never bold — these are components of the row
+   above, not figures competing with it. */
+.stmt tbody tr.stmt-child td {
+  color: var(--ink-2);
+  background: var(--surface);
+}
+.stmt tbody tr.stmt-child .stmt-item {
+  padding-left: 26px;
+  background: var(--surface);
+  font-size: 12.5px;
+}
+
 .stmt-flag {
   margin-left: 6px;
   font-size: 10px;

@@ -267,20 +267,21 @@ export default async function CompanyPage({
         <Card
           title="Financials"
           action={
-            fin.bases.length > 1 ? (
-              // Only offered when the company files both. A switch with one live position is a
-              // control that teaches you it does nothing.
-              <Seg
-                small
-                current={href({})}
-                options={fin.bases.map((b) => ({
-                  href: href({ basis: b }),
-                  label: b === 'consolidated' ? 'Consolidated' : 'Standalone',
-                }))}
-              />
-            ) : (
-              <span className="muted">{fin.basis}</span>
-            )
+            // Both positions, always. This used to render plain text when a company filed only one
+            // basis, on the argument that a switch with one live position teaches you it does
+            // nothing — but the reader who goes looking for the switch and finds a word cannot
+            // tell whether the control is missing or the data is, and goes looking further. The
+            // unfiled side is shown disabled and says why on hover.
+            <Seg
+              small
+              current={href({})}
+              options={fin.bases.map((b) => ({
+                href: href({ basis: b }),
+                label: b === 'consolidated' ? 'Consolidated' : 'Standalone',
+                disabled: !fin.filed.includes(b),
+                why: `${co.symbol} has filed no ${b} results that this system holds.`,
+              }))}
+            />
           }
         >
           {fin.pnl.length === 0 ? (

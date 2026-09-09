@@ -67,10 +67,13 @@ test('consolidated is preferred where both are filed', async () => {
   assert.equal(f.pnl[0]?.statement.rows[0]?.values[0], '200');
 });
 
-test('a basis the company does not file is refused, not shown empty', async () => {
+test('a basis the company does not file is offered disabled, and never shown empty', async () => {
   await period('year', 'standalone', '2023-04-01', '2024-03-31', { revenue: '100' });
   const f = await financials(CO, 'consolidated');
-  assert.deepEqual(f.bases, ['standalone'], 'only what it files');
+  // Both positions exist so the switch is always drawn. Hiding it when a company files one basis
+  // left a reader unable to tell whether the control was missing or the data was.
+  assert.deepEqual(f.bases, ['consolidated', 'standalone'], 'the switch shows both');
+  assert.deepEqual(f.filed, ['standalone'], 'and says which one is real');
   assert.equal(f.basis, 'standalone', 'asking for one it does not file falls back rather than emptying');
   assert.equal(f.pnl[0]?.statement.rows[0]?.values[0], '100');
 });

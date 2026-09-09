@@ -426,6 +426,20 @@ select:focus-visible {
 .seg button:hover {
   color: var(--ink);
 }
+/* A position that exists and cannot be taken. Dimmed and inert, not absent — see components/ui.tsx. */
+.seg [aria-disabled='true'] {
+  display: inline-flex;
+  align-items: center;
+  height: 30px;
+  padding: 0 12px;
+  border-radius: var(--r-sm);
+  color: var(--muted);
+  opacity: 0.45;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: not-allowed;
+}
 .seg a[aria-current='true'],
 .seg a[aria-current='page'],
 .seg button[aria-current='true'] {
