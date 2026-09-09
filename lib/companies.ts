@@ -173,6 +173,22 @@ export async function setStatus(
   });
 }
 
+/**
+ * The people a name can be assigned to.
+ *
+ * Here rather than in `lib/admin.ts` because assigning coverage is not an administrative act — any
+ * of the three can pick up a name — and a page that only needed a list of colleagues should not
+ * have to import the module that grants and revokes admin.
+ */
+export async function coverers(): Promise<{ id: string; name: string }[]> {
+  return readTxn(async (c) => {
+    const { rows } = await c.query<{ id: string; name: string }>(
+      'SELECT id, name FROM users WHERE disabled_at IS NULL ORDER BY name',
+    );
+    return rows;
+  });
+}
+
 /** Null means nobody covers it, which alert routing reads as "tell everyone". */
 export async function setCoverage(
   companyId: string,

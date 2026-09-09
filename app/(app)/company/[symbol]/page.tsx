@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 
 import { companyPage } from '@/lib/company-view.ts';
+import { coverers, STATUSES } from '@/lib/companies.ts';
 import { financials, type Basis } from '@/lib/financials.ts';
 import { isRange, priceSeries, type Range } from '@/lib/prices.ts';
 import { filings } from '@/lib/filings.ts';
@@ -12,8 +13,10 @@ import {
 import { Statement } from '@/components/Statement.tsx';
 import { PriceChart } from '@/components/PriceChart.tsx';
 import { FilterList } from '@/components/FilterList.tsx';
+import { DialogButton } from '@/components/DialogButton.tsx';
 
 import { requireUser } from '../../../_lib/session.ts';
+import { setCoverageAction, setStatusAction } from '../../../_lib/actions/companies.ts';
 
 /**
  * One company, everything held on it.
@@ -63,11 +66,12 @@ export default async function CompanyPage({
 
   const range: Range = isRange(sp.range) ? sp.range : '1y';
 
-  const [recentFilings, news, fin, prices] = await Promise.all([
+  const [recentFilings, news, fin, prices, desk] = await Promise.all([
     filings({ companyId: co.id, days: 180, limit: 25 }),
     newsFor(user.userId, { companyId: co.id, days: 90 }),
     financials(co.id, wanted),
     priceSeries(co.id, range),
+    coverers(),
   ]);
 
   // Whichever period kind the company actually files, defaulting to the longest it has — a year
@@ -87,6 +91,56 @@ export default async function CompanyPage({
   const value =
     co.quantity && co.lastClose ? Number(co.quantity) * Number(co.lastClose) : null;
 
+  // A5. Both of these existed in lib/companies.ts with no caller, so every name sat at `watching`
+  // with nobody covering it — and neither gap announced itself: a status nobody can change looks
+  // like a status nobody has changed, and "tell everyone" is what alert routing does when coverage
+  // is null, which is indistinguishable from routing that works.
+  const statusForm = (
+    <form action={setStatusAction} className="form-grid">
+      <input type="hidden" name="companyId" value={co.id} />
+      <input type="hidden" name="symbol" value={co.symbol} />
+      <label className="lbl">
+        Status
+        <select className="field" name="status" defaultValue={co.status}>
+          {STATUSES.map((st) => (
+            <option key={st} value={st}>{st}</option>
+          ))}
+        </select>
+      </label>
+      <label className="lbl">
+        Why
+        <input className="field" name="reason" defaultValue={co.closedReason ?? ''} />
+      </label>
+      {/* Said before the refusal rather than after it. A8's graveyard is only worth having if the
+          reasons are in it, so exiting or passing without one is refused server-side. */}
+      <p className="picker-none">
+        Required to exit or pass a name, and kept: a graveyard without reasons teaches nothing.
+      </p>
+      <div className="form-actions">
+        <button type="submit" className="btn btn-primary">Move it</button>
+      </div>
+    </form>
+  );
+
+  const coverForm = (
+    <form action={setCoverageAction} className="form-grid">
+      <input type="hidden" name="companyId" value={co.id} />
+      <input type="hidden" name="symbol" value={co.symbol} />
+      <label className="lbl">
+        Covered by
+        <select className="field" name="userId" defaultValue={co.coveredBy ?? ''}>
+          <option value="">Nobody — alerts go to everyone</option>
+          {desk.map((p) => (
+            <option key={p.id} value={p.id}>{p.name}</option>
+          ))}
+        </select>
+      </label>
+      <div className="form-actions">
+        <button type="submit" className="btn btn-primary">Set it</button>
+      </div>
+    </form>
+  );
+
   return (
     <>
       <AppHeader
@@ -98,7 +152,36 @@ export default async function CompanyPage({
 
       <div className="page">
         <Facts>
-          <Fact label="Status" value={<Chip tone={STATUS_TONE[co.status] ?? 'neutral'}>{co.status}</Chip>} />
+          <Fact
+            label="Status"
+            value={
+              <span className="form-actions">
+                <Chip tone={STATUS_TONE[co.status] ?? 'neutral'}>{co.status}</Chip>
+                <DialogButton
+                  label="Change"
+                  title={`${co.symbol} — where it stands`}
+                  className="btn btn-link"
+                >
+                  {statusForm}
+                </DialogButton>
+              </span>
+            }
+          />
+          <Fact
+            label="Covered by"
+            value={
+              <span className="form-actions">
+                {co.coveredByName ?? <Blank why="Alerts go to everyone" />}
+                <DialogButton
+                  label="Change"
+                  title={`${co.symbol} — whose name it is`}
+                  className="btn btn-link"
+                >
+                  {coverForm}
+                </DialogButton>
+              </span>
+            }
+          />
           <Fact
             label="Held"
             value={co.quantity && Number(co.quantity) > 0 ? inr(co.quantity, 0) : <Blank why="Not on the book" />}

@@ -5,9 +5,14 @@ import { revalidatePath } from 'next/cache';
 import {
   addCompany,
   AlreadyFollowed,
+  ReasonRequired,
   searchSecurities as search,
+  setCoverage,
+  setStatus,
+  STATUSES,
   UnknownSymbol,
   type SecurityHit,
+  type Status,
 } from '@/lib/companies.ts';
 
 import { flash } from '../flash.ts';
@@ -73,5 +78,63 @@ export async function followCompany(form: FormData): Promise<void> {
     }
   }
 
+  revalidatePath('/companies');
+}
+
+/**
+ * Where a name stands, and whose it is.
+ *
+ * A5 is a MUST and every part of it existed in `lib/companies.ts` with no caller outside its own
+ * test: three companies sat at `watching` with `covered_by` NULL because nothing could write
+ * either column. Two things followed from that and neither announced itself. A8's graveyard was
+ * unreachable, since `closed_reason` can only be set by moving a name to `exited` or `passed`, so
+ * `ReasonRequired` was dead code guarding a path nobody could walk. And alert routing read "tell
+ * everyone" permanently, which is indistinguishable from a routing rule that works.
+ */
+export async function setStatusAction(form: FormData): Promise<void> {
+  const user = await requireUser();
+  const companyId = String(form.get('companyId') ?? '');
+  const status = String(form.get('status') ?? '');
+  const reason = String(form.get('reason') ?? '');
+  const symbol = String(form.get('symbol') ?? '');
+
+  // Checked here rather than trusted from the select. A server action is its own entry point.
+  if (!companyId) return flash('No company given.');
+  if (!(STATUSES as readonly string[]).includes(status)) return flash('That is not a status.');
+
+  try {
+    await setStatus(companyId, status as Status, reason, user.userId);
+    await flash(`${symbol || 'The name'} is now ${status}, as ${user.email}.`);
+  } catch (err) {
+    // Closing a name without saying why is the one thing this refuses, and it refuses it in a
+    // sentence rather than as a constraint name.
+    if (err instanceof ReasonRequired) return flash(err.message);
+    throw err;
+  }
+
+  // The page-file form, not the resolved one. `revalidatePath('/company/PRAJIND')` returns without
+  // complaint and leaves the rendered card showing the old status, so the toast says the name
+  // moved and the fact beside it says it did not — measured 09-Sep-2026. Naming the page file
+  // invalidates every path that matches it, which is what a dynamic segment needs.
+  revalidatePath('/company/[symbol]', 'page');
+  revalidatePath('/companies');
+}
+
+export async function setCoverageAction(form: FormData): Promise<void> {
+  const user = await requireUser();
+  const companyId = String(form.get('companyId') ?? '');
+  const userId = String(form.get('userId') ?? '');
+  const symbol = String(form.get('symbol') ?? '');
+  if (!companyId) return flash('No company given.');
+
+  // Empty means nobody, which is a real answer and not a missing one: alert routing reads it as
+  // "tell everyone". Passing it through as null rather than refusing it keeps that sayable.
+  await setCoverage(companyId, userId || null, user.userId);
+  await flash(
+    userId
+      ? `${symbol || 'The name'} is covered from now on, set by ${user.email}.`
+      : `${symbol || 'The name'} is uncovered; its alerts go to everyone.`,
+  );
+  revalidatePath('/company/[symbol]', 'page');
   revalidatePath('/companies');
 }
