@@ -6,8 +6,10 @@ import {
   addCompany,
   AlreadyFollowed,
   ReasonRequired,
+  UnknownSector,
   searchSecurities as search,
   setCoverage,
+  setSector,
   setStatus,
   STATUSES,
   UnknownSymbol,
@@ -135,6 +137,40 @@ export async function setCoverageAction(form: FormData): Promise<void> {
       ? `${symbol || 'The name'} is covered from now on, set by ${user.email}.`
       : `${symbol || 'The name'} is uncovered; its alerts go to everyone.`,
   );
+  revalidatePath('/company/[symbol]', 'page');
+  revalidatePath('/companies');
+}
+
+/**
+ * Which sector a name belongs to.
+ *
+ * The one field on this page the security master cannot supply: NSE's file says what a company is
+ * called and when it listed, and nothing about what it does. Until now nothing could write it
+ * either, so every name added through the picker was excluded from the news matcher's sector tier
+ * forever — silently, and permanently, while the Companies table rendered a Blank that no action
+ * in the system could fill.
+ */
+export async function setSectorAction(form: FormData): Promise<void> {
+  const user = await requireUser();
+  const companyId = String(form.get('companyId') ?? '');
+  const sector = String(form.get('sector') ?? '');
+  const symbol = String(form.get('symbol') ?? '');
+  if (!companyId) return flash('No company given.');
+
+  try {
+    await setSector(companyId, sector, user.userId);
+    await flash(
+      sector
+        ? `${symbol || 'The name'} is ${sector}, set by ${user.email}. Sector news will match from the next run.`
+        : `${symbol || 'The name'} has no sector; it is out of the sector-news tier.`,
+    );
+  } catch (err) {
+    // A sector with no vocabulary behind it is refused, and the refusal says why rather than
+    // storing something that would behave exactly like the blank it replaced.
+    if (err instanceof UnknownSector) return flash(err.message);
+    throw err;
+  }
+
   revalidatePath('/company/[symbol]', 'page');
   revalidatePath('/companies');
 }

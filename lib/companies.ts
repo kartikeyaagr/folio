@@ -20,6 +20,7 @@ const CLOSED: ReadonlySet<Status> = new Set<Status>(['exited', 'passed']);
 export class UnknownSymbol extends Error {}
 export class AlreadyFollowed extends Error {}
 export class ReasonRequired extends Error {}
+export class UnknownSector extends Error {}
 
 export interface Company {
   id: string;
@@ -170,6 +171,62 @@ export async function setStatus(
         WHERE id = $4`,
       [status, closing ? reason!.trim() : null, closing, companyId],
     );
+  });
+}
+
+/**
+ * The sectors that have vocabulary behind them.
+ *
+ * Offered instead of a free-text box, because a sector is only worth setting if the news matcher
+ * can do something with it. `lib/news/match.ts` reaches the sector tier, checks `co.sector`, and
+ * then looks for one of that sector's terms — so a company tagged with a sector nobody has written
+ * terms for is in exactly the state it was in before it was tagged, while looking answered.
+ *
+ * The count comes with it so the screen can say how many terms are behind each one. A sector with
+ * five terms and one with ten are different promises and should not look identical.
+ */
+export async function sectorsWithTerms(): Promise<{ sector: string; terms: number }[]> {
+  return readTxn(async (c) => {
+    const { rows } = await c.query<{ sector: string; terms: string }>(
+      'SELECT sector, count(*)::text AS terms FROM sector_terms GROUP BY sector ORDER BY sector',
+    );
+    return rows.map((r) => ({ sector: r.sector, terms: Number(r.terms) }));
+  });
+}
+
+/**
+ * Which sector a name belongs to, in the fund's own vocabulary.
+ *
+ * The security master does not carry one — NSE's file has symbol, ISIN, name, series, listing date
+ * and face value, and nothing about what the business does — so this is a judgement and there was
+ * no way to record it. `addCompany` never set the column and nothing else updated it, so every
+ * name added through the picker was excluded from the sector tier permanently, and the Companies
+ * table rendered that honestly as a Blank that could never be filled.
+ *
+ * Null is a real answer: a holding company or a conglomerate belongs to no one sector, and saying
+ * so is better than filing it under the nearest.
+ */
+export async function setSector(
+  companyId: string,
+  sector: string | null,
+  actorId: string,
+): Promise<void> {
+  const clean = sector?.trim() || null;
+  if (clean !== null) {
+    const known = await readTxn(async (c) => {
+      const { rows } = await c.query('SELECT 1 FROM sector_terms WHERE sector = $1 LIMIT 1', [clean]);
+      return rows.length > 0;
+    });
+    // Refused rather than stored. A sector with no terms matches nothing, so accepting it would
+    // record an answer that behaves exactly like the blank it replaced.
+    if (!known) {
+      throw new UnknownSector(
+        `No vocabulary is written for "${clean}", so tagging a name with it would match nothing.`,
+      );
+    }
+  }
+  await writeTxn(actorId, async (c) => {
+    await c.query('UPDATE companies SET sector = $1 WHERE id = $2', [clean, companyId]);
   });
 }
 

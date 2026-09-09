@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 
 import { companyPage } from '@/lib/company-view.ts';
-import { coverers, STATUSES } from '@/lib/companies.ts';
+import { coverers, sectorsWithTerms, STATUSES } from '@/lib/companies.ts';
 import { financials, type Basis } from '@/lib/financials.ts';
 import { isRange, priceSeries, type Range } from '@/lib/prices.ts';
 import { filings } from '@/lib/filings.ts';
@@ -16,7 +16,9 @@ import { FilterList } from '@/components/FilterList.tsx';
 import { DialogButton } from '@/components/DialogButton.tsx';
 
 import { requireUser } from '../../../_lib/session.ts';
-import { setCoverageAction, setStatusAction } from '../../../_lib/actions/companies.ts';
+import {
+  setCoverageAction, setSectorAction, setStatusAction,
+} from '../../../_lib/actions/companies.ts';
 
 /**
  * One company, everything held on it.
@@ -66,12 +68,13 @@ export default async function CompanyPage({
 
   const range: Range = isRange(sp.range) ? sp.range : '1y';
 
-  const [recentFilings, news, fin, prices, desk] = await Promise.all([
+  const [recentFilings, news, fin, prices, desk, sectors] = await Promise.all([
     filings({ companyId: co.id, days: 180, limit: 25 }),
     newsFor(user.userId, { companyId: co.id, days: 90 }),
     financials(co.id, wanted),
     priceSeries(co.id, range),
     coverers(),
+    sectorsWithTerms(),
   ]);
 
   // Whichever period kind the company actually files, defaulting to the longest it has — a year
@@ -122,6 +125,34 @@ export default async function CompanyPage({
     </form>
   );
 
+  const sectorForm = (
+    <form action={setSectorAction} className="form-grid">
+      <input type="hidden" name="companyId" value={co.id} />
+      <input type="hidden" name="symbol" value={co.symbol} />
+      <label className="lbl">
+        Sector
+        <select className="field" name="sector" defaultValue={co.sector ?? ''}>
+          <option value="">None — out of the sector-news tier</option>
+          {sectors.map((s) => (
+            <option key={s.sector} value={s.sector}>
+              {s.sector} — {s.terms} terms
+            </option>
+          ))}
+        </select>
+      </label>
+      {/* Only sectors with vocabulary are offered, and the term count says how much. A sector
+          nobody has written terms for matches nothing, so tagging a name with it would look
+          answered and behave exactly like the blank it replaced. */}
+      <p className="picker-none">
+        This is what puts a name in the sector-news tier: a story with none of its terms, from an
+        Indian source, still reaches it. Nothing matches retrospectively — the next run onward.
+      </p>
+      <div className="form-actions">
+        <button type="submit" className="btn btn-primary">Set it</button>
+      </div>
+    </form>
+  );
+
   const coverForm = (
     <form action={setCoverageAction} className="form-grid">
       <input type="hidden" name="companyId" value={co.id} />
@@ -163,6 +194,21 @@ export default async function CompanyPage({
                   className="btn btn-link"
                 >
                   {statusForm}
+                </DialogButton>
+              </span>
+            }
+          />
+          <Fact
+            label="Sector"
+            value={
+              <span className="form-actions">
+                {co.sector ?? <Blank why="Out of the sector-news tier until one is set" />}
+                <DialogButton
+                  label="Change"
+                  title={`${co.symbol} — what it does`}
+                  className="btn btn-link"
+                >
+                  {sectorForm}
                 </DialogButton>
               </span>
             }
