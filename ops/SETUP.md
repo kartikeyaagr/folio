@@ -324,8 +324,43 @@ sudo -u trisula psql -d trisula -c \
 pnpm exec tsx jobs/requeue.ts                  # what failed, and put it back
 ```
 
-A failed unit records itself via `OnFailure=`, so a failure is noticed by the machine rather than
-by someone happening to read the journal.
+A failed unit records itself via `OnFailure=` and queues a notice to the admins, so a failure is
+noticed by the machine rather than by someone happening to read the journal. The notice only
+*leaves* the box once `SMTP_HOST` and `SMTP_FROM` are set in §6.
+
+---
+
+## 14. Deploying a change
+
+Every step is safe to repeat, so run all of them; skipping the one that mattered is how a box ends
+up serving old code against a new schema.
+
+```bash
+cd /srv/trisula
+sudo -u trisula git pull
+
+# Only if package.json changed, but harmless otherwise.
+sudo -u trisula pnpm install --frozen-lockfile
+
+# Migrations first, then the build. They are one transaction each and checksummed, so a re-run
+# applies nothing and a tampered file refuses rather than running twice.
+sudo -u trisula bash -c 'set -a; . /etc/trisula/trisula.env; set +a; pnpm migrate'
+sudo -u trisula pnpm build
+
+# New or changed units. Copying is cheap; working out which changed is not.
+sudo cp ops/systemd/*.service ops/systemd/*.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+
+sudo systemctl restart trisula-web
+curl -sS localhost:3100/api/health
+```
+
+**A new timer is not enabled by copying it.** `systemctl enable --now <name>.timer` for anything
+added since the last deploy — §9 lists the full set, and `systemctl list-timers 'trisula-*'`
+against that list is the check.
+
+Order matters in one direction only: migrations before the restart. The app reads columns the
+migration adds, so a restart first serves a build that queries a schema it does not have yet.
 
 ---
 
