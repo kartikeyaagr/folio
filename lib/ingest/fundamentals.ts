@@ -196,6 +196,70 @@ export async function fetchResultsIndex(session?: NseSession): Promise<ResultsFi
       });
     }
   }
+
+  // And the current regime, without which the daily run stops finding results filed after January
+  // 2025 — which is every one of them. A month back is generous for a job that runs daily and cheap
+  // enough that a few days of the box being off does not lose a quarter.
+  const to = new Date();
+  const from = new Date(to.getTime() - 35 * 86_400_000);
+  for (const board of ['equities', 'sme'] as Board[]) {
+    for (const r of await fetchIntegratedFilings(
+      board,
+      { from: from.toISOString().slice(0, 10), to: to.toISOString().slice(0, 10) },
+      s,
+    )) {
+      if (seen.has(r.xbrlUrl)) continue;
+      seen.add(r.xbrlUrl);
+      out.push(r);
+    }
+  }
+  return out;
+}
+
+/**
+ * Results filed under SEBI's Integrated Filing regime.
+ *
+ * `corporates-financial-results` stopped receiving rows in January 2025 — PRAJIND's last one there
+ * is 30-Jan-2025, for the December 2024 quarter, and the whole-market query agrees: 3,816 rows on
+ * 09-Sep-2026 and every one of them dated 31-Dec-2024. Nothing was broken. SEBI replaced separate
+ * results filings with Integrated Filing (Financial), and NSE serves those from a different
+ * endpoint under a different taxonomy namespace. A system reading only the old feed sees a company
+ * that stopped reporting twenty months ago and has no way to tell that from one that did.
+ *
+ * The rows carry governance filings too; only `Integrated Filing- Financials` is a results
+ * instance. `qe_Date` is the quarter end, and `xbrl` is a plain instance the existing parser reads
+ * once its namespace check admits `in-capmkt` — the element names are unchanged.
+ *
+ * A date range is required: asked without one the endpoint answers with nothing at all.
+ */
+export async function fetchIntegratedFilings(
+  board: Board,
+  range: { from: string; to: string; symbol?: string },
+  session?: NseSession,
+): Promise<ResultsFiling[]> {
+  const s = session ?? (await NseSession.open());
+  const params: Record<string, string> = {
+    index: board,
+    from_date: range.from.split('-').reverse().join('-'),
+    to_date: range.to.split('-').reverse().join('-'),
+  };
+  if (range.symbol) params['symbol'] = range.symbol.trim().toUpperCase();
+
+  const rows = await s.rows<Record<string, unknown>>('integrated-filing-results', params);
+  const out: ResultsFiling[] = [];
+  const seen = new Set<string>();
+  for (const r of rows) {
+    if (!String(r['type'] ?? '').includes('Financial')) continue;
+    const url = String(r['xbrl'] ?? '').trim();
+    if (!url.startsWith('http') || seen.has(url)) continue;
+    seen.add(url);
+    out.push({
+      symbol: String(r['symbol'] ?? '').trim().toUpperCase(),
+      isin: null,
+      xbrlUrl: url,
+      periodEnd: String(r['qe_Date'] ?? '').trim() || null,
+    });
+  }
   return out;
 }
 
@@ -211,14 +275,30 @@ export async function fetchResultsIndex(session?: NseSession): Promise<ResultsFi
  * back to 31-Mar-2005. Measured 09-Sep-2026. That is the same shape as the announcements and
  * corporate-actions endpoints, and the same reason `backfill-company.ts` asks all three by name.
  */
+export type Board = 'equities' | 'sme';
+
 export async function fetchResultsForSymbol(
   symbol: string,
-  board: 'equities' | 'sme',
+  board: Board,
   session?: NseSession,
 ): Promise<ResultsFiling[]> {
   const s = session ?? (await NseSession.open());
   const out: ResultsFiling[] = [];
   const seen = new Set<string>();
+
+  // Both regimes. The old feed holds everything up to January 2025 and nothing after; the
+  // integrated one holds everything since. A company's history spans the changeover, so reading
+  // one of them gives a P&L with a twenty-month hole in it and no sign that the hole is ours.
+  for (const r of await fetchIntegratedFilings(board, {
+    from: '2025-01-01',
+    to: new Date().toISOString().slice(0, 10),
+    symbol,
+  }, s)) {
+    if (!seen.has(r.xbrlUrl)) {
+      seen.add(r.xbrlUrl);
+      out.push(r);
+    }
+  }
 
   for (const { index, period } of RESULT_FEEDS) {
     if (index !== board) continue;

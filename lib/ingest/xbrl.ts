@@ -24,8 +24,19 @@
 import { XMLParser } from 'fast-xml-parser';
 
 const XBRLI = 'http://www.xbrl.org/2003/instance';
-/** The taxonomy namespace is BSE's, used by both exchanges. Matched by suffix, never pinned. */
-const FIN_NS = /\/in-bse-fin$/;
+/**
+ * The taxonomy namespaces, matched by suffix and never pinned to a version.
+ *
+ * `in-bse-fin` is BSE's, used by both exchanges for the results filings that ran until Jan 2025.
+ * `in-capmkt` is SEBI's, and it is what the Integrated Filing regime replaced them with — the last
+ * `corporates-financial-results` row for PRAJIND is 30-Jan-2025, and everything since arrives under
+ * the new namespace through `integrated-filing-results` instead.
+ *
+ * **The element names did not change.** `RevenueFromOperations`, `Expenses`, `ProfitBeforeTax` and
+ * the rest are identical in both; only the prefix moved. So this is one line rather than a second
+ * mapping, and a filing that reaches here under either namespace parses the same way.
+ */
+const FIN_NS = /\/(in-bse-fin|in-capmkt)$/;
 
 export class UnparseableXbrl extends Error {}
 
@@ -152,7 +163,7 @@ export function parse(content: Buffer | string): Instance {
     if (FIN_NS.test(uri)) finPrefixes.add(prefix);
   }
   if (finPrefixes.size === 0) {
-    throw new UnparseableXbrl('no in-bse-fin namespace; not a results instance');
+    throw new UnparseableXbrl('no in-bse-fin or in-capmkt namespace; not a results instance');
   }
 
   const isContext = (n: Node) => prefixOf(n.name) === xbrliPrefix && localName(n.name) === 'context';
