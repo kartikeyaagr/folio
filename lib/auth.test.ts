@@ -16,7 +16,6 @@ import {
   issueRecoveryCodes,
   issueSession,
   login,
-  redeemRecoveryCode,
   resolveSession,
   revokeSession,
   setPassword,
@@ -188,17 +187,29 @@ test('getting it right clears the count, so a fumble is not held against you', a
 });
 
 test('a recovery code works once', async () => {
+  resetLimits();
   const codes = await issueRecoveryCodes(USER, 'system:auth');
   assert.equal(codes.length, 8);
   const code = codes[0]!;
-  assert.equal(await redeemRecoveryCode(code), USER);
-  assert.equal(await redeemRecoveryCode(code), null, 'a replayed code must match nothing');
+  await resetWithRecoveryCode('t@example.com', code, 'a brand new long password');
+  await assert.rejects(
+    () => resetWithRecoveryCode('t@example.com', code, 'another long password'),
+    BadRecoveryCode,
+    'a replayed code must match nothing',
+  );
+  await setPassword(USER, 'correct horse battery staple', 'system:auth');
+  resetLimits();
 });
 
 test('issuing a fresh set invalidates the old printout', async () => {
+  resetLimits();
   const first = await issueRecoveryCodes(USER, 'system:auth');
   await issueRecoveryCodes(USER, 'system:auth');
-  assert.equal(await redeemRecoveryCode(first[0]!), null);
+  await assert.rejects(
+    () => resetWithRecoveryCode('t@example.com', first[0]!, 'a long enough password'),
+    BadRecoveryCode,
+  );
+  resetLimits();
 });
 
 test('a recovery code resets the password and ends every session', async () => {
@@ -266,6 +277,10 @@ test('a disabled account cannot be reset into', async () => {
   resetLimits();
 });
 
-test('an unknown recovery code returns null', async () => {
-  assert.equal(await redeemRecoveryCode('nope'), null);
+test('an unknown recovery code is refused', async () => {
+  resetLimits();
+  await assert.rejects(
+    () => resetWithRecoveryCode('t@example.com', 'nope', 'a long enough password'),
+    BadRecoveryCode,
+  );
 });

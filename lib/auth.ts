@@ -167,21 +167,11 @@ export async function issueRecoveryCodes(userId: string, actorId: string): Promi
   return codes;
 }
 
-/**
- * Single-use by construction: the UPDATE only matches a row whose `used_at` is still null, so a
- * replayed code matches nothing. Returns the user it belonged to, or null.
- */
-export async function redeemRecoveryCode(code: string): Promise<string | null> {
-  return serviceTxn('system:auth', async (c) => {
-    const { rows } = await c.query<{ user_id: string }>(
-      `UPDATE recovery_codes SET used_at = now()
-        WHERE code_sha256 = $1 AND used_at IS NULL
-        RETURNING user_id`,
-      [sha256(code)],
-    );
-    return rows[0]?.user_id ?? null;
-  });
-}
+// `redeemRecoveryCode` was here and is deliberately gone. It burned a code on the code alone and
+// returned whose it was, with no address to check it against — so a code found on a desk was
+// enough. `resetWithRecoveryCode` below does the same UPDATE joined to `users` on the email, and is
+// what `/reset` calls. Keeping the weaker one exported next to it was an invitation to reach for
+// the wrong one; single-use is still asserted, through the function that has a caller.
 
 // ------------------------------------------------------------------------------------------------
 // Login

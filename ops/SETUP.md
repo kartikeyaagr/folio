@@ -286,9 +286,9 @@ sudo -u trisula bash -c 'set -a; . /etc/trisula/trisula.env; set +a; \
 # request instead, with `--request <id>` off the row on /admin, so that no applicant's own text
 # is ever assembled into a command anybody pastes into this shell.
 # Prints a TEMPORARY PASSWORD and eight recovery codes, ONCE. Put them in the password manager.
-# The holder can change that password from the avatar menu (09-Sep-2026). No route redeems a
-# recovery code yet — `redeemRecoveryCode` is in lib/auth.ts with no caller — so a locked-out
-# person still needs somebody with shell access.
+# The holder changes that password from the avatar menu, and redeems a code at /reset if they lose
+# it — the code plus the address sets a new password and signs out every session. Somebody who has
+# lost the password AND all eight codes still needs a person with shell access to re-issue them.
 sudo -u trisula bash -c 'set -a; . /etc/trisula/trisula.env; set +a; \
   pnpm exec tsx jobs/seed-user.ts --email you@trisulacapital.com --name "Your Name"'
 ```
