@@ -160,7 +160,13 @@ export default async function PortfolioPage({
                           <Link href={`/company/${a.symbol}`}><b>{a.symbol}</b></Link>
                           <span className="cell-sub">{a.name}</span>
                         </td>
-                        <td className="cell-wrap">{what}</td>
+                        <td className="cell-wrap">
+                          {what}
+                          {/* The exchange's own line, under our reading of it. Confirming applies
+                              our parse to a real position, and a person cannot check a parse they
+                              cannot see next to what produced it. */}
+                          {a.subject && <span className="cell-sub">{a.subject}</span>}
+                        </td>
                         <td className="num">
                           {held === 0
                             ? <Blank why="Nothing was held on the record date" />

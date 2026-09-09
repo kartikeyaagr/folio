@@ -110,6 +110,8 @@ export interface PendingAction {
   ratioFrom: string | null;
   ratioTo: string | null;
   amountPerShare: string | null;
+  /** The exchange's own line. Shown beside the parse so a person can check one against the other. */
+  subject: string | null;
   companyId: string;
   /** The position on the record date. What the action will actually act on, shown before it does. */
   quantityAtRecord: number;
@@ -137,7 +139,8 @@ export async function pendingActions(): Promise<PendingAction[]> {
               a.record_date::text AS "recordDate",
               a.ratio_from::text AS "ratioFrom",
               a.ratio_to::text AS "ratioTo",
-              a.amount_per_share::text AS "amountPerShare"
+              a.amount_per_share::text AS "amountPerShare",
+              a.subject
          FROM corporate_actions a
          JOIN companies co ON co.id = a.company_id
         WHERE a.applied_at IS NULL

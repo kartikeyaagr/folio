@@ -32,6 +32,7 @@ import {
   type Board,
 } from '../lib/ingest/filings.ts';
 import { fetchAttachments } from '../lib/ingest/attachments.ts';
+import { fetchAnnouncements, storeAnnouncements, type Board as CaBoard } from '../lib/ingest/corporate-actions.ts';
 import { extractPending } from '../lib/ingest/extract.ts';
 import { ingestFundamentals } from '../lib/ingest/fundamentals.ts';
 import { ingestShareholding } from '../lib/ingest/shareholding.ts';
@@ -91,6 +92,26 @@ async function backfill(t: Target, priceDays: number): Promise<Step[]> {
     const r = await ingestFundamentals();
     if (r.indexRows === 0) throw new Error('the results feed returned nothing');
     return `${r.candidates} candidates, ${r.stored} periods stored`;
+  });
+
+  // Asked for by symbol, which makes the endpoint serve the name's whole history rather than the
+  // window's — PRAJIND answers back to 2015. A company followed today therefore arrives with its
+  // bonuses and splits already known, which matters because a split nobody recorded silently
+  // misprices every trade before it.
+  await attempt('corporate actions', async () => {
+    const board: CaBoard = t.platform === 'nse_emerge' ? 'sme' : 'equities';
+    const items = await fetchAnnouncements(board, {
+      from: '2010-01-01',
+      to: new Date(Date.now() + 90 * 86_400_000).toISOString().slice(0, 10),
+      symbol: t.symbol,
+    });
+    if (items.length === 0) throw new Error('the corporate-actions feed returned nothing for this symbol');
+    const r = await storeAnnouncements(items);
+    const refused = Object.entries(r.declined).sort((a, b) => b[1] - a[1]);
+    return (
+      `${r.seen} announcements, ${r.stored} stored unconfirmed` +
+      (refused.length > 0 ? `, ${refused.reduce((n, [, c]) => n + c, 0)} declined` : '')
+    );
   });
 
   await attempt('shareholding', async () => {
