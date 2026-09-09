@@ -25,6 +25,18 @@ export type DocKind = 'note' | 'memo' | 'meeting' | 'checklist' | 'sheet';
 /** What a person can make. The others — transcript, brief — are written by ingest and agents. */
 export const AUTHORED: DocKind[] = ['note', 'memo', 'meeting', 'checklist', 'sheet'];
 
+/**
+ * Kinds this system produced rather than a person, which are therefore **read-only**.
+ *
+ * A transcript is a record of what a company actually said on a call, extracted from the PDF it
+ * filed. Opening it in an editor with a Save button invites somebody to fix a typo in it — and the
+ * result is a document that reads like the exchange's and is not, with a version history saying a
+ * colleague wrote it. The desk's own writing is editable; the record is not.
+ */
+export const INGESTED = new Set(['transcript', 'brief']);
+
+export const isEditable = (kind: string): boolean => !INGESTED.has(kind);
+
 export const KIND_LABEL: Record<string, string> = {
   note: 'Note',
   memo: 'Memo',
@@ -56,6 +68,44 @@ export interface DocDetail extends DocSummary {
   createdByName: string | null;
 }
 
+/**
+ * Where an ingested document came from.
+ *
+ * The point of showing this is that a reader can get back to the thing itself. An extracted
+ * transcript is this system's reading of a PDF the company filed, and a reading is worth having
+ * only while you can check it against the original — so the filing, the date it was announced, and
+ * the file itself are all named.
+ */
+export interface Provenance {
+  sha256: string;
+  filename: string;
+  mediaType: string;
+  bytes: number;
+  /** The announcement it was attached to, where one still links to it. */
+  filingSubject: string | null;
+  filingCategory: string | null;
+  announcedAt: Date | null;
+}
+
+export async function provenanceOf(documentId: string): Promise<Provenance | null> {
+  return readTxn(async (c) => {
+    const { rows } = await c.query<Provenance>(
+      `SELECT a.sha256, a.filename, a.media_type AS "mediaType", a.bytes,
+              f.summary AS "filingSubject", f.category AS "filingCategory",
+              f.announced_at AS "announcedAt"
+         FROM documents d
+         JOIN attachments a ON a.sha256 = d.from_attachment
+         LEFT JOIN LATERAL (
+           SELECT summary, category, announced_at FROM filings
+            WHERE attachment_sha256 = a.sha256 ORDER BY announced_at DESC LIMIT 1
+         ) f ON true
+        WHERE d.id = $1`,
+      [documentId],
+    );
+    return rows[0] ?? null;
+  });
+}
+
 const SELECT = `
   SELECT d.id, d.title, d.kind, d.company_id AS "companyId", co.symbol,
          d.updated_at AS "updatedAt", d.archived_at AS "archivedAt",
@@ -76,6 +126,26 @@ export async function documentsFor(
          AND (d.archived_at IS NULL OR $2)
        ORDER BY d.archived_at IS NOT NULL, d.updated_at DESC`,
       [companyId, opts.archived ?? false],
+    );
+    return rows;
+  });
+}
+
+/**
+ * Everything written or ingested, across every company.
+ *
+ * The index exists because a document is not always about one company. Agent 4's news brief covers
+ * the whole book, so `company_id` is null on it and no company page could ever list it — it was
+ * written, stored, versioned, and reachable from nowhere. Anything that can be created has to be
+ * findable, or it may as well not have been kept.
+ */
+export async function allDocuments(opts: { archived?: boolean } = {}): Promise<DocSummary[]> {
+  return readTxn(async (c) => {
+    const { rows } = await c.query<DocSummary>(
+      `${SELECT} WHERE d.archived_at IS NULL OR $1
+       ORDER BY d.archived_at IS NOT NULL, d.updated_at DESC
+       LIMIT 500`,
+      [opts.archived ?? false],
     );
     return rows;
   });

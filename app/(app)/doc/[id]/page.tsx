@@ -1,11 +1,12 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 
-import { getDocument, KIND_LABEL, revisionsOf } from '@/lib/workspace.ts';
+import { getDocument, isEditable, KIND_LABEL, provenanceOf, revisionsOf } from '@/lib/workspace.ts';
 import { DATA_FUNCTIONS, lookupsFor } from '@/lib/sheet/data.ts';
-import { AppHeader, Blank, Card, Empty } from '@/components/ui.tsx';
+import { AppHeader, Blank, Card, Empty, Fact, Facts } from '@/components/ui.tsx';
 import { DialogButton } from '@/components/DialogButton.tsx';
 import { DocEditor } from '@/components/DocEditor.tsx';
+import { DocumentText } from '@/components/DocumentText.tsx';
 import { SheetEditor } from '@/components/SheetEditor.tsx';
 
 import { requireUser } from '../../../_lib/session.ts';
@@ -45,11 +46,14 @@ export default async function DocumentPage({ params }: { params: Promise<{ id: s
   if (!doc) notFound();
 
   const isSheet = doc.kind === 'sheet';
+  // Written by this system rather than by a person, and therefore read rather than edited.
+  const editable = isEditable(doc.kind);
   const cells = (doc.body['cells'] ?? {}) as Record<string, string>;
   const text = typeof doc.body['text'] === 'string' ? doc.body['text'] : '';
-  const [lookups, revisions] = await Promise.all([
+  const [lookups, revisions, from] = await Promise.all([
     isSheet ? lookupsFor(cells) : Promise.resolve({}),
     revisionsOf(doc.id, 12),
+    provenanceOf(doc.id),
   ]);
 
   return (
@@ -61,8 +65,8 @@ export default async function DocumentPage({ params }: { params: Promise<{ id: s
           (doc.symbol ? ` · ${doc.symbol}` : '') +
           ` · ${doc.versions} ${doc.versions === 1 ? 'version' : 'versions'}`
         }
-        back={doc.symbol ? `/company/${doc.symbol}` : '/companies'}
-        backTitle={doc.symbol ?? 'Companies'}
+        back={doc.symbol ? `/company/${doc.symbol}` : '/documents'}
+        backTitle={doc.symbol ?? 'Documents'}
       />
 
       <div className="page">
@@ -74,9 +78,16 @@ export default async function DocumentPage({ params }: { params: Promise<{ id: s
         )}
 
         <Card
-          title={isSheet ? 'Model' : 'Document'}
+          title={isSheet ? 'Model' : editable ? 'Document' : KIND_LABEL[doc.kind] ?? 'Document'}
           action={
             <div className="form-actions">
+              {!editable && (
+                // Said, not merely enforced by the absence of a Save button. A reader who cannot
+                // find how to edit should learn that there is nothing to find.
+                <span className="chip chip-neutral" title="Extracted by this system from the filing below. The record is not edited here.">
+                  read only
+                </span>
+              )}
               <DialogButton label="Rename" title="Rename" className="btn btn-link">
                 <form action={renameDocumentAction} className="form-grid">
                   <input type="hidden" name="id" value={doc.id} />
@@ -104,8 +115,10 @@ export default async function DocumentPage({ params }: { params: Promise<{ id: s
             // The action by reference and the id beside it. An arrow closing over the id would be
             // an event handler, which cannot cross into a client component.
             <SheetEditor id={doc.id} cells={cells} lookups={lookups} onSave={saveSheetAction} />
-          ) : (
+          ) : editable ? (
             <DocEditor id={doc.id} text={text} onSave={saveTextAction} />
+          ) : (
+            <DocumentText text={text} />
           )}
         </Card>
 
@@ -133,6 +146,26 @@ export default async function DocumentPage({ params }: { params: Promise<{ id: s
           </Card>
         )}
 
+        {from && (
+          <Card title="Where this came from">
+            <p className="picker-none">
+              This is what this system read out of the file below. A reading is worth having only
+              while it can be checked against the thing it read, so the original is here.
+            </p>
+            <Facts>
+              <Fact label="Filing" value={from.filingCategory ?? <Blank why="No announcement still links to this file" />} />
+              <Fact label="Announced" value={from.announcedAt ? when(from.announcedAt) : <Blank why="Not linked to an announcement" />} />
+              <Fact label="Size" value={`${(from.bytes / 1e6).toFixed(2)} MB`} />
+            </Facts>
+            {from.filingSubject && <p className="tbl-note">{from.filingSubject}</p>}
+            <p className="tbl-note">
+              <a href={`/api/attachment/${from.sha256}`} target="_blank" rel="noreferrer">
+                Open {from.filename}
+              </a>
+            </p>
+          </Card>
+        )}
+
         <Card title="History">
           {revisions.length === 0 ? (
             <Empty>No saves recorded.</Empty>
@@ -152,8 +185,8 @@ export default async function DocumentPage({ params }: { params: Promise<{ id: s
             </div>
           )}
           <p className="tbl-note">
-            Every save is kept. <Link href={doc.symbol ? `/company/${doc.symbol}` : '/companies'}>
-              Back to {doc.symbol ?? 'companies'}
+            Every save is kept. <Link href={doc.symbol ? `/company/${doc.symbol}` : '/documents'}>
+              Back to {doc.symbol ?? 'documents'}
             </Link>.
           </p>
         </Card>

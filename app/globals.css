@@ -1439,3 +1439,30 @@ dialog.dlg[open] {
   font-size: 14px;
   resize: vertical;
 }
+
+/* Reading a document this system extracted, rather than editing it. Wider measure than a form
+   field and a real line height: these run to fifty thousand characters and are read, not scanned. */
+.doc-body-read {
+  padding: 16px 18px;
+  max-height: 70vh;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.65;
+  font-size: 13.5px;
+  color: var(--ink-2);
+}
+.doc-read .sheet-bar .field {
+  max-width: 280px;
+}
+/* Every match is marked; the one you are on is marked differently, or "next" moves the page with
+   nothing to show for it. */
+.stmt-mark {
+  background: var(--amber-soft);
+  color: var(--ink);
+  border-radius: 2px;
+}
+.stmt-mark.is-at {
+  background: var(--teal);
+  color: var(--on-navy, #fff);
+}

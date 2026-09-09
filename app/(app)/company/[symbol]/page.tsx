@@ -263,7 +263,7 @@ export default async function CompanyPage({
             until this existed that happened in Google Docs and Excel, which is the thing
             docs/specs/v2-system-map.md says in its first paragraph that this system replaces. */}
         <Card
-          title="Documents and models"
+          title={<>Documents and models <Link href="/documents" className="btn btn-link">all →</Link></>}
           action={
             <div className="form-actions">
               <Seg
