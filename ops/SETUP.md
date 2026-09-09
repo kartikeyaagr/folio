@@ -273,11 +273,14 @@ sudo -u trisula bash -c 'set -a; . /etc/trisula/trisula.env; set +a; pnpm migrat
 sudo -u trisula bash -c 'set -a; . /etc/trisula/trisula.env; set +a; \
   pnpm exec tsx jobs/refresh-securities.ts'
 
-# Three accounts. There is no signup route; this is the only way one exists.
+# The FIRST account. There is no signup route, and --email/--name is the bootstrap: it has to
+# exist before anybody can request one. Every account after this is created from an approved
+# request instead, with `--request <id>` off the row on /admin, so that no applicant's own text
+# is ever assembled into a command anybody pastes into this shell.
 # Prints a TEMPORARY PASSWORD and eight recovery codes, ONCE. Put them in the password manager.
-# Note: nothing in the app can change that password yet, and no route redeems a recovery code —
-# both functions exist in lib/auth.ts with no caller. Until that is wired, the seeded password
-# IS the password. Audited 08-Sep-2026.
+# The holder can change that password from the avatar menu (09-Sep-2026). No route redeems a
+# recovery code yet — `redeemRecoveryCode` is in lib/auth.ts with no caller — so a locked-out
+# person still needs somebody with shell access.
 sudo -u trisula bash -c 'set -a; . /etc/trisula/trisula.env; set +a; \
   pnpm exec tsx jobs/seed-user.ts --email you@trisulacapital.com --name "Your Name"'
 ```

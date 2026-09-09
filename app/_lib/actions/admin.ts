@@ -55,8 +55,11 @@ export async function decideRequestAction(form: FormData): Promise<void> {
       admin.userId,
       String(form.get('note') ?? ''),
     );
+    // The command is on the row, not here. A toast cannot hold an instruction anyway — it clears
+    // itself and the approver looks away — and this one was assembling a shell line out of the
+    // applicant's own name, which is text a stranger chose and a shell reads as syntax.
     return decision === 'approved'
-      ? `Approved ${r.email}. Create the account on the VM: pnpm exec tsx jobs/seed-user.ts --email ${r.email} --name "${r.name}"`
+      ? `Approved ${r.email}. The command to create the account is on the row.`
       : `Refused ${r.email}, as ${admin.email}`;
   });
 }

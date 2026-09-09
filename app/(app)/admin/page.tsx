@@ -156,8 +156,14 @@ export default async function AdminPage({
                               // instruction anywhere. It disappears once the account exists.
                               <div>
                                 <span className="cell-sub">Approved {when(r.decidedAt)}. Run on the VM:</span>
+                                {/* The request's id, which this system minted, and nothing the
+                                    applicant typed. The command used to interpolate their email
+                                    and name — both straight off the public form — into a line an
+                                    admin was invited to paste into a root shell; a name of
+                                    `" ; curl … | sh #` made it run that instead. The job reads
+                                    the address and the name from the row itself. */}
                                 <code className="cell-wrap">
-                                  pnpm exec tsx jobs/seed-user.ts --email {r.email} --name &quot;{r.name}&quot;
+                                  pnpm exec tsx jobs/seed-user.ts --request {r.id}
                                 </code>
                               </div>
                             ) : (

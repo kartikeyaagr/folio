@@ -125,6 +125,36 @@ export async function pendingCount(): Promise<number> {
  * account: it records that somebody said yes, and the panel then shows the `seed-user` command to
  * run on the box. Keeping account creation on the VM is the whole reason this is only a request.
  */
+export class NotApproved extends Error {}
+
+/**
+ * The approved request an account is being created for.
+ *
+ * Exists so `jobs/seed-user.ts` can be handed an id rather than an address and a name. The screen
+ * that prints that command used to interpolate both, straight off the public signup form, into a
+ * shell line an admin was invited to paste into a root shell — and a name is text a stranger
+ * chose, which a shell reads as syntax. The id is 32 hex characters this system minted, so the
+ * pasted line carries nothing an applicant wrote, and their words are read back here as data.
+ *
+ * Approval is checked, not assumed. It is the only thing that authorises an account, and knowing
+ * a request's id is not the same as it having been approved.
+ */
+export async function approvedRequest(id: string): Promise<{ email: string; name: string }> {
+  const rows = await readTxn(async (c) => {
+    const { rows } = await c.query<{ email: string; name: string; status: string }>(
+      'SELECT email, name, status FROM access_requests WHERE id = $1',
+      [id],
+    );
+    return rows;
+  });
+  const r = rows[0];
+  if (!r) throw new NoSuchRequest(`No access request ${id}.`);
+  if (r.status !== 'approved') {
+    throw new NotApproved(`Access request ${id} is ${r.status}, not approved.`);
+  }
+  return { email: r.email, name: r.name };
+}
+
 export async function decideRequest(
   id: string,
   decision: 'approved' | 'rejected',
