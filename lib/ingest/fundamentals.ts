@@ -153,6 +153,12 @@ export interface ResultsFiling {
  * the query is the natural thing to do and yields nothing forever. This is L1's sixth instance
  * waiting to happen, which is why the pairs are a named constant rather than inline strings.
  */
+/**
+ * How far back to ask. Older than any Indian listed company's XBRL, so it is a floor rather than a
+ * judgement about when anything started; the endpoints answer with what they hold.
+ */
+const EARLIEST = '2001-01-01';
+
 const RESULT_FEEDS: ReadonlyArray<{ index: string; period: string }> = [
   { index: 'equities', period: 'Quarterly' },
   { index: 'equities', period: 'Annual' },
@@ -197,9 +203,13 @@ export async function fetchResultsIndex(session?: NseSession): Promise<ResultsFi
     }
   }
 
-  // And the current regime, without which the daily run stops finding results filed after January
-  // 2025 — which is every one of them. A month back is generous for a job that runs daily and cheap
-  // enough that a few days of the box being off does not lose a quarter.
+  // And the current regime. A month back is generous for a job that runs daily and cheap enough
+  // that a few days of the box being off does not lose a quarter.
+  //
+  // Market-wide, which is what this function is for — but the cap makes that unreliable on its own
+  // during a results season, when far more than twenty companies file in a day. `backfillDue()`
+  // below is the reliable half: it asks per symbol for the names actually followed, where the cap
+  // is never close. This is the cheap sweep, and it is not the only one.
   const to = new Date();
   const from = new Date(to.getTime() - 35 * 86_400_000);
   for (const board of ['equities', 'sme'] as Board[]) {
@@ -217,20 +227,95 @@ export async function fetchResultsIndex(session?: NseSession): Promise<ResultsFi
 }
 
 /**
+ * How many rows the endpoint will return for one question, measured 09-Sep-2026.
+ *
+ * PRAJIND over 2015-2026 answers 20; over 2024-2026 it answers 20; over 2025 alone it answers 10
+ * and over 2026 alone 12 — the same eighteen filings, and the wide questions were both truncated
+ * to the same number. There is no page parameter and no total in the response, so a full answer
+ * and a clipped one look identical.
+ */
+export type Board = 'equities' | 'sme';
+
+const INTEGRATED_PAGE = 20;
+
+const ddmm = (iso: string): string => iso.split('-').reverse().join('-');
+
+const mid = (from: string, to: string): string => {
+  const a = Date.parse(from);
+  const b = Date.parse(to);
+  return new Date(a + Math.floor((b - a) / 2)).toISOString().slice(0, 10);
+};
+
+const dayAfter = (iso: string): string =>
+  new Date(Date.parse(iso) + 86_400_000).toISOString().slice(0, 10);
+
+async function integratedPage(
+  s: NseSession,
+  board: Board,
+  from: string,
+  to: string,
+  symbol: string | undefined,
+): Promise<{ rows: Record<string, unknown>[]; clipped: boolean }> {
+  const params: Record<string, string> = { index: board, from_date: ddmm(from), to_date: ddmm(to) };
+  if (symbol) params['symbol'] = symbol.trim().toUpperCase();
+  const rows = await s.rows<Record<string, unknown>>('integrated-filing-results', params);
+  return { rows, clipped: rows.length >= INTEGRATED_PAGE };
+}
+
+/**
+ * Every row in a window, splitting it when the answer comes back full.
+ *
+ * Halving rather than walking year by year. The window offered is decades wide on purpose — this
+ * file does not know when the regime began and should not claim to — and a year-at-a-time walk of
+ * it is twenty-odd requests to discover that twenty of them are empty. Halving finds the populated
+ * span in a handful, and an empty half costs exactly one request and stops.
+ *
+ * Bounded at a month. A month that still comes back full means the feed's shape has changed from
+ * what was measured, and saying so is worth more than halving into single days on a guess.
+ */
+async function integratedWindow(
+  s: NseSession,
+  board: Board,
+  from: string,
+  to: string,
+  symbol: string | undefined,
+  into: Record<string, unknown>[],
+): Promise<void> {
+  const page = await integratedPage(s, board, from, to, symbol);
+  if (!page.clipped) {
+    into.push(...page.rows);
+    return;
+  }
+  const half = mid(from, to);
+  if (half <= from || Date.parse(to) - Date.parse(from) < 31 * 86_400_000) {
+    into.push(...page.rows);
+    console.warn(
+      `integrated-filing-results stayed full for ${symbol ?? board} over ${from}..${to}; ` +
+        'some filings in that window may not have been seen',
+    );
+    return;
+  }
+  await integratedWindow(s, board, from, half, symbol, into);
+  await integratedWindow(s, board, dayAfter(half), to, symbol, into);
+}
+
+/**
  * Results filed under SEBI's Integrated Filing regime.
  *
  * `corporates-financial-results` stopped receiving rows in January 2025 — PRAJIND's last one there
  * is 30-Jan-2025, for the December 2024 quarter, and the whole-market query agrees: 3,816 rows on
  * 09-Sep-2026 and every one of them dated 31-Dec-2024. Nothing was broken. SEBI replaced separate
- * results filings with Integrated Filing (Financial), and NSE serves those from a different
- * endpoint under a different taxonomy namespace. A system reading only the old feed sees a company
- * that stopped reporting twenty months ago and has no way to tell that from one that did.
+ * results filings with Integrated Filing (Financial), and NSE serves those from this endpoint under
+ * a different taxonomy namespace, whose element names are unchanged.
+ *
+ * **Nothing here knows when the regime changed.** An earlier version asked this endpoint from
+ * 2025-01-01, which is where the evidence pointed — and a boundary inferred from two feeds on one
+ * afternoon is a guess that goes wrong quietly, whichever side of it loses a filing. Callers hand
+ * it the whole range and it takes what comes back, so where the regimes divide stays the
+ * exchange's fact rather than this file's assumption.
  *
  * The rows carry governance filings too; only `Integrated Filing- Financials` is a results
- * instance. `qe_Date` is the quarter end, and `xbrl` is a plain instance the existing parser reads
- * once its namespace check admits `in-capmkt` — the element names are unchanged.
- *
- * A date range is required: asked without one the endpoint answers with nothing at all.
+ * instance. `qe_Date` is the quarter end and `xbrl` is a plain instance.
  */
 export async function fetchIntegratedFilings(
   board: Board,
@@ -238,17 +323,12 @@ export async function fetchIntegratedFilings(
   session?: NseSession,
 ): Promise<ResultsFiling[]> {
   const s = session ?? (await NseSession.open());
-  const params: Record<string, string> = {
-    index: board,
-    from_date: range.from.split('-').reverse().join('-'),
-    to_date: range.to.split('-').reverse().join('-'),
-  };
-  if (range.symbol) params['symbol'] = range.symbol.trim().toUpperCase();
+  const collected: Record<string, unknown>[] = [];
+  await integratedWindow(s, board, range.from, range.to, range.symbol, collected);
 
-  const rows = await s.rows<Record<string, unknown>>('integrated-filing-results', params);
   const out: ResultsFiling[] = [];
   const seen = new Set<string>();
-  for (const r of rows) {
+  for (const r of collected) {
     if (!String(r['type'] ?? '').includes('Financial')) continue;
     const url = String(r['xbrl'] ?? '').trim();
     if (!url.startsWith('http') || seen.has(url)) continue;
@@ -275,8 +355,6 @@ export async function fetchIntegratedFilings(
  * back to 31-Mar-2005. Measured 09-Sep-2026. That is the same shape as the announcements and
  * corporate-actions endpoints, and the same reason `backfill-company.ts` asks all three by name.
  */
-export type Board = 'equities' | 'sme';
-
 export async function fetchResultsForSymbol(
   symbol: string,
   board: Board,
@@ -286,14 +364,16 @@ export async function fetchResultsForSymbol(
   const out: ResultsFiling[] = [];
   const seen = new Set<string>();
 
-  // Both regimes. The old feed holds everything up to January 2025 and nothing after; the
-  // integrated one holds everything since. A company's history spans the changeover, so reading
-  // one of them gives a P&L with a twenty-month hole in it and no sign that the hole is ours.
-  for (const r of await fetchIntegratedFilings(board, {
-    from: '2025-01-01',
-    to: new Date().toISOString().slice(0, 10),
-    symbol,
-  }, s)) {
+  // **Both sources, whole range, take whatever is there.** The old feed holds a company's history
+  // up to the changeover and the integrated one holds it since, but which side a given filing
+  // falls on is the exchange's business and not something this file should claim to know. Asking
+  // both and merging on the instance URL means a regime that moves again, or a board that moved on
+  // a different date, costs nothing — where a boundary date would lose a quarter and say nothing.
+  for (const r of await fetchIntegratedFilings(
+    board,
+    { from: EARLIEST, to: new Date().toISOString().slice(0, 10), symbol },
+    s,
+  )) {
     if (!seen.has(r.xbrlUrl)) {
       seen.add(r.xbrlUrl);
       out.push(r);
