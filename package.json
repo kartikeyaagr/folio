@@ -16,6 +16,9 @@
     "migrate": "tsx db/migrate.ts",
     "verify-backup": "./ops/verify-backup.sh"
   },
+  "pnpm": {
+    "onlyBuiltDependencies": []
+  },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.124.0",
     "@node-rs/argon2": "^2.2.0",
