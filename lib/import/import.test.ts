@@ -1,0 +1,135 @@
+/**
+ * Importing what the desk already has.
+ *
+ * The fixtures are real files written by openpyxl and python-docx, plus one workbook shaped the way
+ * Excel itself writes them — shared strings and cached formula values, which openpyxl does not
+ * produce. Both shapes exist in the wild and only one of them was in front of me while writing
+ * this, which is exactly the situation that produces a reader that works on the author's file.
+ */
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+
+import { evaluateSheet } from '../sheet/evaluate.ts';
+import { readDocx } from './docx.ts';
+import { csvToSheet, readUpload, UnsupportedFile } from './index.ts';
+import { readWorkbook } from './xlsx.ts';
+import { unzip, UnreadableZip } from './zip.ts';
+
+const fixture = (name: string) => readFileSync(new URL(`./__fixtures__/${name}`, import.meta.url));
+
+// ---- the zip underneath ---------------------------------------------------------------------------
+
+test('a multi-entry zip is read from its central directory', () => {
+  const zip = unzip(fixture('model.xlsx'));
+  assert.ok(zip.has('xl/workbook.xml'));
+  assert.ok(zip.has('xl/worksheets/sheet1.xml'));
+  assert.ok(zip.has('xl/worksheets/sheet2.xml'), 'both sheets, not just the first');
+});
+
+test('something that is not a zip is refused rather than half-read', () => {
+  assert.throws(() => unzip(Buffer.from('not a zip at all, just text')), UnreadableZip);
+});
+
+// ---- Excel ------------------------------------------------------------------------------------------
+
+test('a workbook comes in as one grid per sheet', () => {
+  // Importing tab one of four in silence is the loss this system exists to prevent.
+  const sheets = readWorkbook(fixture('model.xlsx'));
+  assert.deepEqual(sheets.map((s) => s.name), ['Model', 'Notes']);
+});
+
+test('text, numbers and formulas each arrive as themselves', () => {
+  const [model] = readWorkbook(fixture('model.xlsx'));
+  assert.equal(model!.cells['A2'], 'Revenue');
+  assert.equal(model!.cells['B2'], '2585.94');
+  assert.equal(model!.cells['B4'], '=B2-B3', 'the arithmetic survives, which is the point');
+  assert.equal(model!.cells['B6'], 'He said "buy"', 'quotes in text are not an escape');
+});
+
+test('an imported model still computes', () => {
+  const [model] = readWorkbook(fixture('model.xlsx'));
+  const v = evaluateSheet({ cells: model!.cells });
+  assert.equal(v['B4'], 185.84000000000015, '2585.94 - 2400.10');
+  assert.ok(typeof v['B5'] === 'number' && Math.abs(v['B5'] - 0.0718655) < 1e-6);
+});
+
+test('a date is a date, not the number Excel stores it as', () => {
+  // 46112 is either the 31st of March 2026 or forty-six thousand; only the cell's style says which.
+  const [model] = readWorkbook(fixture('model.xlsx'));
+  assert.equal(model!.cells['B7'], '2026-03-31');
+});
+
+test('a sparse cell far past the used block still arrives', () => {
+  const [model] = readWorkbook(fixture('model.xlsx'));
+  assert.equal(model!.cells['A20'], 'far away');
+});
+
+test('shared strings and rich text, which is how Excel itself writes a file', () => {
+  const [sheet] = readWorkbook(fixture('excel-style.xlsx'));
+  assert.equal(sheet!.cells['A1'], 'Revenue', 'resolved through the shared string table');
+  assert.equal(sheet!.cells['B1'], 'Rich text', 'runs joined with their spacing intact');
+});
+
+test('a formula this engine cannot read keeps the value Excel showed', () => {
+  // VLOOKUP across another sheet. Kept as a formula it would be #NAME? across the model; kept as
+  // its last value it is true as of the save, and inert rather than loudly broken.
+  const [sheet] = readWorkbook(fixture('excel-style.xlsx'));
+  assert.equal(sheet!.cells['B3'], '99.5');
+  assert.ok(!sheet!.cells['B3']!.startsWith('='));
+});
+
+test('a formula whose answer disagrees with Excel’s is not kept', () => {
+  // The check that matters. SUM(C1:C9) parses here and evaluates to 0, because column C came in
+  // empty — while the workbook was showing 1234.5. Keeping the formula would silently replace a
+  // number somebody has been looking at, so the number wins and the formula is dropped.
+  const [sheet] = readWorkbook(fixture('excel-style.xlsx'));
+  assert.equal(sheet!.cells['B2'], '1234.5');
+  assert.equal(sheet!.formulasFlattened, 2);
+  assert.equal(sheet!.formulasKept, 0);
+});
+
+// ---- Word --------------------------------------------------------------------------------------------
+
+test('a Word document keeps the structure that carries meaning', () => {
+  const text = readDocx(fixture('note.docx'));
+  assert.match(text, /^# Praj — first look/, 'a heading is a heading');
+  assert.match(text, /- Order book conversion/, 'a list item is a list item');
+  assert.match(text, /FY26 revenue\t3167\.88/, 'a table keeps which number belonged to which row');
+});
+
+// ---- everything else ------------------------------------------------------------------------------------
+
+test('a CSV becomes a grid, headings in row one', () => {
+  const s = csvToSheet('Year,Revenue\n2025,2585.94\n2026,3167.88\n', 'export');
+  assert.equal(s.cells['A1'], 'Year');
+  assert.equal(s.cells['B2'], '2585.94');
+  assert.equal(s.cells['A3'], '2026');
+});
+
+test('a CSV cell beginning with = is text, not a formula', () => {
+  // The oldest spreadsheet attack there is, and this system would happily evaluate it. A CSV is
+  // data that arrived from somewhere else; nothing in it gets to be code.
+  const s = csvToSheet('a\n=1+1\n', 'x');
+  assert.equal(s.cells['A2'], "'=1+1");
+  assert.notEqual(evaluateSheet({ cells: s.cells })['A2'], 2);
+});
+
+test('the format is decided by the bytes, not by the name', async () => {
+  // A workbook saved as .txt is still a workbook, and reading it as text would produce a page of
+  // zip noise under a title that promised a document.
+  const r = await readUpload('mislabelled.txt', fixture('model.xlsx'));
+  assert.equal(r.kind, 'sheet');
+});
+
+test('a file this cannot read says so instead of importing noise', async () => {
+  const binary = Buffer.from(Array.from({ length: 64 }, (_, i) => (i * 37) % 256));
+  await assert.rejects(() => readUpload('mystery.bin', binary), UnsupportedFile);
+  await assert.rejects(() => readUpload('empty.txt', Buffer.alloc(0)), UnsupportedFile);
+});
+
+test('plain text comes in as a note', async () => {
+  const r = await readUpload('thoughts.md', Buffer.from('# Praj\n\nSomething I thought.\n'));
+  assert.equal(r.kind, 'note');
+  assert.match(r.kind === 'note' ? r.text : '', /Something I thought/);
+});

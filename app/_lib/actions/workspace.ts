@@ -3,6 +3,13 @@
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 
+import {
+  readUpload,
+  UnreadableDocument,
+  UnreadableWorkbook,
+  UnsupportedFile,
+  type Imported,
+} from '@/lib/import/index.ts';
 import { lookupsFor } from '@/lib/sheet/data.ts';
 import type { Lookups } from '@/lib/sheet/evaluate.ts';
 import {
@@ -133,4 +140,78 @@ export async function archiveDocumentAction(form: FormData): Promise<void> {
   revalidatePath(`/doc/${id}`);
   revalidatePath('/company/[symbol]', 'page');
   if (!restore && symbol) redirect(`/company/${symbol}`);
+}
+
+/**
+ * Bringing in a file the desk already has.
+ *
+ * One upload can become several documents: a workbook with four tabs is four grids, because one
+ * grid per document is the model here and importing tab one of four in silence is the kind of loss
+ * this system exists to prevent. The flash says how many and what they were.
+ *
+ * Everything lands as a first version attributed to whoever uploaded it, so an imported model has
+ * the same history as one typed here — starting from the moment it arrived.
+ */
+const MAX_UPLOAD = 12 * 1024 * 1024;
+
+export async function importFileAction(form: FormData): Promise<void> {
+  const user = await requireUser();
+  const companyId = String(form.get('companyId') ?? '') || null;
+  const symbol = String(form.get('symbol') ?? '');
+  const file = form.get('file');
+
+  if (!(file instanceof File) || file.size === 0) return flash('No file was chosen.');
+  if (file.size > MAX_UPLOAD) {
+    return flash(`${file.name} is ${(file.size / 1e6).toFixed(1)} MB; the limit is 12 MB.`);
+  }
+
+  let read: Imported;
+  try {
+    read = await readUpload(file.name, Buffer.from(await file.arrayBuffer()));
+  } catch (err) {
+    // Said in place. Every one of these carries a sentence naming what was wrong with the file.
+    if (
+      err instanceof UnsupportedFile ||
+      err instanceof UnreadableWorkbook ||
+      err instanceof UnreadableDocument
+    ) {
+      return flash(err.message);
+    }
+    throw err;
+  }
+
+  const base = file.name.replace(/\.[^.]+$/, '') || file.name;
+  const made: string[] = [];
+
+  if (read.kind === 'note') {
+    const id = await createDocument({ title: base, kind: 'note', companyId }, user.userId);
+    await saveDocument(id, { text: read.text }, user.userId);
+    made.push(id);
+    await flash(`Imported ${file.name} as a note, ${read.text.length} characters.`);
+  } else {
+    let kept = 0;
+    let flattened = 0;
+    for (const sheet of read.sheets) {
+      // A one-sheet workbook takes the file's name; several take the file's name and the tab's,
+      // so four grids from one upload are still findable as having come from it.
+      const title = read.sheets.length === 1 ? base : `${base} — ${sheet.name}`;
+      const id = await createDocument({ title, kind: 'sheet', companyId }, user.userId);
+      await saveDocument(id, { cells: sheet.cells }, user.userId);
+      made.push(id);
+      kept += sheet.formulasKept;
+      flattened += sheet.formulasFlattened;
+    }
+    await flash(
+      `Imported ${file.name}: ${read.sheets.length} ${read.sheets.length === 1 ? 'sheet' : 'sheets'}, ` +
+        `${kept} formulas kept live` +
+        (flattened > 0
+          ? `, ${flattened} replaced by the value Excel last showed — those used something this engine does not read.`
+          : '.'),
+    );
+  }
+
+  revalidatePath('/company/[symbol]', 'page');
+  // Straight into it when there is one thing to look at; back to the list when there are several.
+  if (made.length === 1) redirect(`/doc/${made[0]}`);
+  if (symbol) redirect(`/company/${symbol}`);
 }

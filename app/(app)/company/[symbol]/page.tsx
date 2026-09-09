@@ -4,6 +4,7 @@ import { notFound } from 'next/navigation';
 import { companyPage } from '@/lib/company-view.ts';
 import { coverers, sectorsWithTerms, STATUSES } from '@/lib/companies.ts';
 import { isRange, priceSeries, type Range } from '@/lib/prices.ts';
+import { ACCEPTED } from '@/lib/import/index.ts';
 import { AUTHORED, documentsFor, KIND_LABEL } from '@/lib/workspace.ts';
 import {
   AppHeader, Blank, Card, Chip, Empty, Fact, Facts, Seg, crore, inr, type Tone,
@@ -16,7 +17,7 @@ import {
   setCoverageAction, setSectorAction, setStatusAction,
 } from '../../../_lib/actions/companies.ts';
 import {
-  archiveDocumentAction, createDocumentAction,
+  archiveDocumentAction, createDocumentAction, importFileAction,
 } from '../../../_lib/actions/workspace.ts';
 
 /**
@@ -273,6 +274,27 @@ export default async function CompanyPage({
                 ]}
                 small
               />
+              <DialogButton label="Import" title={`Import into ${co.symbol}`} className="btn btn-sm">
+                <form action={importFileAction} className="form-grid">
+                  <input type="hidden" name="companyId" value={co.id} />
+                  <input type="hidden" name="symbol" value={co.symbol} />
+                  <label className="lbl">
+                    File
+                    <input className="field" type="file" name="file" accept={ACCEPTED} required />
+                  </label>
+                  {/* Said before it happens. A workbook with four tabs becoming four documents is
+                      surprising if you are not told, and importing one of the four in silence is
+                      worse. */}
+                  <p className="picker-none">
+                    Excel, Word, PDF, CSV and plain text. Each sheet of a workbook becomes its own
+                    grid, and a formula is kept live where this system can evaluate it — where it
+                    cannot, the cell holds the value Excel last showed rather than a broken formula.
+                  </p>
+                  <div className="form-actions">
+                    <button type="submit" className="btn btn-primary">Import it</button>
+                  </div>
+                </form>
+              </DialogButton>
               <DialogButton label="New" title={`New in ${co.symbol}`} className="btn btn-primary btn-sm">
                 <form action={createDocumentAction} className="form-grid">
                   <input type="hidden" name="companyId" value={co.id} />
