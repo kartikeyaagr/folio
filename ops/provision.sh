@@ -188,6 +188,7 @@ Done.
 
   ssh -i ${PUBKEY%.pub} ubuntu@$IP
 
-Next: SETUP.md §2 onward, on the box. Put s3://$BUCKET in BACKUP_S3_BUCKET at §6, and generate the
+Next: SETUP.md §2 onward, on the box. Put $BUCKET — the bare name, no s3:// — in
+BACKUP_S3_BUCKET at §6, because backup.sh builds "s3://\${BACKUP_S3_BUCKET}/\${NAME}". Generate the
 age keypair at §7 on your laptop — the server only ever gets the public half.
 EOF
