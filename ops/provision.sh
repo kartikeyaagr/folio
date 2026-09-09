@@ -84,12 +84,16 @@ fi
 # --- Security group ----------------------------------------------------------------------------
 # SSH from one address. Nothing else: the web app binds to loopback and is reached over Tailscale,
 # so there is deliberately no 443 here. Adding one is a decision, not a default.
+#
+# No apostrophe in the description. EC2 accepts only [a-zA-Z0-9. _-:/()#,@[]+=&;{}!$*] and rejects
+# the rest with InvalidParameterValue; "the operator's address" failed here on the first real run,
+# 09-Sep-2026, after the key pair had already been imported.
 say "security group"
 SG="$(aws ec2 describe-security-groups --region "$REGION" \
   --filters "Name=group-name,Values=$SG_NAME" --query 'SecurityGroups[0].GroupId' --output text 2>/dev/null || true)"
 if [ "$SG" = "None" ] || [ -z "$SG" ]; then
   SG="$(aws ec2 create-security-group --region "$REGION" --group-name "$SG_NAME" \
-    --description "Trisula VM: SSH from the operator's address only" \
+    --description "Trisula VM: SSH from one operator address only" \
     --query 'GroupId' --output text)"
   echo "created $SG"
 else
