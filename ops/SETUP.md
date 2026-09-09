@@ -144,6 +144,13 @@ BACKUP_S3_ENDPOINT=
 SMTP_HOST=
 SMTP_PORT=587
 SMTP_FROM=trisula@yourdomain
+
+# The dead man's switch. `jobs/heartbeat.ts` POSTs here every fifteen minutes, and ONLY when
+# Postgres answers — so a database outage stops the ping rather than reporting through it. The
+# alarm is the monitor noticing the silence, which is why this is the one signal that survives the
+# box being off. Unset is valid and the job says so instead of failing; it is also the state in
+# which nothing would notice a dead box. healthchecks.io or Better Stack; a free tier covers it.
+HEARTBEAT_URL=
 SMTP_USER=
 SMTP_PASSWORD=
 
@@ -234,7 +241,8 @@ sudo systemctl enable --now \
   trisula-agents.timer \
   trisula-alerts.timer \
   trisula-backup.timer \
-  trisula-backup-verify.timer
+  trisula-backup-verify.timer \
+  trisula-heartbeat.timer
 
 systemctl list-timers 'trisula-*'
 ```
@@ -325,8 +333,9 @@ by someone happening to read the journal.
 
 - **Where the age private key lives.** §7 says a password manager; write down which one, so the
   next person to need it does not have to guess.
-- **A heartbeat recipient.** The design calls for an outward ping every five minutes whose *absence*
-  alerts. Nothing is named yet, so nothing would notice a dead box. healthchecks.io or Better Stack;
-  a free tier covers it.
+- **A heartbeat URL.** `jobs/heartbeat.ts` and `trisula-heartbeat.timer` exist and ping every
+  fifteen minutes; `HEARTBEAT_URL` in §6 is empty, so nothing is listening and nothing would notice
+  a dead box. Create a check on healthchecks.io or Better Stack — a free tier covers it — and paste
+  its URL in. Set the monitor's grace period above fifteen minutes.
 - **Whether the web app is on Tailscale or the public internet.** Tailscale needs no certificate and
   no port 443. Recommended until there is a reason otherwise.

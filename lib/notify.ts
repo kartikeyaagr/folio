@@ -14,6 +14,7 @@
  * for about eighty lines of protocol that has not changed since 1982.
  */
 
+import { randomBytes } from 'node:crypto';
 import { createConnection, type Socket } from 'node:net';
 import { connect as tlsConnect, type TLSSocket } from 'node:tls';
 import { serviceTxn } from './db.ts';
@@ -226,5 +227,55 @@ export async function undeliverable(): Promise<
       [MAX_SEND_ATTEMPTS],
     );
     return rows;
+  });
+}
+
+// ------------------------------------------------------------------------------------------------
+// A failed unit
+// ------------------------------------------------------------------------------------------------
+
+/**
+ * Record that a systemd unit failed, and address the notice to somebody.
+ *
+ * Here rather than in `jobs/report-failure.ts` so the one thing that matters about it is testable:
+ * that the notice has a recipient. A failure written to a table nobody is told about is the pull
+ * this replaced — the row shows on `/admin?tab=ops` and waits for an admin to choose to look, and
+ * a job that dies at 04:00 waits until morning.
+ *
+ * The run row and the notices are one transaction. There is no state where the failure is recorded
+ * and nobody was ever going to be told, which is the same rule the outbox follows everywhere else.
+ */
+export async function recordUnitFailure(unit: string): Promise<number> {
+  return serviceTxn('system:ingest', async (c) => {
+    await c.query(
+      `INSERT INTO ingestion_runs (source, finished_at, status, detail)
+       VALUES ($1, now(), 'failed', $2)`,
+      [`systemd:${unit}`, `unit failed; see journalctl -u ${unit}`],
+    );
+
+    // Admins, because a failed unit is an operations matter and `/admin?tab=ops` is where the runs
+    // are read. Everyone active when there is no admin yet: a notice addressed to nobody is the
+    // exact failure this exists to fix, and a fresh box has none until somebody is made one.
+    const { rows } = await c.query<{ id: string }>(
+      `SELECT id FROM users
+        WHERE disabled_at IS NULL
+          AND (is_admin OR NOT EXISTS (SELECT 1 FROM users WHERE is_admin AND disabled_at IS NULL))`,
+    );
+
+    for (const u of rows) {
+      await c.query(
+        `INSERT INTO notification_outbox (id, kind, recipient, subject, body)
+         VALUES ($1, 'unit_failure', $2, $3, $4)`,
+        [
+          randomBytes(16).toString('hex'),
+          u.id,
+          `${unit} failed`,
+          `${unit} exited non-zero.\n\n` +
+            `On the VM:\n  journalctl -u ${unit} -n 200 --no-pager\n\n` +
+            `The run is recorded against source "systemd:${unit}" and shows on /admin?tab=ops.\n`,
+        ],
+      );
+    }
+    return rows.length;
   });
 }

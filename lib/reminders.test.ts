@@ -6,7 +6,9 @@ import { closePool, readTxn, serviceTxn } from './db.ts';
 import {
   completeReminder, createReminder, deliverDue, dueReminders, EmptyReminder, snoozeReminder,
 } from './reminders.ts';
-import { drainOutbox, MAX_SEND_ATTEMPTS, undeliverable, type Mail } from './notify.ts';
+import {
+  drainOutbox, MAX_SEND_ATTEMPTS, recordUnitFailure, undeliverable, type Mail,
+} from './notify.ts';
 import { drain, sweepScheduled } from './agents/runner.ts';
 import './agents/notify.ts';
 
@@ -181,4 +183,47 @@ test('they run through the queue like any other agent, and write no draft', asyn
     return rows[0]!.n;
   });
   assert.equal(queued, '1');
+});
+
+// ---- a failed unit has to reach a person, not just a table --------------------------------------
+
+test('a failed unit is recorded AND addressed to somebody', async () => {
+  // The whole point. Before this the job wrote one ingestion_runs row and stopped, which is a
+  // pull: the row shows on /admin?tab=ops and waits for an admin to choose to look, so a unit that
+  // dies at 04:00 reaches nobody until morning.
+  const told = await recordUnitFailure('trisula-job@ingest-eod.service');
+  assert.ok(told > 0, 'a notice with no recipient is the failure this replaced');
+
+  const rows = await readTxn(async (c) => {
+    const { rows } = await c.query<{ subject: string; email: string; source: string }>(
+      `SELECT o.subject, u.email,
+              (SELECT source FROM ingestion_runs WHERE status = 'failed'
+                ORDER BY finished_at DESC LIMIT 1) AS source
+         FROM notification_outbox o
+         JOIN users u ON u.id = o.recipient
+        WHERE o.kind = 'unit_failure'`,
+    );
+    return rows;
+  });
+  assert.equal(rows.length, told);
+  assert.match(rows[0]!.subject, /ingest-eod.*failed/);
+  assert.equal(rows[0]!.source, 'systemd:trisula-job@ingest-eod.service');
+});
+
+test('with no admin yet, everyone active is told rather than nobody', async () => {
+  // A fresh box has no admin until somebody is made one, and that is exactly when a unit failing
+  // matters most. Addressing the notice to the empty set would record it and tell no one.
+  const told = await recordUnitFailure('trisula-job@refresh-securities.service');
+  assert.equal(told, 2, 'both seeded users, neither of whom is an admin');
+});
+
+test('once there is an admin, the notice goes to them', async () => {
+  await serviceTxn('system:auth', async (c) => {
+    await c.query('UPDATE users SET is_admin = true WHERE id = $1', [A]);
+  });
+  const told = await recordUnitFailure('trisula-job@ingest-calendar.service');
+  assert.equal(told, 1, 'a failed unit is an operations matter');
+  await serviceTxn('system:auth', async (c) => {
+    await c.query('UPDATE users SET is_admin = false WHERE id = $1', [A]);
+  });
 });

@@ -12,6 +12,19 @@
 
 const BASE = 'https://www.nseindia.com';
 
+/**
+ * Every request here is bounded.
+ *
+ * A socket NSE accepts and never answers holds a `oneshot` unit in "activating" indefinitely: it
+ * never fails, so `OnFailure=` never fires, and the job simply never runs again. The 30-minute
+ * `TimeoutStartSec` on `trisula-job@.service` is the backstop for that and costs half an hour of
+ * silence; this is the actual fix, and `lib/news/poll.ts` has had it since it was written.
+ *
+ * Generous on purpose. The bhavcopy is a multi-megabyte zip and the announcements endpoint answers
+ * slowly under load; this is a bound on a hang, not a latency budget.
+ */
+const TIMEOUT_MS = 30_000;
+
 const HEADERS: Record<string, string> = {
   'User-Agent':
     'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 ' +
@@ -46,7 +59,11 @@ export class NseSession {
   }
 
   private async prime(): Promise<void> {
-    const res = await fetch(BASE, { headers: HEADERS, redirect: 'follow' });
+    const res = await fetch(BASE, {
+      headers: HEADERS,
+      redirect: 'follow',
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+    });
     const set = res.headers.getSetCookie?.() ?? [];
     this.cookie = set.map((c) => c.split(';')[0]).join('; ');
     if (!this.cookie) {
@@ -73,7 +90,11 @@ export class NseSession {
     for (const [k, v] of Object.entries(params ?? {})) url.searchParams.set(k, v);
 
     const headers = referer ? { ...this.headers(), Referer: referer } : this.headers();
-    const res = await fetch(url, { headers, redirect: 'follow' });
+    const res = await fetch(url, {
+      headers,
+      redirect: 'follow',
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+    });
     if (!res.ok) throw new NseError(`${res.status} from ${url.pathname}`, res.status);
 
     return pickRows<T>(await res.json());
@@ -81,7 +102,11 @@ export class NseSession {
 
   /** Raw bytes from anywhere on NSE, archives included. */
   async bytes(url: string): Promise<Buffer> {
-    const res = await fetch(url, { headers: this.headers(), redirect: 'follow' });
+    const res = await fetch(url, {
+      headers: this.headers(),
+      redirect: 'follow',
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+    });
     if (!res.ok) throw new NseError(`${res.status} fetching ${url}`, res.status);
     return Buffer.from(await res.arrayBuffer());
   }

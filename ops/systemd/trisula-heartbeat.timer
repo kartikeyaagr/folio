@@ -1,0 +1,13 @@
+[Unit]
+Description=Tell the outside world this box is alive
+
+[Timer]
+# Every fifteen minutes, all day. This is the one signal that reports by arriving, so its schedule
+# is the resolution of the alarm: a monitor set to expect a ping every fifteen minutes notices an
+# outage within about half an hour, which is the right trade for a box the desk opens twice a day.
+OnCalendar=*:0/15
+Persistent=false
+Unit=trisula-job@heartbeat.service
+
+[Install]
+WantedBy=timers.target
