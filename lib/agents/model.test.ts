@@ -1,13 +1,11 @@
 /**
- * The transport, not any agent's meaning: what gets sent to the API and what a call costs.
- *
- * These are pure, so unlike the rest of `lib/agents` they need no database. `liveModel` itself
- * still has no test — it needs an injected client, which it does not currently take.
+ * The transport, not any agent's meaning: what gets sent to the API, what comes back, and what a
+ * call costs. No database — a scripted client stands in for the network.
  */
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { sealObjects, costUsd, PRICING } from './model.ts';
+import { askModel, sealObjects, costUsd, PRICING, type MessagesClient } from './model.ts';
 
 type Node = Record<string, unknown>;
 
@@ -97,4 +95,125 @@ test('cost is a real number for the models actually in use', () => {
     assert.equal(typeof cost, 'number');
     assert.ok((cost ?? 0) > 0);
   }
+});
+
+// ---- the call itself, against a scripted client -------------------------------------------------
+
+type Reply = { stop?: string; text?: string; input?: number; output?: number; category?: string };
+
+/** Answers from a script and records the max_tokens of every call it received. */
+function scripted(replies: Reply[]): MessagesClient & { rooms: number[] } {
+  const rooms: number[] = [];
+  let i = 0;
+  return {
+    rooms,
+    messages: {
+      create: async (params) => {
+        rooms.push(params.max_tokens);
+        const r = replies[Math.min(i++, replies.length - 1)]!;
+        return {
+          id: 'msg_1',
+          model: 'claude-opus-5',
+          role: 'assistant',
+          type: 'message',
+          content: r.text === undefined ? [] : [{ type: 'text', text: r.text, citations: null }],
+          stop_reason: r.stop ?? 'end_turn',
+          stop_sequence: null,
+          stop_details: r.category ? { category: r.category } : undefined,
+          usage: { input_tokens: r.input ?? 0, output_tokens: r.output ?? 0 },
+        } as never;
+      },
+    },
+  };
+}
+
+const ASK = {
+  model: 'claude-opus-5',
+  system: 's',
+  task: 't',
+  schema: { type: 'object', properties: { a: { type: 'string' } }, required: ['a'] },
+  maxTokens: 1000,
+};
+
+test('a plain answer comes back parsed, with its own tokens and cost', async () => {
+  const c = scripted([{ text: '{"a":"x"}', input: 1_000_000, output: 1_000_000 }]);
+  const r = await askModel(c, ASK);
+  assert.ok(r.ok);
+  assert.deepEqual(r.content, { a: 'x' });
+  assert.equal(r.costUsd, 30, '1M in at $5 plus 1M out at $25');
+});
+
+test('a refusal on the FIRST attempt is a refusal', async () => {
+  const r = await askModel(scripted([{ stop: 'refusal', category: 'harmful' }]), ASK);
+  assert.equal(r.ok, false);
+  assert.equal(!r.ok && r.kind, 'refusal');
+});
+
+test('a refusal on the RETRY is a refusal too, not malformed JSON', async () => {
+  // The bug. The stop-reason checks sat outside the retry, so only the first response met them: a
+  // retry that came back refused fell through to JSON.parse('') and was filed as `unparseable`,
+  // which defeats the terminal shortcut in lib/news/gate.ts.
+  const c = scripted([{ stop: 'max_tokens' }, { stop: 'refusal', category: 'harmful' }]);
+  const r = await askModel(c, ASK);
+  assert.equal(!r.ok && r.kind, 'refusal');
+  assert.equal(c.rooms.length, 2, 'it did retry');
+});
+
+test('tokens are added across attempts, not read off the last one', async () => {
+  // A retried run used to report only the retry's usage and so under-report its own cost by a
+  // whole attempt — the first call is charged for whether or not its answer was usable.
+  const c = scripted([
+    { stop: 'max_tokens', input: 500_000, output: 100_000 },
+    { text: '{"a":"x"}', input: 500_000, output: 100_000 },
+  ]);
+  const r = await askModel(c, ASK);
+  assert.ok(r.ok);
+  assert.equal(r.inputTokens, 1_000_000, 'both attempts');
+  assert.equal(r.outputTokens, 200_000);
+  assert.equal(r.costUsd, 10, 'and the cost is of both, not of the second');
+});
+
+test('running out of room twice is truncated, and it is asked twice at most', async () => {
+  const c = scripted([{ stop: 'max_tokens' }, { stop: 'max_tokens' }, { text: '{"a":"x"}' }]);
+  const r = await askModel(c, ASK);
+  assert.equal(!r.ok && r.kind, 'truncated');
+  assert.deepEqual(c.rooms, [1000, 4000], 'the caller’s budget, then room, then it stops');
+});
+
+test('a prompt that did not fit says so, and is not retried', async () => {
+  // `model_context_window_exceeded` is a real StopReason and was unhandled, so it reached
+  // JSON.parse('') and was recorded as `unparseable`. Its remedy is the opposite of a retry's.
+  const c = scripted([{ stop: 'model_context_window_exceeded' }]);
+  const r = await askModel(c, ASK);
+  assert.equal(!r.ok && r.kind, 'too_large');
+  assert.equal(c.rooms.length, 1, 'allowing more OUTPUT would only make it worse');
+});
+
+test('an answer that is not JSON, and one that is the wrong shape, are told apart', async () => {
+  assert.equal(!(await askModel(scripted([{ text: 'sorry' }]), ASK)).ok && 'unparseable', 'unparseable');
+  const wrong = await askModel(scripted([{ text: '{"b":1}' }]), ASK);
+  assert.equal(!wrong.ok && wrong.kind, 'schema_mismatch');
+  assert.match((!wrong.ok && wrong.detail) || '', /missing required: a/);
+});
+
+test('a transport error is an error, not a refusal', async () => {
+  const c: MessagesClient = { messages: { create: async () => { throw new Error('ECONNRESET'); } } };
+  const r = await askModel(c, ASK);
+  assert.equal(!r.ok && r.kind, 'error');
+  assert.match((!r.ok && r.detail) || '', /ECONNRESET/);
+});
+
+test('the schema reaching the API is the sealed one', async () => {
+  const c = scripted([{ text: '{"a":"x"}' }]);
+  let sent: unknown;
+  const spy: MessagesClient = {
+    messages: {
+      create: async (p) => {
+        sent = (p as { output_config?: { format?: { schema?: unknown } } }).output_config?.format?.schema;
+        return c.messages.create(p);
+      },
+    },
+  };
+  await askModel(spy, ASK);
+  assert.equal((sent as Record<string, unknown>)['additionalProperties'], false);
 });

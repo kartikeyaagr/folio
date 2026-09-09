@@ -96,6 +96,12 @@ export interface GateResult {
   failed: number;
   ungated: number;
   costUsd: number;
+  /**
+   * Calls whose model has no price. `costUsd` is the total of what could be priced, so a run with
+   * any of these is reporting a floor, not a figure — and the caller has to say so rather than
+   * print a total that quietly excludes them.
+   */
+  unpriced: number;
 }
 
 /**
@@ -106,7 +112,7 @@ export interface GateResult {
  */
 export async function runGate(model: Model = liveModel, limit = 100): Promise<GateResult> {
   const out: GateResult = {
-    considered: 0, confirmed: 0, rejected: 0, failed: 0, ungated: 0, costUsd: 0,
+    considered: 0, confirmed: 0, rejected: 0, failed: 0, ungated: 0, costUsd: 0, unpriced: 0,
   };
 
   for (let i = 0; i < limit; i++) {
@@ -143,9 +149,11 @@ export async function runGate(model: Model = liveModel, limit = 100): Promise<Ga
 
       if (!answer.ok) {
         const attempts = subject.attempts + 1;
-        // A refusal is not a transport failure and will not come out differently next time. It
-        // ends the row now rather than burning two more calls to learn that.
-        const terminal = attempts >= MAX_GATE_ATTEMPTS || answer.kind === 'refusal';
+        // Neither of these is a transport failure and neither comes out differently next time: a
+        // refusal is a decision, and a prompt that overflowed the context window will overflow it
+        // again. Both end the row now rather than burning two more calls to learn that.
+        const terminal =
+          attempts >= MAX_GATE_ATTEMPTS || answer.kind === 'refusal' || answer.kind === 'too_large';
         await c.query(
           `UPDATE news_matches
               SET attempts = $2, last_error = $3, state = CASE WHEN $4 THEN 'ungated' ELSE state END
@@ -157,7 +165,11 @@ export async function runGate(model: Model = liveModel, limit = 100): Promise<Ga
         return true;
       }
 
-      out.costUsd += answer.costUsd ?? 0;
+      // `?? 0` was a claim. `costUsd` returns null for a model this system has no price for, and
+      // adding zero says the call was free — which is the one thing CLAUDE.md names about cost, and
+      // the exact way v2's dashboard came to report $0.00 with confidence.
+      if (answer.costUsd === null) out.unpriced++;
+      else out.costUsd += answer.costUsd;
       const related = answer.content['related'] === true;
       const mechanism = typeof answer.content['mechanism'] === 'string'
         ? answer.content['mechanism'].trim()

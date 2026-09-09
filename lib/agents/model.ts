@@ -42,7 +42,14 @@ export function costUsd(model: string, inputTokens: number, outputTokens: number
   return (inputTokens * p.input + outputTokens * p.output) / 1_000_000;
 }
 
-export type FailureKind = 'refusal' | 'truncated' | 'unparseable' | 'schema_mismatch' | 'error';
+export type FailureKind =
+  | 'refusal'
+  | 'truncated'
+  | 'unparseable'
+  | 'schema_mismatch'
+  /** The prompt did not fit. Distinct from `truncated`, whose remedy is the opposite one. */
+  | 'too_large'
+  | 'error';
 
 export type Answer =
   | {
@@ -119,12 +126,27 @@ export function sealObjects(node: unknown): unknown {
   return out;
 }
 
-export const liveModel: Model = async (input) => {
+/** Just enough of the SDK to be replaceable in a test. */
+export interface MessagesClient {
+  messages: {
+    create(params: Anthropic.MessageCreateParamsNonStreaming): Promise<Anthropic.Message>;
+  };
+}
+
+/**
+ * One model call, against a client the caller supplies.
+ *
+ * Split out from `liveModel` so the retry and the stop-reason handling are testable without a
+ * network or a key — this file's own test said "liveModel itself still has no test — it needs an
+ * injected client, which it does not currently take", and all three bugs fixed below lived in the
+ * part that had none.
+ */
+export async function askModel(client: MessagesClient, input: AskInput): Promise<Answer> {
   const maxTokens = input.maxTokens ?? DEFAULT_MAX_TOKENS;
   const schema = sealObjects(input.schema);
 
   const call = (max: number) =>
-    anthropic().messages.create({
+    client.messages.create({
       model: input.model,
       max_tokens: max,
       system: input.system,
@@ -137,27 +159,43 @@ export const liveModel: Model = async (input) => {
     } as Anthropic.MessageCreateParamsNonStreaming);
 
   let response: Anthropic.Message;
-  try {
-    response = await call(maxTokens);
-  } catch (err) {
-    return { ok: false, kind: 'error', detail: String(err instanceof Error ? err.message : err) };
-  }
+  // **Added up across attempts, not read off the last one.** `response` used to be reassigned by
+  // the retry and the usage read from it afterwards, so a run that retried threw away the first
+  // attempt's tokens and under-reported its own cost by a whole call. The first attempt was
+  // charged for whether or not its answer was usable.
+  let inputTokens = 0;
+  let outputTokens = 0;
 
-  // Before the body, always.
-  if (response.stop_reason === 'refusal') {
-    const category =
-      (response as { stop_details?: { category?: string } }).stop_details?.category ?? 'unknown';
-    return { ok: false, kind: 'refusal', detail: `declined (${category})` };
-  }
-
-  if (response.stop_reason === 'max_tokens') {
-    // Once, with room, never with the same parameters.
+  // At most two: the caller's budget, then room. Every stop reason is read after **every** attempt,
+  // because the checks used to sit outside this loop and only the first response ever met them — a
+  // retry that came back refused fell through to the text join, hit `JSON.parse('')`, and was
+  // recorded as `unparseable`. That defeats the terminal shortcut in `lib/news/gate.ts`, whose own
+  // comment says it exists so a refusal does not burn two more calls.
+  for (let attempt = 0; ; attempt++) {
     try {
-      response = await call(Math.min(maxTokens * 4, 64_000));
+      response = await call(attempt === 0 ? maxTokens : Math.min(maxTokens * 4, 64_000));
     } catch (err) {
       return { ok: false, kind: 'error', detail: String(err instanceof Error ? err.message : err) };
     }
-    if (response.stop_reason === 'max_tokens') {
+    inputTokens += response.usage.input_tokens;
+    outputTokens += response.usage.output_tokens;
+
+    if (response.stop_reason === 'refusal') {
+      const category =
+        (response as { stop_details?: { category?: string } }).stop_details?.category ?? 'unknown';
+      return { ok: false, kind: 'refusal', detail: `declined (${category})` };
+    }
+
+    // The prompt did not fit. A real StopReason in the installed SDK and previously unhandled, so
+    // it reached `JSON.parse('')` and was filed as malformed JSON. Terminal, and deliberately not
+    // `truncated`: that one is fixed by allowing more output, and this one is made *worse* by it.
+    // The remedy is to send less.
+    if (response.stop_reason === 'model_context_window_exceeded') {
+      return { ok: false, kind: 'too_large', detail: "the prompt exceeded the model's context window" };
+    }
+
+    if (response.stop_reason !== 'max_tokens') break;
+    if (attempt > 0) {
       return { ok: false, kind: 'truncated', detail: 'ran out of output room twice' };
     }
   }
@@ -179,8 +217,6 @@ export const liveModel: Model = async (input) => {
     return { ok: false, kind: 'schema_mismatch', detail: problem, raw: text.slice(0, 2000) };
   }
 
-  const inputTokens = response.usage.input_tokens;
-  const outputTokens = response.usage.output_tokens;
   return {
     ok: true,
     content: parsed as Record<string, unknown>,
@@ -189,7 +225,9 @@ export const liveModel: Model = async (input) => {
     outputTokens,
     costUsd: costUsd(response.model, inputTokens, outputTokens),
   };
-};
+}
+
+export const liveModel: Model = (input) => askModel(anthropic(), input);
 
 /**
  * A model that answers from a script, recording every call.

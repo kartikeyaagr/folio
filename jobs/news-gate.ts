@@ -23,7 +23,11 @@ async function main(): Promise<void> {
     const r = await runGate();
     const detail =
       `${r.considered} judged: ${r.confirmed} confirmed, ${r.rejected} rejected, ` +
-      `${r.failed} failed (${r.ungated} terminal), $${r.costUsd.toFixed(4)}`;
+      `${r.failed} failed (${r.ungated} terminal), ` +
+      // A total that silently omits the calls it could not price is worse than one that says so.
+      (r.unpriced > 0
+        ? `at least $${r.costUsd.toFixed(4)} (${r.unpriced} call${r.unpriced === 1 ? '' : 's'} on an unpriced model)`
+        : `$${r.costUsd.toFixed(4)}`);
 
     // The exemption is for an EMPTY queue, and only that. A run that looked at candidates and
     // decided none of them is a failure — an expired key answers every call identically, and
