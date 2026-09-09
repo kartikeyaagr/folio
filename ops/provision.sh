@@ -34,6 +34,22 @@ STATE="$(aws account get-account-information --query 'AccountState' --output tex
 [ "$STATE" = "ACTIVE" ] || die "account is $STATE, not ACTIVE. Nothing can be created until AWS finishes
 activating it. Check the payment method, then open an account-activation support case."
 
+# ACTIVE is necessary and not sufficient, and the gap between the two is hours wide. At 02:01 on
+# 09-Sep-2026 this account was PENDING_ACTIVATION; by 09:00 it was ACTIVE with a PAID plan and
+# every one of ec2, s3 and ssm still refusing — OptInRequired, NotSignedUp,
+# SubscriptionRequiredException. Service subscriptions complete some time after the state flips.
+# Probe the two services this script actually uses, because the alternative is dying at the AMI
+# lookup with "AMI lookup returned ''", which reads as a broken parameter name and is not.
+for probe in "ec2 describe-availability-zones --region $REGION" "s3api list-buckets"; do
+  # shellcheck disable=SC2086
+  err="$(aws $probe --query 'nonesuch' --output text 2>&1)" && continue
+  die "account is ACTIVE but not subscribed to ${probe%% *} yet:
+  $(printf '%s' "$err" | tr '\n' ' ' | sed 's/  */ /g')
+This usually clears within a few hours of activation, with nothing to do but wait. Re-check with:
+  ./ops/check-activation.sh $PROFILE"
+done
+echo "account state $STATE; ec2 and s3 both answering"
+
 ACCOUNT="$(aws sts get-caller-identity --query 'Account' --output text)" || die "no credentials; run: aws login --profile $PROFILE"
 [ -f "$PUBKEY" ] || die "no public key at $PUBKEY. Generate one with:
   ssh-keygen -t ed25519 -f ${PUBKEY%.pub} -C 'trisula-vm'"
