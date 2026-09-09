@@ -34,7 +34,7 @@ import {
 import { fetchAttachments } from '../lib/ingest/attachments.ts';
 import { fetchAnnouncements, storeAnnouncements, type Board as CaBoard } from '../lib/ingest/corporate-actions.ts';
 import { extractPending } from '../lib/ingest/extract.ts';
-import { ingestFundamentals } from '../lib/ingest/fundamentals.ts';
+import { fetchResultsForSymbol, ingestFundamentals } from '../lib/ingest/fundamentals.ts';
 import { ingestShareholding } from '../lib/ingest/shareholding.ts';
 
 const run = promisify(execFile);
@@ -88,10 +88,15 @@ async function backfill(t: Target, priceDays: number): Promise<Step[]> {
     );
   });
 
+  // Asked by symbol, which is the difference between one quarter and twenty years of them. The
+  // feed without a symbol serves only the period just filed.
   await attempt('results', async () => {
-    const r = await ingestFundamentals();
-    if (r.indexRows === 0) throw new Error('the results feed returned nothing');
-    return `${r.candidates} candidates, ${r.stored} periods stored`;
+    if (!t.platform) throw new Error('no securities row; refresh the master first');
+    const board = t.platform === 'nse_emerge' ? 'sme' : 'equities';
+    const index = await fetchResultsForSymbol(t.symbol, board);
+    if (index.length === 0) throw new Error('the results feed returned nothing for this symbol');
+    const r = await ingestFundamentals(index);
+    return `${index.length} instances, ${r.parsed} parsed, ${r.stored} periods stored, ${r.failed} failed`;
   });
 
   // Asked for by symbol, which makes the endpoint serve the name's whole history rather than the

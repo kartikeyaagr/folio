@@ -199,6 +199,50 @@ export async function fetchResultsIndex(session?: NseSession): Promise<ResultsFi
   return out;
 }
 
+/**
+ * One company's whole results history.
+ *
+ * The feed above, asked without a symbol, serves **only the most recent period**: 3,816 rows on
+ * 09-Sep-2026 and every one of them dated 31-Dec-2024. So the daily sweep can only ever add the
+ * quarter just filed, and a company followed today gets exactly one — which is why PRAJIND, a
+ * mainboard filer since 2005, had a single quarter of P&L behind a screen built to show a trend.
+ *
+ * Adding `symbol` changes what the endpoint means: PRAJIND answers with 130 quarterly rows going
+ * back to 31-Mar-2005. Measured 09-Sep-2026. That is the same shape as the announcements and
+ * corporate-actions endpoints, and the same reason `backfill-company.ts` asks all three by name.
+ */
+export async function fetchResultsForSymbol(
+  symbol: string,
+  board: 'equities' | 'sme',
+  session?: NseSession,
+): Promise<ResultsFiling[]> {
+  const s = session ?? (await NseSession.open());
+  const out: ResultsFiling[] = [];
+  const seen = new Set<string>();
+
+  for (const { index, period } of RESULT_FEEDS) {
+    if (index !== board) continue;
+    const rows = await s.rows<Record<string, unknown>>('corporates-financial-results', {
+      index,
+      period,
+      symbol: symbol.trim().toUpperCase(),
+    });
+    for (const r of rows) {
+      const url = String(r['xbrl'] ?? '').trim();
+      if (!url.startsWith('http')) continue;
+      if (seen.has(url)) continue;
+      seen.add(url);
+      out.push({
+        symbol: String(r['symbol'] ?? '').trim().toUpperCase(),
+        isin: String(r['isin'] ?? '').trim() || null,
+        xbrlUrl: url,
+        periodEnd: String(r['toDate'] ?? '').trim() || null,
+      });
+    }
+  }
+  return out;
+}
+
 export interface IngestResult {
   /** Rows the feed served, before filtering to followed names. Zero here is a dead feed. */
   indexRows: number;
