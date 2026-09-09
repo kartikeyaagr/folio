@@ -3,51 +3,49 @@ import { notFound } from 'next/navigation';
 
 import { companyPage } from '@/lib/company-view.ts';
 import { coverers, sectorsWithTerms, STATUSES } from '@/lib/companies.ts';
-import { financials, type Basis } from '@/lib/financials.ts';
 import { isRange, priceSeries, type Range } from '@/lib/prices.ts';
-import { filings } from '@/lib/filings.ts';
-import { newsFor } from '@/lib/engagement.ts';
+import { AUTHORED, documentsFor, KIND_LABEL } from '@/lib/workspace.ts';
 import {
-  AppHeader, Blank, Card, Chip, Empty, Fact, Facts, Seg, Tabs, crore, inr, type Tone,
+  AppHeader, Blank, Card, Chip, Empty, Fact, Facts, Seg, crore, inr, type Tone,
 } from '@/components/ui.tsx';
-import { Statement } from '@/components/Statement.tsx';
 import { PriceChart } from '@/components/PriceChart.tsx';
-import { FilterList } from '@/components/FilterList.tsx';
 import { DialogButton } from '@/components/DialogButton.tsx';
 
 import { requireUser } from '../../../_lib/session.ts';
 import {
   setCoverageAction, setSectorAction, setStatusAction,
 } from '../../../_lib/actions/companies.ts';
+import {
+  archiveDocumentAction, createDocumentAction,
+} from '../../../_lib/actions/workspace.ts';
 
 /**
- * One company, everything held on it.
+ * One company: what it is, what it has done, and what this desk has written about it.
  *
- * The order is the order a person reads in: what it is, what it reported, who owns it, what it
- * filed, what was said about it, what is coming. Anything the system does not hold says so rather
- * than being omitted — a page that silently drops a section reads as a page with nothing to report.
+ * **Not a screener.** The financials, filings, ownership and news that used to fill this page are
+ * still ingested and still drive the desk, the agents and the alerts — they were simply not what
+ * anybody opens a company to *do*. The work is reading and writing, and until now that happened in
+ * Google Docs and Excel, which `docs/specs/v2-system-map.md` says in its first paragraph is the
+ * thing this system exists to replace.
  */
 
 export const dynamic = 'force-dynamic';
 
+/** A timestamp as a person says it. The same shape `/admin` uses for the same reason. */
+const when = (d: Date | null): string =>
+  d === null
+    ? '—'
+    : new Intl.DateTimeFormat('en-IN', {
+        dateStyle: 'medium',
+        timeStyle: 'short',
+        timeZone: 'Asia/Kolkata',
+      }).format(d);
+
 /** The taxonomy's categories, in words a reader uses. */
-const HOLDER_LABEL: Record<string, string> = {
-  promoter: 'Promoter',
-  mutual_fund: 'Mutual fund',
-  fpi: 'FPI',
-  insurance: 'Insurance',
-  other: 'Other',
-};
 
 const STATUS_TONE: Record<string, Tone> = {
   holding: 'good', working: 'navy', watching: 'neutral', exited: 'warn', passed: 'neutral',
 };
-
-function ist(at: Date): string {
-  return new Intl.DateTimeFormat('en-GB', {
-    timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short', year: 'numeric',
-  }).format(at);
-}
 
 export default async function CompanyPage({
   params,
@@ -56,37 +54,31 @@ export default async function CompanyPage({
   params: Promise<{ symbol: string }>;
   // Both live in the URL, so a refresh lands where you were and a link to "PRAJIND consolidated,
   // yearly" is a link somebody can send.
-  searchParams: Promise<{ basis?: string; pnl?: string; range?: string }>;
+  searchParams: Promise<{ range?: string; archived?: string }>;
 }) {
-  const user = await requireUser();
+  await requireUser();
   const { symbol } = await params;
   const co = await companyPage(symbol);
   if (!co) notFound();
 
   const sp = await searchParams;
-  const wanted = sp.basis === 'standalone' || sp.basis === 'consolidated' ? (sp.basis as Basis) : undefined;
-
   const range: Range = isRange(sp.range) ? sp.range : '1y';
+  const showArchived = sp.archived === '1';
 
-  const [recentFilings, news, fin, prices, desk, sectors] = await Promise.all([
-    filings({ companyId: co.id, days: 180, limit: 25 }),
-    newsFor(user.userId, { companyId: co.id, days: 90 }),
-    financials(co.id, wanted),
+  const [prices, desk, sectors, docs] = await Promise.all([
     priceSeries(co.id, range),
     coverers(),
     sectorsWithTerms(),
+    documentsFor(co.id, { archived: showArchived }),
   ]);
 
-  // Whichever period kind the company actually files, defaulting to the longest it has — a year
-  // says more about a business than a quarter, and an SME half-yearly filer has no quarters at all.
-  const pnlTab = fin.pnl.find((p) => p.kind === sp.pnl) ?? fin.pnl[0];
-  // One builder for every link on the page, so changing the range does not silently reset the
-  // basis and a link carries the whole view rather than one third of it.
-  const href = (next: { basis?: string; pnl?: string; range?: string }): string => {
+  // One builder for every link on the page, so changing the range does not silently drop the
+  // archived filter and a link carries the whole view rather than half of it.
+  const href = (next: { range?: string; archived?: string }): string => {
     const q = new URLSearchParams();
-    q.set('basis', next.basis ?? fin.basis);
-    if (next.pnl ?? pnlTab?.kind) q.set('pnl', next.pnl ?? pnlTab!.kind);
     q.set('range', next.range ?? range);
+    const archived = 'archived' in next ? next.archived : (showArchived ? '1' : undefined);
+    if (archived) q.set('archived', archived);
     return `?${q.toString()}`;
   };
 
@@ -264,251 +256,92 @@ export default async function CompanyPage({
           <PriceChart series={prices} href={(r) => href({ range: r })} />
         </Card>
 
+        {/* What this page is for now. The financials, filings, ownership and news that used to sit
+            below are still ingested and still drive the desk, the agents and the alerts — they are
+            simply not what somebody opens a company to do. The work is reading and writing, and
+            until this existed that happened in Google Docs and Excel, which is the thing
+            docs/specs/v2-system-map.md says in its first paragraph that this system replaces. */}
         <Card
-          title="Financials"
+          title="Documents and models"
           action={
-            // Both positions, always. This used to render plain text when a company filed only one
-            // basis, on the argument that a switch with one live position teaches you it does
-            // nothing — but the reader who goes looking for the switch and finds a word cannot
-            // tell whether the control is missing or the data is, and goes looking further. The
-            // unfiled side is shown disabled and says why on hover.
-            <Seg
-              small
-              current={href({})}
-              options={fin.bases.map((b) => ({
-                href: href({ basis: b }),
-                label: b === 'consolidated' ? 'Consolidated' : 'Standalone',
-                disabled: !fin.filed.includes(b),
-                why: `${co.symbol} has filed no ${b} results that this system holds.`,
-              }))}
-            />
-          }
-        >
-          {fin.pnl.length === 0 ? (
-            <Empty>
-              No results have been parsed for this company yet. They arrive from the results feed
-              once it has filed, and the whole history follows a backfill.
-            </Empty>
-          ) : (
-            <>
-              {/* All four, always, so every company page reads the same and only its data differs.
-                  An SME files half-yearly by law and has no quarters — a fact about the company,
-                  which is worth saying rather than leaving as a tab that is simply not there. */}
-              <Tabs
+            <div className="form-actions">
+              <Seg
                 current={href({})}
-                tabs={fin.periodKinds.map((p) =>
-                  p.has
-                    ? ([href({ pnl: p.kind }), p.label] as const)
-                    : ([href({}), p.label, `${co.symbol} has filed no ${p.label.toLowerCase()} results that this system holds.`] as const),
-                )}
+                options={[
+                  { label: 'Current', href: href({ archived: undefined }) },
+                  { label: 'Archived', href: href({ archived: '1' }) },
+                ]}
+                small
               />
-              <Statement
-                data={pnlTab!.statement}
-                empty="Nothing reported for this period kind."
-              />
-            </>
-          )}
-        </Card>
-
-        <Card title="Balance sheet">
-          <Statement
-            data={fin.balanceSheet}
-            empty="No filing held for this company carries a balance sheet. Quarterly results do not; the annual one does."
-          />
-        </Card>
-
-        <Card title="Cash flow">
-          <Statement
-            data={fin.cashFlow}
-            empty="No filing held for this company carries a cash flow statement. It comes with the annual results."
-          />
-        </Card>
-
-        <Card title="Ownership">
-          {co.shareholding.length === 0 ? (
-            <Empty>No shareholding pattern has been filed for this company since it was followed.</Empty>
+              <DialogButton label="New" title={`New in ${co.symbol}`} className="btn btn-primary btn-sm">
+                <form action={createDocumentAction} className="form-grid">
+                  <input type="hidden" name="companyId" value={co.id} />
+                  <label className="lbl">
+                    Title
+                    <input className="field" name="title" required autoFocus />
+                  </label>
+                  <label className="lbl">
+                    Kind
+                    <select className="field" name="kind" defaultValue="note">
+                      {AUTHORED.map((k) => (
+                        <option key={k} value={k}>{KIND_LABEL[k]}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <p className="picker-none">
+                    A spreadsheet can read this system’s own figures —
+                    <code> =FIN(&quot;{co.symbol}&quot;,&quot;revenue&quot;,&quot;FY26&quot;)</code> — so a
+                    model moves when the next quarter lands instead of ageing quietly.
+                  </p>
+                  <div className="form-actions">
+                    <button type="submit" className="btn btn-primary">Create it</button>
+                  </div>
+                </form>
+              </DialogButton>
+            </div>
+          }
+          padded={docs.length === 0}
+        >
+          {docs.length === 0 ? (
+            <Empty>
+              {showArchived
+                ? 'Nothing archived for this company.'
+                : `Nothing written on ${co.symbol} yet. Notes, memos, meeting records and models live here, versioned and attributed like everything else.`}
+            </Empty>
           ) : (
             <div className="tbl-scroll">
               <table className="tbl">
                 <thead>
                   <tr>
-                    <th>Quarter</th><th className="num">Promoter</th><th className="num">Pledged</th>
-                    <th className="num">Encumbered</th><th className="num">FII</th><th className="num">DII</th>
+                    <th>Title</th><th>Kind</th><th className="num">Versions</th>
+                    <th>Last saved</th><th>By</th><th />
                   </tr>
                 </thead>
                 <tbody>
-                  {co.shareholding.map((s) => (
-                    <tr key={s.asOf}>
-                      <td className="num">{s.asOf}</td>
-                      <td className="num">{s.promoterPct ? `${Number(s.promoterPct).toFixed(2)}%` : <Blank />}</td>
-                      <td className="num">
-                        {s.pledgePct !== null ? `${Number(s.pledgePct).toFixed(2)}%`
-                          : <Blank why="Declared an encumbrance but did not break it down for the promoter line" />}
-                      </td>
-                      <td className="num">
-                        {s.encumberedPct !== null ? `${Number(s.encumberedPct).toFixed(2)}%` : <Blank />}
-                      </td>
-                      <td className="num">{s.fiiPct ? `${Number(s.fiiPct).toFixed(2)}%` : <Blank />}</td>
-                      <td className="num">{s.diiPct ? `${Number(s.diiPct).toFixed(2)}%` : <Blank />}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-          <p className="hint">
-            Pledge and encumbrance are percentages of the promoter holding, not of the company.
-          </p>
-        </Card>
-
-        <Card
-          title="Shareholders"
-          action={
-            co.holders.length > 0 ? (
-              <span className="muted">everyone above 1%, as filed</span>
-            ) : undefined
-          }
-        >
-          {co.holders.length === 0 ? (
-            <Empty>
-              No shareholding pattern is held for this name yet. When one is, LODR requires it to
-              name every holder above 1% and each promoter individually.
-            </Empty>
-          ) : (
-            <div className="tbl-scroll scroll-box" tabIndex={0}>
-              <table className="tbl">
-                <thead>
-                  <tr>
-                    <th>Holder</th><th>Category</th>
-                    <th className="num">Shares</th><th className="num">Holding</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {co.holders.map((h) => (
-                    <tr key={h.name}>
-                      <td className="cell-wrap">{h.name}</td>
+                  {docs.map((d) => (
+                    <tr key={d.id} className={d.archivedAt ? 'pf-void' : undefined}>
                       <td>
-                        <Chip tone={h.category === 'promoter' ? 'navy' : 'neutral'}>
-                          {HOLDER_LABEL[h.category] ?? h.category}
-                        </Chip>
+                        <Link href={`/doc/${d.id}`}><b>{d.title}</b></Link>
                       </td>
-                      <td className="num">
-                        {h.shares ? inr(h.shares, 0) : <Blank why="Not stated for this holder" />}
-                      </td>
-                      <td className="num">
-                        {h.pct ? `${Number(h.pct).toFixed(2)}%` : <Blank why="Not stated for this holder" />}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </Card>
-
-        <Card title="Insider and pledge disclosures">
-          {co.insider.length === 0 ? (
-            <Empty>No PIT disclosures are held for this company.</Empty>
-          ) : (
-            <div className="tbl-scroll scroll-box" tabIndex={0}>
-              <table className="tbl">
-                <thead>
-                  <tr>
-                    <th>Disclosed</th><th>Who</th><th>Category</th><th>What</th>
-                    <th className="num">Shares</th><th className="num">Holding</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {co.insider.map((i) => (
-                    <tr key={i.id}>
-                      <td className="num">{ist(i.disclosedAt)}</td>
-                      <td>{i.person}</td>
-                      <td>{i.category ?? <Blank />}</td>
-                      <td>{i.kind ?? <Blank />}</td>
-                      <td className="num">{i.quantity ? inr(i.quantity, 0) : <Blank />}</td>
-                      <td className="num">
-                        {i.pctBefore !== null && i.pctAfter !== null
-                          ? `${Number(i.pctBefore).toFixed(2)}% → ${Number(i.pctAfter).toFixed(2)}%`
-                          : <Blank why="The disclosure did not report both sides" />}
+                      <td>{KIND_LABEL[d.kind] ?? d.kind}</td>
+                      <td className="num">{d.versions}</td>
+                      <td className="num">{when(d.updatedAt)}</td>
+                      <td>{d.updatedByName ?? <Blank why="Written before saves were attributed" />}</td>
+                      <td className="cell-note">
+                        <form action={archiveDocumentAction}>
+                          <input type="hidden" name="id" value={d.id} />
+                          <input type="hidden" name="symbol" value={co.symbol} />
+                          {d.archivedAt && <input type="hidden" name="restore" value="1" />}
+                          <button type="submit" className="btn btn-link">
+                            {d.archivedAt ? 'Restore' : 'Archive'}
+                          </button>
+                        </form>
                       </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
-          )}
-        </Card>
-
-        <Card title="Filings" action={<Link href={`/filings`}>All filings →</Link>}>
-          {recentFilings.length === 0 ? (
-            <Empty>Nothing filed in the last six months.</Empty>
-          ) : (
-            <FilterList placeholder="Filter filings…" label="Filter filings" show={5}>
-            <ul className="item-plain scroll-box" tabIndex={0}>
-              {recentFilings.map((f) => (
-                <li
-                  key={f.id}
-                  // The haystack is chosen: the category and the summary, which is what somebody
-                  // means when they type "auditor". The date is excluded — nobody filters a
-                  // six-month list by typing a timestamp.
-                  data-text={`${f.category ?? ''} ${f.summary ?? ''}`.toLowerCase()}
-                >
-                  <span className="num">{ist(f.announcedAt)}</span>
-                  <b>{f.category ?? 'filing'}</b>
-                  <span>{f.summary ?? ''}</span>
-                  {f.attachmentUrl && (
-                    <a href={f.attachmentUrl} target="_blank" rel="noreferrer">PDF</a>
-                  )}
-                </li>
-              ))}
-            </ul>
-            </FilterList>
-          )}
-        </Card>
-
-        <Card title="News" action={<Link href="/news">All news →</Link>}>
-          {news.length === 0 ? (
-            <Empty>
-              No story has cleared the gate for this name in 90 days. Only matches with a stated
-              mechanism appear anywhere in the app.
-            </Empty>
-          ) : (
-            <FilterList placeholder="Filter news…" label="Filter news" show={3}>
-            <ul className="news-list news-compact scroll-box" tabIndex={0}>
-              {news.map((n) => (
-                <li
-                  key={n.id}
-                  className="news-item"
-                  data-text={`${n.title} ${n.source}`.toLowerCase()}
-                >
-                  <div className="news-main">
-                    <p className="item-kind">
-                      <span>{n.source}</span>
-                      <span>{n.publishedAt ? ist(n.publishedAt) : 'undated'}</span>
-                    </p>
-                    <a className="news-title" href={n.url} target="_blank" rel="noreferrer">{n.title}</a>
-                    <p className="news-why">{n.mechanism}</p>
-                  </div>
-                </li>
-              ))}
-            </ul>
-            </FilterList>
-          )}
-        </Card>
-
-        <Card title="Calendar">
-          {co.events.length === 0 ? (
-            <Empty>Nothing scheduled, and nothing in the last month.</Empty>
-          ) : (
-            <ul className="desk-soon scroll-box" tabIndex={0}>
-              {co.events.map((e) => (
-                <li key={e.id}>
-                  <span className="desk-soon-when">{e.onDate}</span>
-                  <b>{e.kind === 'results' ? 'Results' : 'Board meeting'}</b>
-                  <span className="desk-soon-detail">{e.title}</span>
-                </li>
-              ))}
-            </ul>
           )}
         </Card>
       </div>
