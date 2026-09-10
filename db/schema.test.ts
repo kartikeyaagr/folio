@@ -110,9 +110,12 @@ test('every audited table carries the trigger', async () => {
       -- prices is ~2,000 unchanging exchange facts a day whose provenance is ingestion_runs;
       -- ingestion_runs is that provenance table itself; news_items is a copy of somebody else's
       -- feed, written only by the poller, and one audit row per headline would be the largest
-      -- table here within a month; news_matched_items is a set of item ids and nothing else.
+      -- table here within a month; news_matched_items is a set of item ids and nothing else;
+      -- chunks is derived rows written only by the indexer, whose provenance is the sources row
+      -- beside it — ~22,000 rows on a three-name book, ten times news_items, rewritten on every
+      -- re-index of an edited document.
       AND c.relname NOT IN ('actors', 'audit_log', 'schema_migrations', 'prices', 'ingestion_runs',
-                            'news_items', 'news_matched_items')
+                            'news_items', 'news_matched_items', 'chunks')
       AND NOT EXISTS (
         SELECT 1 FROM pg_trigger t WHERE t.tgrelid = c.oid AND t.tgname = 'audit'
       )`);
@@ -145,5 +148,63 @@ test('a source can only be registered once per referenced row', async () => {
     ),
     /sources_identity/,
   );
+  await client.query('ROLLBACK');
+});
+
+test('a chunk cannot carry an embedding without naming the model that made it', async () => {
+  await client.query('BEGIN');
+  await client.query('SELECT set_config($1, $2, true)', ['app.actor_id', 'system:index']);
+  const { rows } = await client.query(
+    `INSERT INTO sources (kind, ref_id, title, content_hash)
+     VALUES ('filing', 'f900', 'x', 'h900') RETURNING id`,
+  );
+  const src = rows[0].id;
+  await assert.rejects(
+    () => client.query(
+      `INSERT INTO chunks (source_id, ord, text, char_from, char_to, embedding)
+       VALUES ($1, 0, 'x', 0, 1, $2)`,
+      [src, `[${Array(384).fill(0).join(',')}]`],
+    ),
+    /chunks_embedding_has_a_model/,
+  );
+  await client.query('ROLLBACK');
+});
+
+test('a chunk span must run forwards', async () => {
+  await client.query('BEGIN');
+  await client.query('SELECT set_config($1, $2, true)', ['app.actor_id', 'system:index']);
+  const { rows } = await client.query(
+    `INSERT INTO sources (kind, ref_id, title, content_hash)
+     VALUES ('filing', 'f901', 'x', 'h901') RETURNING id`,
+  );
+  await assert.rejects(
+    () => client.query(
+      `INSERT INTO chunks (source_id, ord, text, char_from, char_to)
+       VALUES ($1, 0, 'x', 10, 10)`,
+      [rows[0].id],
+    ),
+    /chunks_span_is_forward/,
+  );
+  await client.query('ROLLBACK');
+});
+
+test('deleting a source takes its chunks with it', async () => {
+  await client.query('BEGIN');
+  await client.query('SELECT set_config($1, $2, true)', ['app.actor_id', 'system:index']);
+  const { rows } = await client.query(
+    `INSERT INTO sources (kind, ref_id, title, content_hash)
+     VALUES ('filing', 'f902', 'x', 'h902') RETURNING id`,
+  );
+  const src = rows[0].id;
+  await client.query(
+    `INSERT INTO chunks (source_id, ord, text, char_from, char_to) VALUES ($1, 0, 'x', 0, 1)`,
+    [src],
+  );
+  await client.query('DELETE FROM sources WHERE id = $1', [src]);
+  const { rows: left } = await client.query(
+    'SELECT count(*)::int AS n FROM chunks WHERE source_id = $1',
+    [src],
+  );
+  assert.equal(left[0].n, 0);
   await client.query('ROLLBACK');
 });
