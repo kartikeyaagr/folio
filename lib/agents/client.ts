@@ -27,7 +27,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import AnthropicAws from '@anthropic-ai/aws-sdk';
 
-export type Backend = 'claude-platform-on-aws' | 'anthropic-api';
+export type Backend = 'oidc-federation' | 'claude-platform-on-aws' | 'anthropic-api';
 
 /** Neither backend is configured. Raised at construction, so no request is ever sent half-set-up. */
 export class NoModelCredentials extends Error {}
@@ -41,9 +41,14 @@ type Env = Record<string, string | undefined>;
  * about an environment that is not this process's.
  */
 export function chosenBackend(env: Env = process.env): Backend | null {
-  // Ordered, not exclusive. `ops/SETUP.md` says one or the other and never both, but an
-  // ANTHROPIC_API_KEY exported in somebody's shell profile is a real thing that happens, and it
-  // must not quietly win over the box's own configuration.
+  // Ordered, not exclusive. `ops/SETUP.md` says one and never two, but an ANTHROPIC_API_KEY
+  // exported in somebody's shell profile is a real thing that happens, and it must not quietly win
+  // over the box's own configuration. Both box-level backends therefore come before the key.
+  //
+  // Between the two, federation wins. Claude Platform on AWS is unreachable on this account —
+  // it bills through AWS Marketplace, which a Sign up for AWS (new) account cannot use — so a
+  // workspace id found here is the stale half of the pair, not the intended one.
+  if (env['ANTHROPIC_FEDERATION_RULE_ID']) return 'oidc-federation';
   if (env['ANTHROPIC_AWS_WORKSPACE_ID']) return 'claude-platform-on-aws';
   if (env['ANTHROPIC_API_KEY']) return 'anthropic-api';
   return null;
@@ -55,6 +60,51 @@ export function chosenBackend(env: Env = process.env): Backend | null {
  */
 export function clientFor(env: Env): Anthropic {
   switch (chosenBackend(env)) {
+    case 'oidc-federation': {
+      // The instance role mints a short-lived JWT; the SDK exchanges it for an access token at
+      // /v1/oauth/token and refreshes before expiry. Nothing on disk is a long-lived secret, which
+      // is the property §10 exists to establish and the one a plain API key gives up.
+      const organizationId = env['ANTHROPIC_ORGANIZATION_ID'];
+      const identityTokenFile = env['ANTHROPIC_IDENTITY_TOKEN_FILE'];
+      const missing = [
+        organizationId ? null : 'ANTHROPIC_ORGANIZATION_ID',
+        identityTokenFile ? null : 'ANTHROPIC_IDENTITY_TOKEN_FILE',
+      ].filter((m): m is string => m !== null);
+      if (missing.length > 0) {
+        throw new NoModelCredentials(
+          'ANTHROPIC_FEDERATION_RULE_ID is set, which selects workload identity federation, but ' +
+            `${missing.join(' and ')} ${missing.length > 1 ? 'are' : 'is'} not. ` +
+            'See ops/SETUP.md §10.',
+        );
+      }
+      return new Anthropic({
+        // Explicit nulls, not omissions. `apiKey` defaults to process.env['ANTHROPIC_API_KEY'] and
+        // outranks `config`, so a key left anywhere in the environment silently shadows federation
+        // and the calls bill to whoever owns that key — a wrong answer wearing a working one's
+        // clothes. `authToken` has the same default and the same failure.
+        apiKey: null,
+        authToken: null,
+        // `config` bypasses config-file and environment lookup, so this function keeps answering
+        // about the environment it was handed rather than about process.env — which is what makes
+        // the tests below able to ask about an environment that is not this process's.
+        config: {
+          organization_id: organizationId,
+          ...(env['ANTHROPIC_WORKSPACE_ID'] ? { workspace_id: env['ANTHROPIC_WORKSPACE_ID'] } : {}),
+          authentication: {
+            type: 'oidc_federation',
+            federation_rule_id: env['ANTHROPIC_FEDERATION_RULE_ID']!,
+            ...(env['ANTHROPIC_SERVICE_ACCOUNT_ID']
+              ? { service_account_id: env['ANTHROPIC_SERVICE_ACCOUNT_ID'] }
+              : {}),
+            // A path, never an inline token. @anthropic-ai/sdk 0.124 reads
+            // ANTHROPIC_IDENTITY_TOKEN_FILE and has no bare ANTHROPIC_IDENTITY_TOKEN at all —
+            // three occurrences against zero in core/credentials.js, against docs that offer both.
+            // An inline token would also be frozen at unit start, and these expire within the hour.
+            identity_token: { source: 'file', path: identityTokenFile! },
+          },
+        },
+      });
+    }
     case 'claude-platform-on-aws': {
       // Required, and passed explicitly rather than left to the SDK. Left to the SDK it falls
       // through to `~/.aws/config`, which is read *asynchronously* — the client then reports an
@@ -77,8 +127,9 @@ export function clientFor(env: Env): Anthropic {
       return new Anthropic({ apiKey: env['ANTHROPIC_API_KEY']! });
     case null:
       throw new NoModelCredentials(
-        'No model credentials. Set ANTHROPIC_AWS_WORKSPACE_ID (with AWS_REGION) for Claude Platform ' +
-          'on AWS, or ANTHROPIC_API_KEY for the first-party API. See ops/SETUP.md §10.',
+        'No model credentials. Set ANTHROPIC_FEDERATION_RULE_ID (with ANTHROPIC_ORGANIZATION_ID ' +
+          'and ANTHROPIC_IDENTITY_TOKEN_FILE) for workload identity federation, or ' +
+          'ANTHROPIC_API_KEY for a plain first-party key. See ops/SETUP.md §10.',
       );
   }
 }

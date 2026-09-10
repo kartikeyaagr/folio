@@ -56,3 +56,49 @@ test('neither configured is a named failure at construction, not a 401 later', (
   assert.equal(chosenBackend({}), null);
   assert.throws(() => clientFor({}), NoModelCredentials);
 });
+
+const FED = {
+  ANTHROPIC_FEDERATION_RULE_ID: 'fdrl_01ExampleNotReal',
+  ANTHROPIC_ORGANIZATION_ID: '00000000-0000-0000-0000-000000000000',
+  ANTHROPIC_SERVICE_ACCOUNT_ID: 'svac_01ExampleNotReal',
+  ANTHROPIC_IDENTITY_TOKEN_FILE: '/run/trisula/identity-token',
+};
+
+test('a federation rule id selects the first-party API with no key on disk', () => {
+  assert.equal(chosenBackend(FED), 'oidc-federation');
+  assert.equal(clientFor(FED).baseURL, 'https://api.anthropic.com');
+});
+
+test('a key in the environment cannot shadow federation', () => {
+  // The trap this branch exists to close. `apiKey` defaults to process.env['ANTHROPIC_API_KEY']
+  // and outranks `config`, so without the explicit null the SDK authenticates with the stray key,
+  // succeeds, and bills whoever owns it. Asserting on the resolved client, not on the intent.
+  const client = clientFor({ ...FED, ANTHROPIC_API_KEY: 'sk-ant-stale' }) as {
+    apiKey: string | null;
+    authToken: string | null;
+  };
+  assert.equal(chosenBackend({ ...FED, ANTHROPIC_API_KEY: 'sk-ant-stale' }), 'oidc-federation');
+  assert.equal(client.apiKey, null);
+  assert.equal(client.authToken, null);
+});
+
+test('federation wins over a workspace id left behind by the route that did not work', () => {
+  // Claude Platform on AWS bills through AWS Marketplace, which a Sign up for AWS (new) account
+  // cannot use. A workspace id sitting in the env alongside a rule id is the stale one.
+  assert.equal(chosenBackend({ ...FED, ...AWS }), 'oidc-federation');
+});
+
+test('federation missing its other halves refuses to build, and says which half', () => {
+  assert.throws(
+    () => clientFor({ ANTHROPIC_FEDERATION_RULE_ID: 'fdrl_01ExampleNotReal' }),
+    (err: unknown) =>
+      err instanceof NoModelCredentials &&
+      /ANTHROPIC_ORGANIZATION_ID and ANTHROPIC_IDENTITY_TOKEN_FILE are not/.test(String(err)),
+  );
+  assert.throws(
+    () => clientFor({ ...FED, ANTHROPIC_IDENTITY_TOKEN_FILE: undefined }),
+    (err: unknown) =>
+      err instanceof NoModelCredentials &&
+      /ANTHROPIC_IDENTITY_TOKEN_FILE is not/.test(String(err)),
+  );
+});
