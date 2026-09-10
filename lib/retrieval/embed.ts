@@ -55,6 +55,18 @@ async function load(): Promise<{ s: InferenceSession; v: Record<string, number> 
 }
 
 /**
+ * Whether `load()` has ever succeeded in this process. Not needed by any production caller — it
+ * exists only so `lib/retrieval/index.test.ts` can assert, rather than silently assume, the
+ * ordering precondition its one failure-path test depends on (that test is the sole place a bad
+ * `EMBED_MODEL_DIR` can be observed, since `session` above is cached after the first successful
+ * load and never rechecked). If you're reaching for this anywhere else, you probably want a
+ * different design instead.
+ */
+export function isLoaded(): boolean {
+  return session !== undefined;
+}
+
+/**
  * WordPiece, greedy longest-match — what bge's tokenizer.json describes.
  *
  * Exported for the tokenization tests below: both are pure functions of the vocab, so they can be

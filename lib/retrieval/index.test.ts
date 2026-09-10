@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { migrate } from '../../db/migrate.ts';
 import { closePool, serviceTxn, type Client } from '../db.ts';
 import { indexOne, drain } from './index.ts';
-import { EMBED_MODEL } from './embed.ts';
+import { EMBED_MODEL, isLoaded } from './embed.ts';
 import { registerAll } from './register.ts';
 
 const DB = `trisula_idx_${process.pid}`;
@@ -69,6 +69,30 @@ test('an empty queue is not a failure', async () => {
 // than quietly reuse an already-loaded model. Restored before the test returns, so every later
 // test embeds against the real one.
 test('a source that fails records why and stays in the queue', async () => {
+  // Guards the precondition the comment above claims but does not check: this technique only
+  // works the FIRST time embed.ts's load() ever runs in this process, because it caches its ONNX
+  // session in a module-level variable set only after a load that succeeds, and never rechecks the
+  // directory once that variable is set. If anything earlier — in this file or, after a reorder,
+  // moved ahead of it — has already made a real embed() call, drain() below will succeed instead of
+  // failing, and the assertions after it will simply report a value mismatch that looks like an
+  // ordinary broken test.
+  //
+  // That reads as an easy fix ("update the expected numbers"), and it is exactly the wrong one: it
+  // would silently delete the only coverage this file has for the SAVEPOINT / ROLLBACK /
+  // index_error path in drain() — the mechanism that keeps one bad source from poisoning the
+  // transaction that records its own failure — while leaving the suite green. If you hit this
+  // assertion: put this test back immediately after 'an empty queue is not a failure' (the only
+  // other test allowed to run before it), or find a different way to force indexOne to fail that
+  // doesn't depend on load() never having succeeded yet.
+  assert.equal(
+    isLoaded(),
+    false,
+    'embed.ts already has a cached model session, so this test can no longer make embed() fail by ' +
+      'pointing EMBED_MODEL_DIR at nothing. This test must run before any other test in this file ' +
+      'calls embed() for the first time — see the comment above this assertion before changing ' +
+      'anything below it.',
+  );
+
   await serviceTxn('system:index', async (c) => {
     await newDocument(c, 'd_fail', 'note', { text: 'a memo the indexer will never get to embed' });
   });
