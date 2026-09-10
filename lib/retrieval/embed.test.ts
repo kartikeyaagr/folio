@@ -1,8 +1,9 @@
 import { test, before } from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
+import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { embed, toVector, EMBED_DIM, EMBED_MODEL } from './embed.ts';
+import { embed, encode, toVector, EMBED_DIM, EMBED_MODEL } from './embed.ts';
 
 // Repo-local, not the VM path `embed.ts` defaults to — fetched once with `pnpm fetch-model` and
 // left in place (.gitignore'd; 130MB has no business in git). Set in before(), which runs after
@@ -67,4 +68,32 @@ test('punctuation glued to a word does not change its embedding much', async () 
     'The promoter has encumbered 12.4 percent of their holding.',
   ]);
   assert.ok(dot(pct!, spelled!) > 0.95, `punctuation split looks wrong: ${dot(pct!, spelled!)}`);
+});
+
+test('a word with no vocab entry cannot explode the sequence past the 512-token limit', async () => {
+  // The R1 regression. Reproduced exactly as found: 200 repetitions of a word with no vocab
+  // entry at any granularity. WordPiece falls back to 12 single/double-character pieces per
+  // repetition (measured against the real vocab: 'z','##z','##q','##x','##w','##vb','##h','##k',
+  // '##j','##fm','##pg','##y') — 2400 pieces uncapped, nowhere near the model's 512 positions.
+  // Before the fix, the cap ran only between words, so this threw deep inside onnxruntime
+  // ("Attempting to broadcast an axis by a dimension other than 1. 512 by 518") instead of
+  // returning an embedding. It must now return a normal, valid vector.
+  const overflow = Array(200).fill('zzqxwvbhkjfmpgy').join(' ');
+  const [v] = await embed([overflow]);
+  assert.equal(v!.length, EMBED_DIM);
+  assert.ok(Math.abs(Math.hypot(...v!) - 1) < 1e-5);
+});
+
+test('WordPiece emits one [UNK] for a whole word that fails, not matched-pieces-plus-[UNK]', () => {
+  // A pure tokenizer.json-only check — no ONNX session needed, since encode() only needs the
+  // vocab. "hello" is a whole-word vocab entry; a trailing emoji has no entry at any granularity
+  // (checked directly against the vocab: neither "🎉" nor "##🎉" exists), and it isn't Unicode
+  // punctuation so the pre-tokenizer doesn't split it off — the whole string "hello🎉" reaches
+  // WordPiece as one word. The reference WordpieceTokenizer emits a single [UNK] for that word.
+  // The pre-fix code instead committed "hello" to `ids` before discovering the emoji couldn't
+  // match, yielding [hello, UNK] — two tokens where the reference tokenizer produces one.
+  const vocabPath = path.join(process.env.EMBED_MODEL_DIR!, 'tokenizer.json');
+  const vocab = JSON.parse(readFileSync(vocabPath, 'utf8')).model.vocab as Record<string, number>;
+  const ids = encode(vocab, 'hello🎉');
+  assert.deepEqual(ids, [vocab['[CLS]'], vocab['[UNK]'], vocab['[SEP]']]);
 });

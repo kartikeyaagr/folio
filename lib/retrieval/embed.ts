@@ -54,8 +54,13 @@ async function load(): Promise<{ s: InferenceSession; v: Record<string, number> 
   return { s: session, v: vocab! };
 }
 
-/** WordPiece, greedy longest-match — what bge's tokenizer.json describes. */
-function encode(v: Record<string, number>, s: string): number[] {
+/**
+ * WordPiece, greedy longest-match — what bge's tokenizer.json describes.
+ *
+ * Exported for the tokenization tests below: both are pure functions of the vocab, so they can be
+ * checked against real vocab entries without paying for an ONNX session load.
+ */
+export function encode(v: Record<string, number>, s: string): number[] {
   const ids = [v['[CLS]']!];
   // Split on EVERY Unicode punctuation character, which is what BERT's BertPreTokenizer does
   // (HuggingFace's _is_punctuation: category \p{P} plus ASCII 33-47, 58-64, 91-96, 123-126).
@@ -68,9 +73,26 @@ function encode(v: Record<string, number>, s: string): number[] {
     .replace(/(\p{P})/gu, ' $1 ')
     .split(/\s+/)
     .filter(Boolean);
-  for (const word of words) {
+
+  // bge-small has 512 position embeddings, so [CLS] + subword ids + [SEP] must never exceed 512.
+  // R1: the old cap ran only BETWEEN words ("if (ids.length >= 511) break"), so a single word that
+  // explodes into many subword pieces (a hash, a URL, a run of digits, an unusual proper noun —
+  // reproduced with 200 repetitions of a 15-character nonsense word, which WordPiece breaks into
+  // 12 single/double-character pieces each) overshot 511 before that check ever ran, and the
+  // unconditional [SEP] push after the loop pushed it further still. onnxruntime then throws
+  // inside the position-embedding Add node ("512 by 518") instead of returning a valid embedding.
+  // Checking per *token*, inside the inner loop, is what actually bounds the total.
+  outer: for (const word of words) {
+    // WordPiece emits a SINGLE [UNK] for the whole word when no decomposition covers it — that is
+    // what tokenizer.json's WordpieceTokenizer does. Buffering locally and only committing to
+    // `ids` on full success (or a lone [UNK] on failure) matches that; pushing each matched piece
+    // straight into `ids`, as the previous version did, leaves partial-pieces-plus-one-[UNK] for a
+    // word that fails partway through, which is a different (and longer) token sequence than the
+    // reference tokenizer would produce for the same input.
+    const pieces: number[] = [];
     let rest = word;
     let first = true;
+    let ok = true;
     while (rest.length > 0) {
       let cut = rest.length;
       let piece: string | undefined;
@@ -83,15 +105,19 @@ function encode(v: Record<string, number>, s: string): number[] {
         cut--;
       }
       if (piece === undefined) {
-        ids.push(v['[UNK]']!);
+        ok = false;
         break;
       }
-      ids.push(v[piece]!);
+      pieces.push(v[piece]!);
       rest = rest.slice(cut);
       first = false;
     }
-    // bge-small is a 512-token model; past that the tail is dropped rather than the call failing.
-    if (ids.length >= 511) break;
+    for (const id of ok ? pieces : [v['[UNK]']!]) {
+      // Past 511, the tail is dropped rather than the call failing — same policy as before, now
+      // enforced tightly enough that [SEP] below can never push the total past 512.
+      if (ids.length >= 511) break outer;
+      ids.push(id);
+    }
   }
   ids.push(v['[SEP]']!);
   return ids;
