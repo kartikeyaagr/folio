@@ -1,0 +1,127 @@
+/**
+ * The embedder. Local, in-process, TypeScript.
+ *
+ * `BAAI/bge-small-en-v1.5` as ONNX under onnxruntime-node — the same model v2 ran through Python's
+ * fastembed, verified against it on real strings before this file existed (R0, tasks/build-log.md).
+ * Same model on purpose: it means v2's measured similarity numbers stay comparable rather than
+ * needing rediscovery.
+ *
+ * Nothing leaves the VM. That is not an aesthetic preference — this embeds the desk's own memos,
+ * models and notes, and v2 refused a hosted embedder for spreadsheets in as many words: "a model
+ * is the thesis expressed in numbers".
+ */
+import { InferenceSession, Tensor } from 'onnxruntime-node';
+import { existsSync, readFileSync } from 'node:fs';
+
+/**
+ * Recorded on every row. Vectors from two models occupy different spaces, and comparing them
+ * returns plausible numbers with meaningless neighbours — the worst available failure, because it
+ * has no symptom. Changing this constant means re-embedding, never mixing.
+ */
+export const EMBED_MODEL = 'bge-small-en-v1.5';
+export const EMBED_DIM = 384;
+
+const DEFAULT_MODEL_DIR = '/var/lib/trisula/models/bge-small-en-v1.5';
+
+let session: InferenceSession | undefined;
+let vocab: Record<string, number> | undefined;
+
+/**
+ * Loaded once. A 130MB model read per call would dominate every job that uses it.
+ *
+ * `EMBED_MODEL_DIR` is read here, inside the function, rather than into a module-scope constant.
+ * Tests point it at the repo-local `.models/` directory from a `before()` hook (the same pattern
+ * `lib/db.ts` uses for `DATABASE_URL`), which runs after this module's own top-level code — a
+ * module-scope `const DIR = process.env.EMBED_MODEL_DIR ?? …` would already have frozen on the VM
+ * default by the time that hook ran, and every test would silently look in the wrong place.
+ */
+async function load(): Promise<{ s: InferenceSession; v: Record<string, number> }> {
+  if (session === undefined) {
+    const dir = process.env.EMBED_MODEL_DIR ?? DEFAULT_MODEL_DIR;
+    if (!existsSync(`${dir}/model.onnx`) || !existsSync(`${dir}/tokenizer.json`)) {
+      // A bare ENOENT from InferenceSession.create or readFileSync names a path, not a fix. On a
+      // dev machine the fix is always the same command, so say it — see decisions in
+      // task-5-brief.md: a silent skip here would let the punctuation regression test (below)
+      // quietly never run, which is the one thing it exists to prevent.
+      throw new Error(
+        `Embedding model not found at ${dir}. Run \`pnpm fetch-model\` to fetch it ` +
+          `(production VMs are provisioned per ops/SETUP.md instead).`,
+      );
+    }
+    session = await InferenceSession.create(`${dir}/model.onnx`);
+    vocab = JSON.parse(readFileSync(`${dir}/tokenizer.json`, 'utf8')).model.vocab;
+  }
+  return { s: session, v: vocab! };
+}
+
+/** WordPiece, greedy longest-match — what bge's tokenizer.json describes. */
+function encode(v: Record<string, number>, s: string): number[] {
+  const ids = [v['[CLS]']!];
+  // Split on EVERY Unicode punctuation character, which is what BERT's BertPreTokenizer does
+  // (HuggingFace's _is_punctuation: category \p{P} plus ASCII 33-47, 58-64, 91-96, 123-126).
+  // Measured in R0: a hand-picked set like [.,?:;!] leaves '%' (37) and '-' (45) glued to their
+  // neighbouring word, and 3 of 10 real strings then scored as low as cosine 0.868 against Python
+  // — "12.4%", "18%", "Related-party". The seven strings without stray punctuation passed at
+  // 0.999999 either way, which is exactly why this is easy to ship broken.
+  const words = s
+    .toLowerCase()
+    .replace(/(\p{P})/gu, ' $1 ')
+    .split(/\s+/)
+    .filter(Boolean);
+  for (const word of words) {
+    let rest = word;
+    let first = true;
+    while (rest.length > 0) {
+      let cut = rest.length;
+      let piece: string | undefined;
+      while (cut > 0) {
+        const cand = first ? rest.slice(0, cut) : `##${rest.slice(0, cut)}`;
+        if (v[cand] !== undefined) {
+          piece = cand;
+          break;
+        }
+        cut--;
+      }
+      if (piece === undefined) {
+        ids.push(v['[UNK]']!);
+        break;
+      }
+      ids.push(v[piece]!);
+      rest = rest.slice(cut);
+      first = false;
+    }
+    // bge-small is a 512-token model; past that the tail is dropped rather than the call failing.
+    if (ids.length >= 511) break;
+  }
+  ids.push(v['[SEP]']!);
+  return ids;
+}
+
+export async function embed(texts: string[]): Promise<number[][]> {
+  if (texts.length === 0) return [];
+  const { s, v } = await load();
+
+  const out: number[][] = [];
+  for (const text of texts) {
+    const ids = encode(v, text);
+    const mask = ids.map(() => 1n);
+    const r = await s.run({
+      input_ids: new Tensor('int64', BigInt64Array.from(ids.map(BigInt)), [1, ids.length]),
+      attention_mask: new Tensor('int64', BigInt64Array.from(mask), [1, ids.length]),
+      token_type_ids: new Tensor('int64', BigInt64Array.from(ids.map(() => 0n)), [1, ids.length]),
+    });
+    const hidden = r['last_hidden_state']!;
+    const data = hidden.data as Float32Array;
+    // CLS pooling: bge uses the first token, not a mean over all of them. Getting this wrong
+    // produces vectors that look fine and cluster wrongly.
+    const cls = Array.from(data.slice(0, EMBED_DIM));
+    const norm = Math.hypot(...cls);
+    out.push(cls.map((x) => x / norm));
+  }
+  return out;
+}
+
+/** pgvector accepts a bracketed literal; node-postgres has no native type for it. */
+export function toVector(v: number[]): string {
+  return `[${v.join(',')}]`;
+}

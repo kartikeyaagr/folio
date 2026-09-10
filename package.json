@@ -14,7 +14,8 @@
     "test": "node --test '**/*.test.ts'",
     "check": "pnpm lint && pnpm typecheck && pnpm test",
     "migrate": "tsx db/migrate.ts",
-    "verify-backup": "./ops/verify-backup.sh"
+    "verify-backup": "./ops/verify-backup.sh",
+    "fetch-model": "./ops/fetch-model.sh"
   },
   "pnpm": {
     "onlyBuiltDependencies": []

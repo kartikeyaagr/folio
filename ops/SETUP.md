@@ -101,6 +101,22 @@ sudo mkdir -p /srv/trisula /var/lib/trisula/{backups,attachments} /etc/trisula
 sudo chown -R trisula:trisula /srv/trisula /var/lib/trisula
 ```
 
+### The embedding model
+
+The agents' retrieval runs a local model; nothing is sent to a vendor. Two files, ~130MB:
+
+```bash
+sudo mkdir -p /var/lib/trisula/models/bge-small-en-v1.5
+cd /var/lib/trisula/models/bge-small-en-v1.5
+sudo curl -sL -o model.onnx     https://huggingface.co/BAAI/bge-small-en-v1.5/resolve/main/onnx/model.onnx
+sudo curl -sL -o tokenizer.json https://huggingface.co/BAAI/bge-small-en-v1.5/resolve/main/tokenizer.json
+sudo chown -R trisula:trisula /var/lib/trisula/models
+```
+
+Not vendored in the repo: 130MB of binary in git costs every clone forever, and this file never
+changes — if it did, every vector in `chunks` would need rebuilding, which is a migration and not
+a download.
+
 The repo is **private**, so the box needs its own credential. Use a **read-only deploy key**: it
 reaches this one repo and cannot write to it. Keep it outside the repo directory, or the clone has
 the same non-empty-target problem.
