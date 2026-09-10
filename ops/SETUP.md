@@ -5,7 +5,11 @@ backups going off-site. Written to be followed top to bottom in one sitting; exp
 most of it waiting for installs.
 
 **Two separate things are called "AWS" here.** The EC2 instance the system runs on (§1–§8), and the
-Claude Platform on AWS credentials the agents use (§9). They are unrelated and you can do §9 later.
+AWS identity the agents federate with to reach Claude (§10). §10 can be left until later, but they
+are **not** independent: §10 works by pinning an Anthropic-side rule to this instance's exact IAM
+role ARN and attaching a token-minting policy to that same role. Rebuild the box under a different
+role, or rename the one it has, and the agents stop authenticating — with a `401` that says nothing
+about roles. §10 is the only place that dependency is written down.
 
 Before you start you need: an AWS account, a domain or Tailscale, and a password manager you trust
 with one secret that must never touch the server.
@@ -159,9 +163,17 @@ SMTP_PASSWORD=
 # the caller chooses lets them both evade the limit and lock somebody else out of the login page.
 TRUST_PROXY_HEADER=
 
-# Agents — see §9. Leave blank until then; agent runs will queue and retry.
-ANTHROPIC_AWS_WORKSPACE_ID=
-AWS_REGION=ap-south-1
+# Agents — see §10, which fills these in. Until then agent runs queue and retry.
+#
+# Commented rather than left blank, deliberately. For a credential variable, empty is not the same
+# as absent: an exported empty string still occupies its slot in the SDK's precedence chain, so a
+# blank line here would select a credential path with nothing in it and fail as a 401 instead of
+# falling through. The same trap is why ANTHROPIC_API_KEY has no line at all on this box.
+#ANTHROPIC_FEDERATION_RULE_ID=
+#ANTHROPIC_ORGANIZATION_ID=
+#ANTHROPIC_SERVICE_ACCOUNT_ID=
+#ANTHROPIC_IDENTITY_TOKEN_FILE=/run/trisula/identity-token
+#ANTHROPIC_WORKSPACE_ID=
 EOF
 sudo chown root:trisula /etc/trisula/trisula.env
 sudo chmod 640 /etc/trisula/trisula.env
@@ -191,7 +203,7 @@ Then:
 3. Delete the private key file from your laptop's disk once it is in the password manager.
 
 > A backup you cannot decrypt is not a backup. Test the restore path from wherever that key lives,
-> at least once, before you rely on it. See §11.
+> at least once, before you rely on it. See §12, "Prove it works".
 
 **S3 for off-site copies.** Create a bucket in `ap-south-1`, block all public access, enable
 versioning. Attach an instance role to the EC2 instance with `s3:PutObject` on that bucket and
@@ -324,6 +336,14 @@ rule has to be created by a person. In the Claude Console, under the organizatio
    `arn:aws:iam::577483323158:role/trisula-backup`. A trailing `*` would match every role in the
    account. Audience is `https://api.anthropic.com`.
 
+   Set the rule's **OAuth scope to `workspace:inference`**. The wizard offers `workspace:developer`,
+   which is the same access a workspace API key has: Messages, but also Files and Skills.
+   `workspace:inference` is Messages, token counting and Models — which is the whole of what this
+   system does, since every agent goes through `askModel` and `askModel` only ever calls
+   `messages.create`. The cost of the narrower scope is that adding Files or Skills later means
+   widening the rule, and the symptom of forgetting is a 403 from an endpoint that worked in
+   development. Set `token_lifetime_seconds` to `600`; an agent run is minutes.
+
 Also note the organization's UUID. That organization needs a payment method — this is where the
 usage is billed, and it is the one thing this route adds that the AWS route did not.
 
@@ -367,7 +387,16 @@ ANTHROPIC_FEDERATION_RULE_ID=fdrl_…
 ANTHROPIC_ORGANIZATION_ID=…                       # the org UUID
 ANTHROPIC_SERVICE_ACCOUNT_ID=svac_…
 ANTHROPIC_IDENTITY_TOKEN_FILE=/run/trisula/identity-token
+ANTHROPIC_WORKSPACE_ID=wrkspc_…                   # see below
 ```
+
+`ANTHROPIC_WORKSPACE_ID` is only *required* when the rule from step 2 is enabled in more than one
+workspace — with a single-workspace rule the server picks that one. Set it regardless. It is what
+the minted token is scoped to, so it decides which workspace's rate limits apply and which one the
+spend is attributed to, and leaving it implicit means that answer lives in a Console setting
+instead of in this file. The failure when a multi-workspace rule meets a request with no workspace
+id is the same opaque `401 Authentication failed` as everything else, logged as
+`workspace_id_required` on the History page.
 
 **Leave `ANTHROPIC_API_KEY` unset, here and in every shell that runs a job.** `apiKey` defaults to
 `process.env['ANTHROPIC_API_KEY']` and outranks the federation config, so a stray key does not
@@ -387,6 +416,20 @@ no Anthropic organization yet, so no rule id exists, and the policy in step 3 is
 particular the refresh timer's ten-minute interval is a guess sitting inside any plausible token
 lifetime, not a measurement — mint a token on the box, read its `exp`, and set the interval to a
 third of what is left.
+
+While that token is decoded, **check whether it carries a `jti`**, because that decides whether the
+interval has a second constraint on it. An identity token with a `jti` may be exchanged exactly
+once per issuer; presenting the same assertion twice is refused, and the refusal arrives as the
+same opaque `401 Authentication failed` as everything else, with the reason `jti_reused` visible
+only on the Console's **Workload identity → History** page. The SDK re-reads
+`ANTHROPIC_IDENTITY_TOKEN_FILE` on every refresh, so if the token carries a `jti` and the file has
+not changed since the last exchange, the refresh fails — and so does a process restart, which
+re-presents a token it already spent. In that case the timer has to rotate the file faster than the
+SDK refreshes, not merely faster than the token expires, and the two are not the same number.
+Anthropic's own AWS guidance takes the other route for exactly this reason: it hands the SDK a
+function that calls STS on each refresh rather than a path to read. If the timer turns out to be
+racing the refresh, that is the fix, and it is a change to `lib/agents/client.ts` rather than to
+this runbook.
 
 ## 11. First run
 
@@ -491,5 +534,10 @@ migration adds, so a restart first serves a build that queries a schema it does 
   fifteen minutes; `HEARTBEAT_URL` in §6 is empty, so nothing is listening and nothing would notice
   a dead box. Create a check on healthchecks.io or Better Stack — a free tier covers it — and paste
   its URL in. Set the monitor's grace period above fifteen minutes.
+- **Which Anthropic organization the agents bill to, and its payment method.** §10.2 needs an
+  organization to create the service account and federation rule in, and that organization needs a
+  card. This is the one thing the federation route adds that the AWS route did not: the usage lands
+  on an Anthropic invoice in USD rather than on the AWS India INR bill, and inference calls stop
+  appearing in CloudTrail. Nothing in §10 can be completed until this exists.
 - **Whether the web app is on Tailscale or the public internet.** Tailscale needs no certificate and
   no port 443. Recommended until there is a reason otherwise.
