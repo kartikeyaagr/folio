@@ -4,8 +4,11 @@
  * One `INSERT … SELECT … ON CONFLICT` per kind, each carrying its exclusion where the query is,
  * because each exclusion is a decision:
  *
- *   document_version    the CURRENT version only. An older version exists to be read by a person,
- *                        not retrieved five times over with slightly different wording.
+ *   document_version    the CURRENT version of an unarchived document only. An older version exists
+ *                        to be read by a person, not retrieved five times over with slightly
+ *                        different wording. An archived document is withdrawn from the index too,
+ *                        and actively — see PRUNE_ARCHIVED_DOCUMENTS, since DOCUMENTS's WHERE only
+ *                        stops a future registration and cannot retract one already done.
  *   news_item            confirmed matches only — the rule agent 6 (lib/news/gate.ts) already
  *                        applies. A candidate has no stated mechanism and is not the fund's
  *                        knowledge.
@@ -73,6 +76,20 @@ const UPSERT = `
    WHERE (sources.title, sources.occurred_at, sources.content_hash)
          IS DISTINCT FROM (EXCLUDED.title, EXCLUDED.occurred_at, EXCLUDED.content_hash)`;
 
+// The "current version" tie-break: newest written_at, ties broken by id. Shared between DOCUMENTS
+// (which decides what gets hashed) and rawText's document_version branch (which must re-derive
+// exactly that same row for the chunker) so the two definitions of "current" can never drift apart
+// — FILING_TEXT_SQL makes the identical argument for filings below, and the failure mode is the
+// same one it names: hash one version, chunk another, and nothing anywhere would report it.
+//
+// The `id` tie-break is load-bearing, not decoration: `now()` is stable for the whole transaction
+// it runs in, so two saves issued back to back (a paste followed immediately by a second save, or
+// this file's own tests) land the identical `written_at` — verified 10-Sep-2026. `written_at DESC`
+// alone is then a tie a plan can break either way. `id` is a bigserial and strictly increasing
+// regardless of clock resolution, so it is the only safe secondary key. Assumes the table in scope
+// is aliased `v`, as both call sites below do.
+const CURRENT_VERSION_ORDER_SQL = 'ORDER BY v.written_at DESC, v.id DESC LIMIT 1';
+
 // Documents: the CURRENT version only, and `ref_id` is the DOCUMENT's id, not the version row's.
 //
 // A version row is immutable and bigserial-keyed, so if `ref_id` were `v.id` (as a first draft of
@@ -89,22 +106,35 @@ const UPSERT = `
 // JOIN LATERAL … LIMIT 1 caps the SELECT at one row per document, so — unlike the two joins below —
 // there is no fan-out to guard against.
 //
-// The tie-break on `vv.id DESC` is load-bearing, not decoration: `now()` is stable for the whole
-// transaction it runs in, so two saves issued back to back (a paste followed immediately by a
-// second save, or this file's own tests) land the identical `written_at` — verified 10-Sep-2026.
-// `ORDER BY written_at DESC` alone is then a tie a plan can break either way, and the LATERAL
-// picks whichever row the scan happens to visit first. `id` is a bigserial and strictly increasing
-// regardless of clock resolution, so it is the only safe secondary key.
+// `d.archived_at IS NULL`: `documents.archived_at` is a soft delete — the row always stays, because
+// in this system deletion is never destruction (lib/workspace.ts). But an archived document is one
+// somebody decided is no longer part of the record, and continuing to retrieve it would put a
+// withdrawn memo in front of a reader as though it still stood. This WHERE only stops that from
+// happening going forward, for a document archived before it was ever registered; a document
+// archived AFTER registration already has a sources row sitting here, and this clause does nothing
+// to it — see PRUNE_ARCHIVED_DOCUMENTS just below, which is the half that actually retracts it.
 const DOCUMENTS = `
   INSERT INTO sources (kind, ref_id, company_id, title, occurred_at, content_hash)
-  SELECT 'document_version', d.id, d.company_id, d.title, v.written_at,
-         encode(sha256(convert_to(coalesce(v.body->>'text', v.body::text), 'UTF8')), 'hex')
+  SELECT 'document_version', d.id, d.company_id, d.title, cur.written_at,
+         encode(sha256(convert_to(coalesce(cur.body->>'text', cur.body::text), 'UTF8')), 'hex')
     FROM documents d
-    JOIN LATERAL (SELECT * FROM document_versions vv
-                   WHERE vv.document_id = d.id
-                   ORDER BY vv.written_at DESC, vv.id DESC LIMIT 1) v ON true
+    JOIN LATERAL (
+      SELECT * FROM document_versions v WHERE v.document_id = d.id ${CURRENT_VERSION_ORDER_SQL}
+    ) cur ON true
    WHERE d.archived_at IS NULL
 ` + UPSERT;
+
+// The other half of "an archived document leaves the index": DOCUMENTS's WHERE only ever stops a
+// row from being (re-)proposed — an UPSERT can't retract something it doesn't select. A document
+// registered while active and archived later would otherwise sit in `sources` (and its chunks in
+// `chunks`, cascading from sources.id per 0041) forever, silently outliving the decision that it no
+// longer stands. This runs unconditionally on every registerAll call, same as the five inserts, and
+// is a no-op — zero rows, zero audit entries — until something is actually archived.
+const PRUNE_ARCHIVED_DOCUMENTS = `
+  DELETE FROM sources s
+        USING documents d
+        WHERE s.kind = 'document_version' AND s.ref_id = d.id AND d.archived_at IS NOT NULL
+`;
 
 // News: confirmed matches only. `news_matches` is one row per (item, company) — a story can
 // confirm for more than one followed name. `DISTINCT ON` picks one deterministically: without it,
@@ -253,8 +283,15 @@ async function registerFundamentals(c: Client): Promise<number> {
   return rowCount ?? 0;
 }
 
-/** Runs all five registrations and returns how many `sources` rows were newly added or changed. */
+/**
+ * Runs all five registrations and returns how many `sources` rows were newly added or changed.
+ *
+ * Also prunes `sources` rows for documents archived since they were registered — not counted in
+ * the return value, since retracting a row is not registering one, but run every time for the same
+ * reason the five inserts are: registerAll is the one place that decides what `sources` should hold.
+ */
 export async function registerAll(c: Client): Promise<number> {
+  await c.query(PRUNE_ARCHIVED_DOCUMENTS);
   let total = 0;
   for (const sql of [DOCUMENTS, NEWS, ATTACHMENTS, FILINGS]) {
     const { rowCount } = await c.query(sql);
@@ -272,12 +309,13 @@ async function rawText(c: Client, kind: SourceKind, refId: string): Promise<stri
   switch (kind) {
     case 'document_version': {
       // refId is the document's id (see DOCUMENTS above), so re-derive the same "current version"
-      // this document would register today, not a specific version row.
+      // this document would register today, not a specific version row — same ordering, shared via
+      // CURRENT_VERSION_ORDER_SQL so it cannot silently diverge from what DOCUMENTS hashed.
       const { rows } = await c.query<{ text: string }>(
         `SELECT coalesce(v.body->>'text', v.body::text) AS text
            FROM document_versions v
           WHERE v.document_id = $1
-          ORDER BY v.written_at DESC, v.id DESC LIMIT 1`,
+          ${CURRENT_VERSION_ORDER_SQL}`,
         [refId],
       );
       return rows[0]?.text ?? null;
