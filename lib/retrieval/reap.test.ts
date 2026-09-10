@@ -13,7 +13,11 @@ import { registerAll } from './register.ts';
  * retracted once that condition stops holding — not merely that the generic DELETE … NOT EXISTS
  * mechanism runs without crashing. See reap.ts's own top-of-file comment for the full argument; the
  * numbers cited below (4 superseded fundamentals periods, 5 rejected news matches) are measured
- * against the live database 10-Sep-2026, the same evidence that motivated writing this file.
+ * against the live database 10-Sep-2026, the same evidence that motivated writing this file. All
+ * five kinds get their own test — document_version, fundamentals_period and news_item from the
+ * first pass, attachment and filing added once the gap was flagged: neither has live evidence of a
+ * row un-qualifying yet (see each test's own comment for why), but the mechanism must be proven for
+ * each kind's actual predicate, not assumed from the other three.
  *
  * A negative closes the suite deliberately: the real risk in generalising a delete is over-deletion,
  * and every symptom of that looks like "search is bad," not "rows were deleted" — so the negative
@@ -210,5 +214,99 @@ test('a confirmed match for a second company is not reaped when the first is rej
     );
     assert.equal(after.length, 1, 'CO2 is still confirmed for this item — it must not be reaped');
     assert.equal(after[0]!.company_id, CO2, 'company_id re-attributes to the surviving confirmed match');
+  });
+});
+
+test('an attachment whose extracted text is cleared after being registered is retracted', async () => {
+  // ATTACHMENTS_SELECT's predicate is `extracted_text IS NOT NULL AND length(extracted_text) > 0`.
+  // extract.ts only ever moves this column forward — NULL to a non-empty string, gated by
+  // extractPending's own `WHERE extracted_text IS NULL` — and never back, and it never writes an
+  // empty string either (pdfText raises NoTextInPdf rather than returning one), so no production
+  // code path exercises either half of this test today. Clearing to NULL, not '', is what genuinely
+  // reflects how the predicate becomes false: NULL is the column's own sentinel for "no usable text"
+  // (0002's comment on it), and setting it back to NULL is exactly what correcting a bad extraction
+  // would do in practice — it also re-arms extractPending's guard to pick the row up again. An empty
+  // string would satisfy the SQL but claims a re-read that never happened.
+  const sha = 'sha_cleared_after_registration';
+  await serviceTxn('system:index', async (c) => {
+    await c.query(
+      `INSERT INTO attachments (sha256, company_id, filename, media_type, bytes, kind, extracted_text, added_by)
+       VALUES ($1,$2,'notes.pdf','application/pdf',100,'other','a real extracted page of text','system:ingest')`,
+      [sha, CO],
+    );
+    await registerAll(c);
+
+    const { rows: registered } = await c.query<{ id: string }>(
+      `SELECT id FROM sources WHERE kind = 'attachment' AND ref_id = $1`,
+      [sha],
+    );
+    assert.equal(registered.length, 1, 'registers while a text layer exists');
+    const sourceId = registered[0]!.id;
+
+    // A chunk hanging off the source, so the assertion below proves the FK cascade actually fires.
+    await c.query(
+      `INSERT INTO chunks (source_id, company_id, ord, text, char_from, char_to)
+       VALUES ($1, $2, 0, 'a real extracted page of text', 0, 29)`,
+      [sourceId, CO],
+    );
+
+    await c.query('UPDATE attachments SET extracted_text = NULL WHERE sha256 = $1', [sha]);
+    await registerAll(c);
+
+    const { rows: afterClearing } = await c.query(
+      `SELECT 1 FROM sources WHERE kind = 'attachment' AND ref_id = $1`,
+      [sha],
+    );
+    assert.equal(afterClearing.length, 0, 'a PDF with no readable text left must not stay searchable');
+
+    const { rows: orphanedChunks } = await c.query(`SELECT 1 FROM chunks WHERE source_id = $1`, [sourceId]);
+    assert.equal(orphanedChunks.length, 0, 'its chunks must not outlive the source that owned them');
+  });
+});
+
+test('a filing unlinked from its company after being registered is retracted', async () => {
+  // FILINGS_SELECT's predicate is `company_id IS NOT NULL`. storeFilings' ON CONFLICT only ever
+  // COALESCEs a link forward (never overwrites one with NULL) and linkFilingsIn only fills rows
+  // where `company_id IS NULL` — no production code path un-sets a link once made, and the column's
+  // REFERENCES companies(id) carries no ON DELETE clause, so a closed company (never hard-deleted,
+  // per lib/workspace.ts) cannot null it out either. The one place this exact statement already
+  // appears is companies.test.ts's own fixture setup ('UPDATE filings SET company_id = NULL WHERE
+  // id = ...'), manufacturing an unlinked filing directly because nothing else does — the same
+  // reachable state, and the same honest reason an operator would use it here: a filing mis-linked
+  // by a symbol collision gets corrected by hand, and once corrected it must stop being retrievable
+  // as this company's.
+  const filingId = 'fil_unlinked_after_registration';
+  await serviceTxn('system:index', async (c) => {
+    await c.query(
+      `INSERT INTO filings (id, company_id, symbol, category, summary, announced_at)
+       VALUES ($1,$2,'PRAJIND','Press Release','A notice later found mis-linked','2025-02-01T10:00:00Z')`,
+      [filingId, CO],
+    );
+    await registerAll(c);
+
+    const { rows: registered } = await c.query<{ id: string }>(
+      `SELECT id FROM sources WHERE kind = 'filing' AND ref_id = $1`,
+      [filingId],
+    );
+    assert.equal(registered.length, 1, 'registers while linked to a followed company');
+    const sourceId = registered[0]!.id;
+
+    await c.query(
+      `INSERT INTO chunks (source_id, company_id, ord, text, char_from, char_to)
+       VALUES ($1, $2, 0, 'Press Release: A notice later found mis-linked', 0, 40)`,
+      [sourceId, CO],
+    );
+
+    await c.query('UPDATE filings SET company_id = NULL WHERE id = $1', [filingId]);
+    await registerAll(c);
+
+    const { rows: afterUnlinking } = await c.query(
+      `SELECT 1 FROM sources WHERE kind = 'filing' AND ref_id = $1`,
+      [filingId],
+    );
+    assert.equal(afterUnlinking.length, 0, "an unlinked filing is a stranger's announcement again, not this desk's");
+
+    const { rows: orphanedChunks } = await c.query(`SELECT 1 FROM chunks WHERE source_id = $1`, [sourceId]);
+    assert.equal(orphanedChunks.length, 0, 'its chunks must not outlive the source that owned them');
   });
 });
