@@ -25,6 +25,7 @@
     "@node-rs/argon2": "^2.2.0",
     "fast-xml-parser": "^5.11.1",
     "next": "^15.5.4",
+    "onnxruntime-node": "^1.29.0",
     "pg": "^8.13.1",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
