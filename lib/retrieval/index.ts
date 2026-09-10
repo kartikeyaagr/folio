@@ -1,0 +1,165 @@
+/**
+ * The indexer: chunk what `register.ts` decided is worth indexing, embed it, write it.
+ *
+ * Two entry points, two different callers:
+ *
+ *   indexOne(c, sourceId)   one source, inside whatever transaction the caller is already in.
+ *                           Delete-then-write, so a half-indexed source can never exist and a
+ *                           re-index always replaces rather than accumulates.
+ *   drain(limit)            the sweep. registerAll() first (which reaps first — see register.ts),
+ *                           then claims up to `limit` unindexed sources with
+ *                           `FOR UPDATE SKIP LOCKED`, then indexes each behind its own SAVEPOINT.
+ *
+ * **Why a SAVEPOINT per source.** `drain` runs entirely inside one `serviceTxn`. Without a
+ * savepoint, a source that throws partway through — chunking, embedding, or the insert itself —
+ * would poison that whole transaction, and the very next statement is the one recording *why the
+ * source failed*: that write would fail too, the real error would be replaced by "current
+ * transaction is aborted", and the row would sit unindexed with no explanation. Same failure shape
+ * `lib/agents/runner.ts` documents for its own handler savepoint, and the same fix.
+ *
+ * **Why delete-then-write, not insert-then-delete-the-old-ones.** `chunks.source_id` has no
+ * natural version number to key on — content_hash lives on `sources`, not per chunk — so the only
+ * clean way to guarantee old and new chunks never coexist is to remove the old ones first, inside
+ * the same transaction (and, for `drain`, the same savepoint) as writing the new ones. A reader who
+ * searches between the delete and the write simply does not see this source for a moment; one who
+ * searched before the edit and one who searches after never both get an answer for it at once.
+ */
+import type { Client } from '../db.ts';
+import { serviceTxn } from '../db.ts';
+import { chunkCells, chunkText, type Piece } from './chunk.ts';
+import { embed, toVector, EMBED_MODEL } from './embed.ts';
+import { registerAll, textFor, type Indexable } from './register.ts';
+
+/**
+ * Which chunker applies is decided by content, not by kind. Every kind but `document_version` is
+ * always prose (news, filings and fundamentals are all rendered to plain text in register.ts;
+ * attachments are extracted PDF text). A `document_version` is prose or a grid depending on what
+ * the desk saved — `lib/workspace.ts`: `{"text": …}` for prose, `{"cells": …}` for a sheet — and
+ * `textFor`'s SQL (`coalesce(v.body->>'text', v.body::text)`) already resolved that: a prose body
+ * comes back as the bare string that was written, but a sheet's body has no top-level `text` key,
+ * so the fallback fires and what arrives here is the WHOLE body serialised as JSON. Detected by
+ * shape, not assumed from a leading brace — a memo that happens to start with one is still prose.
+ */
+function sheetCellsIn(source: Indexable): Record<string, string> | null {
+  if (source.kind !== 'document_version') return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(source.text);
+  } catch {
+    return null; // Not JSON at all: an ordinary prose memo.
+  }
+  if (parsed === null || typeof parsed !== 'object' || !('cells' in parsed)) return null;
+  const cells = (parsed as { cells: unknown }).cells;
+  return cells !== null && typeof cells === 'object' ? (cells as Record<string, string>) : null;
+}
+
+function piecesFor(source: Indexable): Piece[] {
+  const cells = sheetCellsIn(source);
+  return cells ? chunkCells(cells) : chunkText(source.text);
+}
+
+/**
+ * Index one source: delete its old chunks, chunk its current text, embed the batch in one call,
+ * write the new chunks. Runs inside the caller's transaction — `drain` wraps this in a SAVEPOINT;
+ * a direct caller (a test, a future "index this one now" action) gets the same all-or-nothing
+ * guarantee from whatever transaction it is already in.
+ *
+ * Returns the number of chunks written. Does not touch `sources.indexed_at` or `index_error` —
+ * that bookkeeping belongs to whoever is driving the queue (`drain`, below), because a direct call
+ * to `indexOne` is not necessarily servicing the queue at all.
+ *
+ * Throws if the source no longer resolves to any text (`textFor` returns null) or if embedding
+ * fails — both are exactly what a queue-driven caller needs to catch and record.
+ */
+export async function indexOne(c: Client, sourceId: string): Promise<number> {
+  const source = await textFor(c, sourceId);
+  if (source === null) {
+    // A `sources` row with nothing left to read from is not a quiet success — the row claims to
+    // index something, and there is nothing there. Recording why is exactly what the caller's
+    // SAVEPOINT/index_error machinery exists for.
+    throw new Error(`source ${sourceId} has no text to index (its content may have been removed)`);
+  }
+
+  // Delete before write, unconditionally — see the file header. This also means a source whose
+  // text is now empty correctly ends up with zero chunks rather than its previous, stale ones.
+  await c.query('DELETE FROM chunks WHERE source_id = $1::bigint', [sourceId]);
+
+  const pieces = piecesFor(source);
+  if (pieces.length === 0) return 0;
+
+  // One embed() call for the whole source, not one per chunk: a 794,891-character annual report
+  // is on the order of 800 pieces, and Task 8's backfill runs this over the entire corpus.
+  const vectors = await embed(pieces.map((p) => p.text));
+
+  await c.query(
+    `INSERT INTO chunks (source_id, company_id, ord, text, char_from, char_to, occurred_at, embedding, embed_model)
+     SELECT $1::bigint, $2::text, x.ord, x.text, x.char_from, x.char_to, $3::timestamptz, x.embedding::vector, $4::text
+       FROM unnest($5::int[], $6::text[], $7::int[], $8::int[], $9::text[])
+         AS x(ord, text, char_from, char_to, embedding)`,
+    [
+      sourceId,
+      source.companyId,
+      source.occurredAt,
+      EMBED_MODEL,
+      pieces.map((_, i) => i),
+      pieces.map((p) => p.text),
+      pieces.map((p) => p.charFrom),
+      pieces.map((p) => p.charTo),
+      vectors.map(toVector),
+    ],
+  );
+
+  return pieces.length;
+}
+
+export interface DrainResult {
+  registered: number;
+  indexed: number;
+  failed: number;
+}
+
+/**
+ * Work the indexing queue: register (which reaps first), claim, index.
+ *
+ * One transaction for the whole call. `FOR UPDATE SKIP LOCKED` on the claim means two overlapping
+ * runs (the ten-minute timer and a manual backfill, Task 8) never index the same source twice; a
+ * crash before this transaction commits leaves every claimed row exactly as it was —
+ * `indexed_at IS NULL` — for the next run to pick up. Nothing here is a failure on its own: an
+ * empty queue returns `{registered: 0, indexed: 0, failed: 0}`, not an error. See
+ * `jobs/index-content.ts` for why that is the correct read of a zero.
+ */
+export async function drain(limit = 50): Promise<DrainResult> {
+  return serviceTxn('system:index', async (c) => {
+    const registered = await registerAll(c);
+
+    const { rows } = await c.query<{ id: string }>(
+      `SELECT id FROM sources WHERE indexed_at IS NULL ORDER BY id LIMIT $1 FOR UPDATE SKIP LOCKED`,
+      [limit],
+    );
+
+    let indexed = 0;
+    let failed = 0;
+    for (const row of rows) {
+      // A savepoint per source — see the file header. One bad source records why it failed
+      // without taking the rest of the batch, or registerAll's work above, down with it.
+      await c.query('SAVEPOINT index_source');
+      try {
+        await indexOne(c, row.id);
+        await c.query('RELEASE SAVEPOINT index_source');
+        await c.query('UPDATE sources SET indexed_at = now(), index_error = NULL WHERE id = $1::bigint', [
+          row.id,
+        ]);
+        indexed++;
+      } catch (err) {
+        await c.query('ROLLBACK TO SAVEPOINT index_source');
+        await c.query('UPDATE sources SET index_error = $2 WHERE id = $1::bigint', [
+          row.id,
+          String(err instanceof Error ? err.message : err).slice(0, 2000),
+        ]);
+        failed++;
+      }
+    }
+
+    return { registered, indexed, failed };
+  });
+}

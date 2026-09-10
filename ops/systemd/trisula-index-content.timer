@@ -1,0 +1,13 @@
+[Unit]
+Description=Index what the fund holds
+
+[Timer]
+# Every ten minutes. Indexing deliberately does not happen at write time: saving a memo must not
+# block on a 130MB model load, and — carried from v2's 0042 — "an analyst clicking accept must not
+# wait on a model load, and a failure there must not cost them the acceptance".
+OnCalendar=*:0/10
+Persistent=true
+Unit=trisula-job@index-content.service
+
+[Install]
+WantedBy=timers.target
