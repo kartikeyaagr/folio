@@ -38,6 +38,7 @@ pg.types.setTypeParser(1082, (v: string) => v); // DATE
  */
 export type ServicePrincipal =
   | 'system:ingest'
+  | 'system:index'
   | 'system:agents'
   | 'system:alerts'
   | 'system:auth'

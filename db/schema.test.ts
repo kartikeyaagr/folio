@@ -127,3 +127,23 @@ test('the runner refuses a migration whose bytes have changed', async () => {
   await client.query("UPDATE schema_migrations SET sha256 = 'tampered' WHERE filename LIKE '0001%'");
   await assert.rejects(() => migrate(), /applied migrations have been edited/);
 });
+
+test('the indexer principal exists in the database as well as the type', async () => {
+  const { rows } = await client.query("SELECT label FROM actors WHERE id = 'system:index'");
+  assert.equal(rows[0]?.label, 'Content indexer');
+});
+
+test('a source can only be registered once per referenced row', async () => {
+  await client.query('BEGIN');
+  await client.query('SELECT set_config($1, $2, true)', ['app.actor_id', 'system:index']);
+  await client.query(
+    `INSERT INTO sources (kind, ref_id, title, content_hash) VALUES ('filing', 'f1', 't', 'h')`,
+  );
+  await assert.rejects(
+    () => client.query(
+      `INSERT INTO sources (kind, ref_id, title, content_hash) VALUES ('filing', 'f1', 't2', 'h2')`,
+    ),
+    /sources_identity/,
+  );
+  await client.query('ROLLBACK');
+});
