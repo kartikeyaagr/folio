@@ -6,9 +6,7 @@
  *
  *   document_version    the CURRENT version of an unarchived document only. An older version exists
  *                        to be read by a person, not retrieved five times over with slightly
- *                        different wording. An archived document is withdrawn from the index too,
- *                        and actively — see PRUNE_ARCHIVED_DOCUMENTS, since DOCUMENTS's WHERE only
- *                        stops a future registration and cannot retract one already done.
+ *                        different wording.
  *   news_item            confirmed matches only — the rule agent 6 (lib/news/gate.ts) already
  *                        applies. A candidate has no stated mechanism and is not the fund's
  *                        knowledge.
@@ -26,11 +24,19 @@
  *                        figures are what was believed at the time, not what is worth finding
  *                        today.
  *
- * `registerAll` runs all five and returns how many `sources` rows were newly registered or
- * actually changed. See `UPSERT` for why a second, no-op run reports zero.
+ * Every one of those five predicates can turn FALSE after a row is already registered — a document
+ * gets archived, a period gets restated, a match gets rejected — and an `INSERT … SELECT` only ever
+ * governs what gets (re-)proposed; it cannot retract a row it no longer selects. `./reap.ts` is the
+ * other half: `registerAll` hands it these same five `*_SELECT` constants, and it deletes whatever
+ * no longer appears in them, before anything new is proposed. See that file for the full argument
+ * and the measured evidence that this is not theoretical.
+ *
+ * `registerAll` reaps, then runs all five registrations, and returns how many `sources` rows were
+ * newly added or changed by the latter. See `UPSERT` for why a second, no-op run reports zero.
  */
 import { createHash } from 'node:crypto';
 import type { Client } from '../db.ts';
+import { reapAll } from './reap.ts';
 
 export type SourceKind =
   | 'document_version'
@@ -58,23 +64,37 @@ export function contentHash(text: string): string {
  * `indexed_at`/`index_error` clear only when `content_hash` actually moved — the difference
  * between a memo costing one embed per afternoon and one per save.
  *
- * The trailing `WHERE` guards the `DO UPDATE` itself. Verified 10-Sep-2026: Postgres counts a
- * `DO UPDATE` as an affected row even when it writes back values already there, so an unconditional
- * upsert over unchanged data reports the same count on every run — the opposite of what a "rows
- * registered" return value is for. With the guard, a row that is genuinely new or genuinely changed
- * (title, date or content) still counts; a run that changes nothing reports nothing.
+ * `company_id` is in the SET list, and load-bearing there — not just carried along. Found while
+ * writing the negative test for the news reap below: NEWS_SELECT's `DISTINCT ON (i.id)` can pick a
+ * DIFFERENT winning company for the same item across two runs (a story confirmed for two followed
+ * names, one of whose matches is later rejected, re-attributes to the other) with title,
+ * occurred_at and content_hash all unchanged — a company_id-only change. An earlier draft of this
+ * UPSERT omitted `company_id` from SET entirely, so that re-attribution silently never wrote; the
+ * row stayed pointed at the rejected match's company forever. Caught by the test, not by
+ * inspection.
+ *
+ * The trailing `WHERE` guards the `DO UPDATE` itself, and now includes `company_id` for the same
+ * reason it is in SET: without it here too, Postgres still counts the UPDATE as an affected row on
+ * every re-run even once the value is correctly written, which would make "registering twice
+ * registers nothing" false the moment company_id ever legitimately changes. Verified 10-Sep-2026:
+ * Postgres counts a `DO UPDATE` as an affected row even when it writes back values already there,
+ * so an unconditional upsert over unchanged data reports the same count on every run — the
+ * opposite of what a "rows registered" return value is for. With the guard, a row that is
+ * genuinely new or genuinely changed (title, date, company or content) still counts; a run that
+ * changes nothing reports nothing.
  */
 const UPSERT = `
   ON CONFLICT (kind, ref_id) DO UPDATE
      SET title = EXCLUDED.title,
          occurred_at = EXCLUDED.occurred_at,
+         company_id = EXCLUDED.company_id,
          content_hash = EXCLUDED.content_hash,
          indexed_at = CASE WHEN sources.content_hash IS DISTINCT FROM EXCLUDED.content_hash
                            THEN NULL ELSE sources.indexed_at END,
          index_error = CASE WHEN sources.content_hash IS DISTINCT FROM EXCLUDED.content_hash
                             THEN NULL ELSE sources.index_error END
-   WHERE (sources.title, sources.occurred_at, sources.content_hash)
-         IS DISTINCT FROM (EXCLUDED.title, EXCLUDED.occurred_at, EXCLUDED.content_hash)`;
+   WHERE (sources.title, sources.occurred_at, sources.company_id, sources.content_hash)
+         IS DISTINCT FROM (EXCLUDED.title, EXCLUDED.occurred_at, EXCLUDED.company_id, EXCLUDED.content_hash)`;
 
 // The "current version" tie-break: newest written_at, ties broken by id. Shared between DOCUMENTS
 // (which decides what gets hashed) and rawText's document_version branch (which must re-derive
@@ -98,58 +118,58 @@ const CURRENT_VERSION_ORDER_SQL = 'ORDER BY v.written_at DESC, v.id DESC LIMIT 1
 // the entire reason 0040 gives that column ("a <textarea> saved six times in an afternoon is six
 // document_versions rows but one hash, so it costs one embed"). Keying on the document instead
 // means a re-save always targets the SAME sources row: ON CONFLICT fires, content_hash is compared,
-// and indexed_at clears only when the text actually moved. It is also the only reading under which
-// "superseding cascades the old chunks away" is literal rather than aspirational — the old chunks
-// hang off the source row that the new version's INSERT just conflicted into, not off a row that
-// nothing ever revisits.
+// and indexed_at clears only when the text actually moved.
 //
-// JOIN LATERAL … LIMIT 1 caps the SELECT at one row per document, so — unlike the two joins below —
-// there is no fan-out to guard against.
+// JOIN LATERAL … LIMIT 1 caps the SELECT at one row per document, so — unlike NEWS and ATTACHMENTS
+// below — there is no fan-out to guard against.
 //
 // `d.archived_at IS NULL`: `documents.archived_at` is a soft delete — the row always stays, because
 // in this system deletion is never destruction (lib/workspace.ts). But an archived document is one
 // somebody decided is no longer part of the record, and continuing to retrieve it would put a
-// withdrawn memo in front of a reader as though it still stood. This WHERE only stops that from
-// happening going forward, for a document archived before it was ever registered; a document
-// archived AFTER registration already has a sources row sitting here, and this clause does nothing
-// to it — see PRUNE_ARCHIVED_DOCUMENTS just below, which is the half that actually retracts it.
-const DOCUMENTS = `
-  INSERT INTO sources (kind, ref_id, company_id, title, occurred_at, content_hash)
-  SELECT 'document_version', d.id, d.company_id, d.title, cur.written_at,
-         encode(sha256(convert_to(coalesce(cur.body->>'text', cur.body::text), 'UTF8')), 'hex')
+// withdrawn memo in front of a reader as though it still stood. On its own this WHERE only stops
+// that from happening going forward, for a document archived before it was ever registered — it
+// cannot undo a registration already done. `./reap.ts` is the half that actually retracts one: a
+// document archived AFTER registration no longer appears in this SELECT at all, so its NOT EXISTS
+// finds nothing and the row (and its chunks, cascading from sources.id per 0041) is deleted.
+const DOCUMENTS_SELECT = `
+  SELECT 'document_version' AS kind, d.id AS ref_id, d.company_id, d.title, cur.written_at AS occurred_at,
+         encode(sha256(convert_to(coalesce(cur.body->>'text', cur.body::text), 'UTF8')), 'hex') AS content_hash
     FROM documents d
     JOIN LATERAL (
       SELECT * FROM document_versions v WHERE v.document_id = d.id ${CURRENT_VERSION_ORDER_SQL}
     ) cur ON true
-   WHERE d.archived_at IS NULL
-` + UPSERT;
+   WHERE d.archived_at IS NULL`;
 
-// The other half of "an archived document leaves the index": DOCUMENTS's WHERE only ever stops a
-// row from being (re-)proposed — an UPSERT can't retract something it doesn't select. A document
-// registered while active and archived later would otherwise sit in `sources` (and its chunks in
-// `chunks`, cascading from sources.id per 0041) forever, silently outliving the decision that it no
-// longer stands. This runs unconditionally on every registerAll call, same as the five inserts, and
-// is a no-op — zero rows, zero audit entries — until something is actually archived.
-const PRUNE_ARCHIVED_DOCUMENTS = `
-  DELETE FROM sources s
-        USING documents d
-        WHERE s.kind = 'document_version' AND s.ref_id = d.id AND d.archived_at IS NOT NULL
-`;
+const DOCUMENTS = `
+  INSERT INTO sources (kind, ref_id, company_id, title, occurred_at, content_hash)
+  ${DOCUMENTS_SELECT}
+` + UPSERT;
 
 // News: confirmed matches only. `news_matches` is one row per (item, company) — a story can
 // confirm for more than one followed name. `DISTINCT ON` picks one deterministically: without it,
 // two confirmed rows for the same item produce two INSERT rows with the same (kind, ref_id), and
-// Postgres refuses with "ON CONFLICT DO UPDATE command cannot affect row a second time" — a crash
-// waiting on the day two portfolio names share one story, not a hypothetical.
-const NEWS = `
-  INSERT INTO sources (kind, ref_id, company_id, title, occurred_at, content_hash)
+// Postgres refuses with "ON CONFLICT DO UPDATE command cannot affect row a second time".
+//
+// A confirmed match can also move OFF `confirmed` — to `rejected`, if the gate reconsiders — and
+// this SELECT stops proposing that item the moment it does. Measured live 10-Sep-2026: 5 matches
+// already sit at `rejected` after once being `confirmed`; `./reap.ts` retracts the ones that were
+// registered while confirmed and have since moved off it. Because ref_id is the news ITEM, not the
+// (item, company) pair, a story confirmed for two companies stays indexed — correctly — as long as
+// at least one of those matches is still confirmed; only when
+// every confirming match for that item has moved off `confirmed` does the item disappear, and the
+// DISTINCT ON re-attributes company_id to whichever confirmed match remains.
+const NEWS_SELECT = `
   SELECT DISTINCT ON (i.id)
-         'news_item', i.id, m.company_id, i.title,
-         coalesce(i.published_at, i.fetched_at),
-         encode(sha256(convert_to(i.title || coalesce(i.summary,''), 'UTF8')), 'hex')
+         'news_item' AS kind, i.id AS ref_id, m.company_id, i.title,
+         coalesce(i.published_at, i.fetched_at) AS occurred_at,
+         encode(sha256(convert_to(i.title || coalesce(i.summary,''), 'UTF8')), 'hex') AS content_hash
     FROM news_matches m JOIN news_items i ON i.id = m.item_id
    WHERE m.state = 'confirmed'
-   ORDER BY i.id, m.company_id
+   ORDER BY i.id, m.company_id`;
+
+const NEWS = `
+  INSERT INTO sources (kind, ref_id, company_id, title, occurred_at, content_hash)
+  ${NEWS_SELECT}
 ` + UPSERT;
 
 // Attachments: a text layer must have been extracted. `extracted_text IS NULL` means the PDF could
@@ -163,29 +183,36 @@ const NEWS = `
 // `attachments` carries its own company_id and added_at for exactly this case.
 //
 // `filings.attachment_sha256` is not unique — the same content-addressed PDF can be attached to
-// more than one announcement. Verified 10-Sep-2026 against the live corpus: at least five distinct
-// attachments are each referenced by 2–5 filings, and every one of them has extracted_text. A bare
-// LEFT JOIN fans out to one row per referencing filing and hits the same ON CONFLICT cardinality
-// error as the news case above — not theoretical, already true of today's data. DISTINCT ON picks
-// the most recently announced filing that references it, if any.
-const ATTACHMENTS = `
-  INSERT INTO sources (kind, ref_id, company_id, title, occurred_at, content_hash)
+// more than one announcement. Verified 10-Sep-2026 against the live corpus: 23 distinct attachments
+// are each referenced by more than one filing. A bare LEFT JOIN fans out to one row per referencing
+// filing and hits the same ON CONFLICT cardinality error as the news case above — not theoretical,
+// already true of today's data. DISTINCT ON picks the most recently announced filing that
+// references it, if any.
+//
+// The same fan-out shape makes `./reap.ts`'s retraction correct without special handling: a row is
+// retracted only once `extracted_text` is cleared or the `attachments` row itself is gone, exactly
+// mirroring the SELECT's own admission test.
+const ATTACHMENTS_SELECT = `
   SELECT DISTINCT ON (a.sha256)
-         'attachment', a.sha256,
-         coalesce(f.company_id, a.company_id),
-         coalesce(f.summary, a.filename),
-         coalesce(f.announced_at, a.added_at),
-         encode(sha256(convert_to(a.extracted_text, 'UTF8')), 'hex')
+         'attachment' AS kind, a.sha256 AS ref_id,
+         coalesce(f.company_id, a.company_id) AS company_id,
+         coalesce(f.summary, a.filename) AS title,
+         coalesce(f.announced_at, a.added_at) AS occurred_at,
+         encode(sha256(convert_to(a.extracted_text, 'UTF8')), 'hex') AS content_hash
     FROM attachments a
     LEFT JOIN filings f ON f.attachment_sha256 = a.sha256
    WHERE a.extracted_text IS NOT NULL AND length(a.extracted_text) > 0
-   ORDER BY a.sha256, f.announced_at DESC NULLS LAST
+   ORDER BY a.sha256, f.announced_at DESC NULLS LAST`;
+
+const ATTACHMENTS = `
+  INSERT INTO sources (kind, ref_id, company_id, title, occurred_at, content_hash)
+  ${ATTACHMENTS_SELECT}
 ` + UPSERT;
 
 // A filing's own searchable text: the exchange's announcement category and, since 0025, the
 // `attchmntText` NSE actually sends (`summary` — `subject` was dropped for quietly holding the
-// filer's name instead). Shared between the INSERT below and textFor so a chunk always matches
-// what was hashed.
+// filer's name instead). Shared between FILINGS_SELECT and textFor so a chunk always matches what
+// was hashed.
 const FILING_TEXT_SQL = `
   CASE WHEN f.category IS NOT NULL AND f.summary IS NOT NULL THEN f.category || ': ' || f.summary
        WHEN f.category IS NOT NULL THEN f.category
@@ -196,13 +223,39 @@ const FILING_TEXT_SQL = `
 // history already attached (companies.test.ts) — most of those rows are never linked to any of
 // our three names. Indexing the unlinked 92% would make every filing search mostly noise about
 // companies this desk does not follow.
+//
+// No live evidence yet of a filing losing its company_id or being removed after registration — but
+// `./reap.ts` covers it for free, the same way it does for every other kind: the retraction is the
+// SELECT's own WHERE re-applied, not a bespoke rule someone has to remember to add the day it does
+// happen.
+const FILINGS_SELECT = `
+  SELECT 'filing' AS kind, f.id AS ref_id, f.company_id, coalesce(f.category, 'Filing') AS title, f.announced_at AS occurred_at,
+         encode(sha256(convert_to(${FILING_TEXT_SQL}, 'UTF8')), 'hex') AS content_hash
+    FROM filings f
+   WHERE f.company_id IS NOT NULL`;
+
 const FILINGS = `
   INSERT INTO sources (kind, ref_id, company_id, title, occurred_at, content_hash)
-  SELECT 'filing', f.id, f.company_id, coalesce(f.category, 'Filing'), f.announced_at,
-         encode(sha256(convert_to(${FILING_TEXT_SQL}, 'UTF8')), 'hex')
-    FROM filings f
-   WHERE f.company_id IS NOT NULL
+  ${FILINGS_SELECT}
 ` + UPSERT;
+
+// Fundamentals: the current, non-superseded figures for a followed company. Shared between
+// registerFundamentals (which renders these rows to prose in TypeScript, see renderFundamentals)
+// and the reap below, so "current" means the same thing in both places. `f.company_id` is joined
+// against `companies` only to get the name for rendering — the eligibility test itself is just
+// `superseded_by IS NULL`, the same predicate `lib/company-view.ts` and `lib/agents/results.ts`
+// already use for "what is true today".
+//
+// A restatement doesn't delete the old row; it sets `superseded_by` on it and inserts a new one
+// (0008). The old row therefore silently stops qualifying the moment it is superseded, exactly the
+// shape `./reap.ts` exists for. Measured live 10-Sep-2026: 4 periods are already superseded after
+// being registered — a stale revenue figure that stayed retrievable as current is the whole reason
+// the generalised reap matters more than the archived-document case it started from.
+const FUNDAMENTALS_SELECT = `
+  SELECT f.id AS ref_id, f.company_id, c.name, f.period_kind, f.period_end::text AS period_end,
+         f.revenue::text AS revenue, f.profit_after_tax::text AS profit_after_tax
+    FROM fundamentals f JOIN companies c ON c.id = f.company_id
+   WHERE f.superseded_by IS NULL`;
 
 const CRORE = 10_000_000;
 const PERIOD_LABEL: Record<string, string> = {
@@ -237,19 +290,14 @@ function renderFundamentals(row: FundamentalsRow): { title: string; text: string
 
 async function registerFundamentals(c: Client): Promise<number> {
   const { rows } = await c.query<{
-    id: string;
+    ref_id: string;
     company_id: string;
     name: string;
     period_kind: string;
     period_end: string;
     revenue: string | null;
     profit_after_tax: string | null;
-  }>(
-    `SELECT f.id, f.company_id, c.name, f.period_kind, f.period_end::text,
-            f.revenue::text AS revenue, f.profit_after_tax::text AS profit_after_tax
-       FROM fundamentals f JOIN companies c ON c.id = f.company_id
-      WHERE f.superseded_by IS NULL`,
-  );
+  }>(FUNDAMENTALS_SELECT);
   if (rows.length === 0) return 0;
 
   const refId: string[] = [];
@@ -265,7 +313,7 @@ async function registerFundamentals(c: Client): Promise<number> {
       revenue: r.revenue,
       profitAfterTax: r.profit_after_tax,
     });
-    refId.push(r.id);
+    refId.push(r.ref_id);
     companyId.push(r.company_id);
     title.push(rendered.title);
     occurredAt.push(r.period_end);
@@ -286,12 +334,20 @@ async function registerFundamentals(c: Client): Promise<number> {
 /**
  * Runs all five registrations and returns how many `sources` rows were newly added or changed.
  *
- * Also prunes `sources` rows for documents archived since they were registered — not counted in
- * the return value, since retracting a row is not registering one, but run every time for the same
- * reason the five inserts are: registerAll is the one place that decides what `sources` should hold.
+ * Reaps all five kinds first, via reap.ts's reapAll — each kind's `sources` rows pruned down to
+ * what its own `*_SELECT` still admits, before anything new is proposed — for the same reason
+ * PRUNE_ARCHIVED_DOCUMENTS originally ran first: registerAll is the one place that decides what
+ * `sources` holds, in both directions. Not counted in the return value: the interface's own
+ * contract is "rows registered," and retracting a row is not registering one.
  */
 export async function registerAll(c: Client): Promise<number> {
-  await c.query(PRUNE_ARCHIVED_DOCUMENTS);
+  await reapAll(c, {
+    document_version: DOCUMENTS_SELECT,
+    news_item: NEWS_SELECT,
+    attachment: ATTACHMENTS_SELECT,
+    filing: FILINGS_SELECT,
+    fundamentals_period: FUNDAMENTALS_SELECT,
+  });
   let total = 0;
   for (const sql of [DOCUMENTS, NEWS, ATTACHMENTS, FILINGS]) {
     const { rowCount } = await c.query(sql);
@@ -308,9 +364,10 @@ export async function registerAll(c: Client): Promise<number> {
 async function rawText(c: Client, kind: SourceKind, refId: string): Promise<string | null> {
   switch (kind) {
     case 'document_version': {
-      // refId is the document's id (see DOCUMENTS above), so re-derive the same "current version"
-      // this document would register today, not a specific version row — same ordering, shared via
-      // CURRENT_VERSION_ORDER_SQL so it cannot silently diverge from what DOCUMENTS hashed.
+      // refId is the document's id (see DOCUMENTS_SELECT above), so re-derive the same "current
+      // version" this document would register today, not a specific version row — same ordering,
+      // shared via CURRENT_VERSION_ORDER_SQL so it cannot silently diverge from what DOCUMENTS
+      // hashed.
       const { rows } = await c.query<{ text: string }>(
         `SELECT coalesce(v.body->>'text', v.body::text) AS text
            FROM document_versions v

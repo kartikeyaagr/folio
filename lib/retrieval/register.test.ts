@@ -226,49 +226,10 @@ test('a re-save with identical text does not re-queue', async () => {
   });
 });
 
-test('archiving a previously-registered document retracts its source and chunks', async () => {
-  // documents.archived_at is a soft delete — the row always stays — but DOCUMENTS's WHERE only
-  // stops a future registration; it cannot undo one already done. This proves the other half:
-  // registerAll must actively retract a sources row (and, via the FK cascade in 0041, its chunks)
-  // once the document behind it is archived, or a withdrawn memo would keep surfacing in search
-  // forever.
-  const docId = 'd_to_archive';
-  await serviceTxn('system:index', async (c) => {
-    await c.query(
-      `INSERT INTO documents (id, company_id, title, created_by) VALUES ($1,$2,'To be archived','system:index')`,
-      [docId, CO],
-    );
-    await saveNewVersion(c, docId, 'a note about the auditor, later withdrawn');
-    await registerAll(c);
-
-    const { rows: registered } = await c.query<{ id: string }>(
-      `SELECT id FROM sources WHERE kind = 'document_version' AND ref_id = $1`,
-      [docId],
-    );
-    assert.equal(registered.length, 1, 'the document registers while active');
-    const sourceId = registered[0]!.id;
-
-    // A chunk hanging off the source, so the assertion below proves the FK cascade actually fires
-    // and not merely that the sources row's own WHERE was satisfied.
-    await c.query(
-      `INSERT INTO chunks (source_id, company_id, ord, text, char_from, char_to)
-       VALUES ($1, $2, 0, 'a note about the auditor', 0, 24)`,
-      [sourceId, CO],
-    );
-
-    await c.query('UPDATE documents SET archived_at = now() WHERE id = $1', [docId]);
-    await registerAll(c);
-
-    const { rows: afterArchiving } = await c.query(
-      `SELECT 1 FROM sources WHERE kind = 'document_version' AND ref_id = $1`,
-      [docId],
-    );
-    assert.equal(afterArchiving.length, 0, 'an archived document is withdrawn, not merely skipped going forward');
-
-    const { rows: orphanedChunks } = await c.query(`SELECT 1 FROM chunks WHERE source_id = $1`, [sourceId]);
-    assert.equal(orphanedChunks.length, 0, 'its chunks must not outlive the source that owned them');
-  });
-});
+// Retraction tests (archiving, superseding, rejecting a match, and the over-deletion negative) live
+// in reap.test.ts now — split out once the reap mechanism they exercise (lib/retrieval/reap.ts)
+// grew enough dedicated per-kind tests to want its own file. This file stays focused on admission:
+// what registerAll proposes to INSERT, and why.
 
 test('an attachment with no filings row is still registered', async () => {
   // The Task 12 gate. An annual report from /api/annual-reports is not an announcement and has no
