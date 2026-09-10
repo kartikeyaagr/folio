@@ -34,7 +34,10 @@ const HUBS: {
     key: 'desk',
     label: 'Desk',
     href: '/',
-    prefixes: ['/', '/filings', '/reminders', '/calendar'],
+    // `/reminders` and `/calendar` were carried over from v2's route list and match nothing —
+    // both live on the desk itself. Removed rather than kept as intent: a prefix for a route that
+    // does not exist reads, to the next person, as a route that has gone missing.
+    prefixes: ['/', '/filings'],
     icon: (
       <svg
         width="20"
@@ -78,7 +81,8 @@ const HUBS: {
     key: 'portfolio',
     label: 'Portfolio',
     href: '/portfolio',
-    prefixes: ['/portfolio', '/transactions', '/cash'],
+    // Same as the desk's: `/transactions` and `/cash` are panes on `/portfolio`, not routes.
+    prefixes: ['/portfolio'],
     icon: (
       <svg
         width="20"

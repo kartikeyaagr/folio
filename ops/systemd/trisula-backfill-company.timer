@@ -1,0 +1,19 @@
+[Unit]
+Description=Fill in a newly followed name
+
+[Timer]
+# Every ten minutes. `0035_a_followed_name_fills_itself_in.sql` built the queue
+# (`companies.backfilled_at IS NULL`) precisely so that adding a name would not leave a toast
+# telling somebody to go and run a job — and then no unit was ever written, so the toast was
+# telling the truth. This is that unit.
+#
+# Ten minutes rather than fifteen because this drains a queue a person just created by clicking
+# Follow, and the wait is felt. An empty queue exits 0 and prints "every followed name has been
+# backfilled" (jobs/backfill-company.ts:161), so the 140-odd no-op runs a day cost a process start
+# each and nothing else — this is the one queue in the system that is usually empty on purpose.
+OnCalendar=*:0/10
+Persistent=true
+Unit=trisula-job@backfill-company.service
+
+[Install]
+WantedBy=timers.target

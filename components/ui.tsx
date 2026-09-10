@@ -3,7 +3,7 @@ import type { ReactNode } from 'react';
 
 import { searchCompanies } from '@/app/_lib/actions/search.ts';
 
-import { CompanySearch } from './CompanySearch';
+import { CompanySearch } from './CompanySearch.tsx';
 
 /**
  * The shared vocabulary.
