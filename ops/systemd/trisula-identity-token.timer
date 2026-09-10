@@ -1,0 +1,14 @@
+[Unit]
+Description=Keep the Anthropic identity token fresh
+
+[Timer]
+# Before anything that needs it, and often enough that the file is never close to its expiry.
+# INTERVAL NOT YET CONFIRMED AGAINST A LIVE TOKEN — see ops/SETUP.md §10. Ten minutes is chosen to
+# sit well inside any plausible lifetime rather than because a measurement said so; when the token
+# can be minted on the box, read its `exp` and set this to a third of what is left.
+OnBootSec=30sec
+OnUnitActiveSec=10min
+Unit=trisula-identity-token.service
+
+[Install]
+WantedBy=timers.target
