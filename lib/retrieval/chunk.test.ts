@@ -42,11 +42,31 @@ test('long text is split into several chunks, none far over the target', () => {
 });
 
 test('a split never lands inside a word', () => {
-  const out = chunkText(para(2000, 'extraordinary'));
+  // Checks the cut point in the SOURCE text, not just the trimmed piece: a piece that starts with
+  // a whole word could still have been cut from a source position that fell mid-word one character
+  // earlier, before trimming moved the boundary. If charFrom/charTo don't land on whitespace (or
+  // an end of the document), the character immediately outside the piece is still part of a word.
+  const t = para(2000, 'extraordinary');
+  const out = chunkText(t);
+  assert.ok(out.length > 1, 'expected more than one chunk');
   for (const p of out) {
-    assert.ok(!/^\S/.test(p.text) || p.charFrom === 0 || true);
+    if (p.charFrom > 0) assert.match(t[p.charFrom - 1]!, /\s/, `split before "${p.text.slice(0, 24)}" lands mid-word`);
+    if (p.charTo < t.length) assert.match(t[p.charTo]!, /\s/, `split after "${p.text.slice(-24)}" lands mid-word`);
     assert.equal(p.text, p.text.trim(), 'chunk text should be trimmed at both ends');
   }
+});
+
+test('with no whitespace anywhere, breakBefore has nothing to prefer and hard-cuts at the limit', () => {
+  // Pins the one branch where a split CAN land inside a word — see the comment on breakBefore for
+  // why that's the deliberate last resort rather than an accident. A run with no whitespace at all
+  // has no paragraph, sentence, or word boundary to offer, so the cut lands at exactly TARGET_CHARS.
+  const t = 'x'.repeat(1500);
+  const out = chunkText(t);
+  assert.equal(out.length, 2);
+  assert.equal(out[0]!.charFrom, 0);
+  assert.equal(out[0]!.charTo, TARGET_CHARS);
+  assert.equal(out[0]!.text.length, TARGET_CHARS);
+  assert.equal(t.slice(out[0]!.charFrom, out[0]!.charTo), out[0]!.text);
 });
 
 test('consecutive chunks overlap, so a sentence on a boundary is in both', () => {
@@ -84,4 +104,33 @@ test('an empty sheet produces no chunks', () => {
 test('a sheet of only formulas produces no chunks', () => {
   // A formula is not content. Its VALUE is content, and the value is not in `cells`.
   assert.deepEqual(chunkCells({ A1: '=SUM(B1:B3)', A2: '=A1*2' }), []);
+});
+
+test('a wide sheet packs multiple chunks, and every chunk starts and ends at a row boundary', () => {
+  // The bug this pins: joining rows with '\n' and delegating to chunkText let breakBefore's
+  // whitespace fallback pick a tab (more common per row than the row's own newline) over the row
+  // boundary, so a chunk could open mid-row — e.g. "117.29\tFY2012" with the line-item name gone.
+  // The 3-row fixture above fits in one chunk and cannot catch that; this one forces several.
+  const cells: Record<string, string> = {};
+  const rows: string[] = [];
+  for (let r = 1; r <= 80; r++) {
+    const value = (r * 3.17).toFixed(2);
+    cells[`A${r}`] = `LineItem${r}`;
+    cells[`B${r}`] = value;
+    cells[`C${r}`] = `FY20${r % 25}`;
+    rows.push(`LineItem${r}\t${value}\tFY20${r % 25}`);
+  }
+  const joined = rows.join('\n');
+  const out = chunkCells(cells);
+
+  assert.ok(out.length > 1, 'expected more than one chunk from 80 rows');
+  const rowPattern = /^LineItem\d+\t[\d.]+\tFY20\d+$/;
+  for (const p of out) {
+    // charFrom/charTo must still slice back to exactly p.text, against the row-joined source this
+    // test controls independently of chunkCells' own internals.
+    assert.equal(joined.slice(p.charFrom, p.charTo), p.text, 'charFrom/charTo do not match the row-joined text');
+    for (const row of p.text.split('\n')) {
+      assert.match(row, rowPattern, `row split mid-cell: "${row}"`);
+    }
+  }
 });
