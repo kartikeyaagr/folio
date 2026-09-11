@@ -56,14 +56,17 @@ async function addChunks(c: Client, companyId: string | null, title: string, tex
   return sourceId;
 }
 
-// Run first, against a database with no sources or chunks registered at all: the one point where
-// "found nothing" really does mean nothing rather than "a real corpus's weakest match", which is
-// what every later test's fixtures would otherwise make this assertion mean. This mirrors
+// Run first, against a database with no sources or chunks registered at all — the one point where
+// this assertion is actually true. This is NOT a relevance-floor test and must never be read as
+// one: Task 10 measured the live corpus and found no cosine value separates an answerable question
+// from gibberish (`search('zzzz nonexistent qqqq')` returns a real hit at 0.6912 once any chunks
+// exist — tasks/relevance-2026-09-10.md). What this pins is strictly structural and holds
+// regardless of relevance: the fused SQL only ever admits a row that at least one CTE actually
+// ranked (`WHERE v.id IS NOT NULL OR f.id IS NOT NULL` in search.ts), so an empty `chunks` table
+// necessarily returns `[]` — "no rows in" implies "no rows out", nothing more. This mirrors
 // index.test.ts's own "run this one first" pattern and for the same reason: order is part of the
-// test's meaning here, not an accident of file layout. Task 9 guarantees the structural case —
-// neither CTE ranked anything, so the fused query admits no row; Task 10 adds the relevance floor
-// for a query that *does* rank something, however weakly, against a populated corpus.
-test('a query matching nothing returns an empty array, not a weak best guess', async () => {
+// test's meaning here, not an accident of file layout.
+test('an empty corpus returns no rows — the structural guarantee, not a relevance floor', async () => {
   assert.deepEqual(await search('zzzz nonexistent qqqq'), []);
 });
 

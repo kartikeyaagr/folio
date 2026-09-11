@@ -14,6 +14,14 @@
  * company_id, kind, since — applies to both CTEs the same way, including `embed_model`: a chunk
  * written by a superseded embedding pass is not "vector-unsearchable, text-searchable", it is
  * quarantined from retrieval altogether until it is re-indexed under the live model.
+ *
+ * **`ORDER BY score DESC, c.id` — the tie-break is not decoration.** RRF guarantees ties: a
+ * vector-only hit at rank r and a full-text-only hit at rank r both score exactly `1/(RRF_K + r)`,
+ * and real queries produce plenty of rank-r pairs like that. Without a deterministic second key,
+ * Postgres is free to return same-score rows in a different order on every call, and `collapse`'s
+ * per-source cap then keeps whichever arbitrary ordering it was handed — so the same question asked
+ * twice could cite different passages. `c.id` costs nothing to add and makes the whole pipeline,
+ * fusion through collapse, reproducible for a given corpus and query.
  */
 import type { Client } from '../db.ts';
 import { readTxn } from '../db.ts';
@@ -101,7 +109,7 @@ const SQL = `
     LEFT JOIN v ON v.id = c.id
     LEFT JOIN f ON f.id = c.id
    WHERE v.id IS NOT NULL OR f.id IS NOT NULL
-   ORDER BY score DESC`;
+   ORDER BY score DESC, c.id`;
 
 /**
  * Collapse to at most `MAX_PER_SOURCE` chunks per source, then to `limit` overall. Done here
@@ -136,13 +144,17 @@ function collapse(rows: Row[], limit: number): Hit[] {
 }
 
 /**
- * Search the corpus. A query matching nothing returns `[]`, not a weak best guess: the fused SQL
+ * Search the corpus. An empty `chunks` table returns `[]`, not a weak best guess: the fused SQL
  * only ever admits a row that at least one of the two CTEs actually ranked, so "neither path
  * ranked anything" already falls out of the `WHERE v.id IS NOT NULL OR f.id IS NOT NULL` above —
- * nothing here manufactures a result. What this task does NOT add is a relevance floor on a
- * result that *did* rank, however weakly (an unrelated chunk is still "nearest" to something in
- * cosine space); that calibration is Task 10's job, against the real corpus's actual score
- * distribution.
+ * nothing here manufactures a result. That is a structural guarantee, not a relevance one: once
+ * any chunks exist, this function returns whatever ranked "nearest", however weak the match — an
+ * unrelated chunk is still nearest to something in cosine space. There is deliberately no
+ * relevance floor on top of that: Task 10 measured the live corpus against twenty real questions
+ * and found no cosine value separates an answerable question from gibberish (`search.test.ts`'s
+ * own semantic-match fixture scores 0.5317, below literal noise at 0.5736), so callers — the
+ * `search_corpus` tool, in particular — are told the ranking is not relevance and must judge each
+ * passage themselves rather than trust a threshold this function does not and cannot apply.
  */
 export async function search(query: string, opts: SearchOpts = {}): Promise<Hit[]> {
   if (query.trim().length === 0) return [];
