@@ -119,10 +119,13 @@ test('every audited table carries the trigger', async () => {
       -- updated, so auditing it is the recursion audit_log is excluded for;
       -- exemplars is derived from an accepted draft whose acceptance is already an audited write,
       -- and its only later mutation is an embedding, which would put 384 floats into before and
-      -- 384 into after on every row.
+      -- 384 into after on every row;
+      -- rule_observations is append-only evidence written by the distiller in the same transaction
+      -- as the prompt_rules candidate it supports, and that candidate is audited — auditing the
+      -- evidence for an audited decision records the decision twice.
       AND c.relname NOT IN ('actors', 'audit_log', 'schema_migrations', 'prices', 'ingestion_runs',
                             'news_items', 'news_matched_items', 'chunks', 'chat_tool_calls',
-                            'exemplars')
+                            'exemplars', 'rule_observations')
       AND NOT EXISTS (
         SELECT 1 FROM pg_trigger t WHERE t.tgrelid = c.oid AND t.tgname = 'audit'
       )`);
