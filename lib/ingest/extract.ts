@@ -39,7 +39,14 @@ export async function pdfText(sha256: string): Promise<string> {
   const bytes = await readFile(pathFor(sha256));
   const pdf = await getDocumentProxy(new Uint8Array(bytes));
   const { text } = await extractText(pdf, { mergePages: true });
-  const merged = (Array.isArray(text) ? text.join('\n') : text).trim();
+  const joined = Array.isArray(text) ? text.join('\n') : text;
+  // A PDF's text layer can embed a literal NUL — hit live on one of AERON's own annual reports,
+  // 11-Sep-2026 (SME_AR_27959_AERON_2024_2025...): Postgres's text type refuses the byte outright
+  // ("invalid byte sequence for encoding UTF8: 0x00"), and that UPDATE sits outside extractPending's
+  // per-row try/catch, so the one bad PDF aborted extraction for every attachment queued after it,
+  // not just itself. Stripped once, here, at the only place text leaves a PDF — every writer
+  // downstream inherits clean text rather than needing to know this trap exists.
+  const merged = joined.replace(/\x00/g, '').trim();
   if (merged.length === 0) {
     throw new NoTextInPdf('no text layer; the filing is probably a scan and needs OCR');
   }
