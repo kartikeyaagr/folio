@@ -12,6 +12,8 @@
  */
 import { InferenceSession, Tensor } from 'onnxruntime-node';
 import { existsSync, readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
 
 /**
  * Recorded on every row. Vectors from two models occupy different spaces, and comparing them
@@ -21,7 +23,46 @@ import { existsSync, readFileSync } from 'node:fs';
 export const EMBED_MODEL = 'bge-small-en-v1.5';
 export const EMBED_DIM = 384;
 
-const DEFAULT_MODEL_DIR = '/var/lib/trisula/models/bge-small-en-v1.5';
+/** Where `ops/SETUP.md` provisions it on the box. */
+const VM_MODEL_DIR = '/var/lib/trisula/models/bge-small-en-v1.5';
+
+/**
+ * Where `ops/fetch-model.sh` actually writes it when called with no argument.
+ *
+ * Measured 11-Sep-2026, by the first live chat turn: the script's default and this file's default
+ * were two different directories, so `pnpm fetch-model` succeeded and every `search_corpus` call
+ * then failed with an error telling the reader to run `pnpm fetch-model`. The suite did not catch
+ * it because the tests set `EMBED_MODEL_DIR` in a `before()` hook — the app never did, so only a
+ * caller outside the tests could ever have hit it.
+ *
+ * Resolved from this module's own location, not `process.cwd()`: a job run from another directory
+ * would otherwise look beside the caller rather than beside the repo.
+ *
+ * **Built with `path.join`, never `new URL('../../…', import.meta.url)`.** That second form is the
+ * bundler-recognised asset-reference pattern: webpack resolves it at build time and fails with
+ * *"Module not found: Can't resolve '../../.models/bge-small-en-v1.5'"*, because the target is a
+ * directory of weights rather than a module. It works perfectly under `tsx` and breaks `next
+ * build`, so the whole test suite passes while every page that reaches retrieval refuses to
+ * compile — measured 11-Sep-2026, on the same turn the path mismatch above was found.
+ */
+const REPO_MODEL_DIR = path.join(
+  path.dirname(fileURLToPath(import.meta.url)), '..', '..', '.models', EMBED_MODEL,
+);
+
+const complete = (dir: string): boolean =>
+  existsSync(`${dir}/model.onnx`) && existsSync(`${dir}/tokenizer.json`);
+
+/**
+ * Where to look, in order.
+ *
+ * An explicit `EMBED_MODEL_DIR` is the only place tried, deliberately: a setting that silently
+ * falls back to somewhere else is a setting that can be wrong without saying so, and the directory
+ * it names is how a test points this at a fixture.
+ */
+function modelDirs(): string[] {
+  const named = process.env['EMBED_MODEL_DIR'];
+  return named ? [named] : [VM_MODEL_DIR, REPO_MODEL_DIR];
+}
 
 let session: InferenceSession | undefined;
 let vocab: Record<string, number> | undefined;
@@ -37,15 +78,20 @@ let vocab: Record<string, number> | undefined;
  */
 async function load(): Promise<{ s: InferenceSession; v: Record<string, number> }> {
   if (session === undefined) {
-    const dir = process.env.EMBED_MODEL_DIR ?? DEFAULT_MODEL_DIR;
-    if (!existsSync(`${dir}/model.onnx`) || !existsSync(`${dir}/tokenizer.json`)) {
+    const tried = modelDirs();
+    const dir = tried.find(complete);
+    if (dir === undefined) {
       // A bare ENOENT from InferenceSession.create or readFileSync names a path, not a fix. On a
       // dev machine the fix is always the same command, so say it — see decisions in
       // task-5-brief.md: a silent skip here would let the punctuation regression test (below)
       // quietly never run, which is the one thing it exists to prevent.
+      //
+      // Every path tried is named, because the version that named only one sent a reader who had
+      // already run `pnpm fetch-model` off to run it again.
       throw new Error(
-        `Embedding model not found at ${dir}. Run \`pnpm fetch-model\` to fetch it ` +
-          `(production VMs are provisioned per ops/SETUP.md instead).`,
+        `Embedding model not found. Looked in: ${tried.join(', ')}. ` +
+          `Run \`pnpm fetch-model\` (it writes to ${REPO_MODEL_DIR}), or set EMBED_MODEL_DIR to ` +
+          `where it already is. Production VMs are provisioned per ops/SETUP.md.`,
       );
     }
     session = await InferenceSession.create(`${dir}/model.onnx`);
