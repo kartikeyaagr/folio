@@ -54,6 +54,7 @@ beforeEach(async () => {
     // holding that link refuses to let the draft go while it does.
     await c.query('DELETE FROM document_versions');
     await c.query('DELETE FROM documents');
+    await c.query('DELETE FROM exemplars');
     await c.query('DELETE FROM ai_drafts');
     await c.query('DELETE FROM agent_runs');
     await c.query('DELETE FROM news_matches');

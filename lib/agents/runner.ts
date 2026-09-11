@@ -45,6 +45,8 @@ export interface AgentRow {
   data_scope: string[];
   /** Tool names this agent may be handed. Empty for the six agents that call no tool. */
   tools: string[];
+  /** Whether past exemplars are retrieved into this agent's prompt. Gates retrieval, not capture. */
+  learning: boolean;
   notify_on_draft: boolean;
 }
 
@@ -68,6 +70,15 @@ export interface RunContext {
 
 export interface Draft {
   content: Record<string, unknown>;
+  /**
+   * One line describing the INPUTS this run saw, for the exemplar acceptance writes.
+   *
+   * Written by the handler because only the handler knows them — §4.3's shape is "Q2 concall for a
+   * specialty chemicals maker, 41-page transcript, prior quarter guided 18%", not the company's
+   * name. Required rather than optional: a generic fallback would make every exemplar for an agent
+   * look alike, and retrieval would then return an arbitrary one, which is worse than none.
+   */
+  situation: string;
   sources: unknown[];
   verification?: unknown;
   model: string;
@@ -101,7 +112,8 @@ export function assertInScope(agent: AgentRow, reads: string[]): void {
 async function loadAgent(key: string): Promise<AgentRow | null> {
   return readTxn(async (c) => {
     const { rows } = await c.query<AgentRow>(
-      'SELECT key, label, purpose, model, effort, data_scope, tools, notify_on_draft FROM agents WHERE key = $1 AND enabled',
+      `SELECT key, label, purpose, model, effort, data_scope, tools, learning, notify_on_draft
+         FROM agents WHERE key = $1 AND enabled`,
       [key],
     );
     return rows[0] ?? null;
@@ -220,8 +232,8 @@ async function recordDraft(
   await serviceTxn('system:agents', async (c) => {
     await c.query(
       `INSERT INTO ai_drafts (id, run_id, agent_key, company_id, content, sources, verification,
-                              model, input_tokens, output_tokens, cost_usd, field_order)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+                              model, input_tokens, output_tokens, cost_usd, field_order, situation)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
       [
         draftId, runId, agent.key, companyId,
         JSON.stringify(d.content), JSON.stringify(d.sources),
@@ -230,6 +242,9 @@ async function recordDraft(
         // Captured here because this is the last place it exists. jsonb stores keys sorted by length
         // and then alphabetically, so the order the agent's schema declared is gone after the insert.
         Object.keys(d.content),
+        // Carried to the exemplar the acceptance writes, which happens in another transaction and
+        // possibly days later. The handler is the only thing that knows what it was looking at.
+        d.situation,
       ],
     );
     await c.query(

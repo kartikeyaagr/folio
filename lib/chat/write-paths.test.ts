@@ -52,6 +52,7 @@ beforeEach(async () => {
   await serviceTxn('system:agents', async (c) => {
     // Documents before drafts before runs: each foreign key refuses to let the next go.
     await c.query('DELETE FROM documents');
+    await c.query('DELETE FROM exemplars');
     await c.query('DELETE FROM ai_drafts');
     await c.query('DELETE FROM chat_tool_calls');
     await c.query('DELETE FROM chat_messages');

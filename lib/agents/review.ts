@@ -15,6 +15,9 @@
  */
 
 import { randomBytes } from 'node:crypto';
+
+import { draftDistance } from './distance.ts';
+import { recordExemplar } from './exemplars.ts';
 import { readTxn, writeTxn, type Client } from '../db.ts';
 
 export class UnknownDraft extends Error {}
@@ -87,11 +90,14 @@ interface DraftRow {
   company_id: string | null;
   content: Record<string, unknown>;
   status: string;
+  /** What the agent saw, for the exemplar. Null on every draft written before R5a. */
+  situation: string | null;
 }
 
 async function lockDraft(c: Client, draftId: string): Promise<DraftRow> {
   const { rows } = await c.query<DraftRow>(
-    'SELECT id, agent_key, company_id, content, status FROM ai_drafts WHERE id = $1 FOR UPDATE',
+    `SELECT id, agent_key, company_id, content, status, situation
+       FROM ai_drafts WHERE id = $1 FOR UPDATE`,
     [draftId],
   );
   const d = rows[0];
@@ -109,19 +115,34 @@ async function lockDraft(c: Client, draftId: string): Promise<DraftRow> {
  */
 export async function acceptDraft(
   draftId: string,
+  /**
+   * Fields the person changed, **merged over** what the agent wrote — a patch, not a replacement.
+   *
+   * A replacement would mean `/review` had to round-trip every field it cannot edit through the
+   * form and back, so a draft's nested arrays would depend on a hidden input surviving a browser.
+   * Merging happens here instead, against the row already held `FOR UPDATE`, so it cannot race a
+   * second decision either. Null for accepting exactly what the agent wrote.
+   */
   edited: Record<string, unknown> | null,
   actorId: string,
 ): Promise<void> {
   await writeTxn(actorId, async (c) => {
     const draft = await lockDraft(c, draftId);
-    const final = edited ?? draft.content;
+    const final = edited === null ? draft.content : { ...draft.content, ...edited };
     const edits = diffFields(draft.content, final);
+    // Computed once, here, from code — the same discipline cost_usd follows. The alternative is
+    // running word-level Levenshtein over jsonb on every render of /agents.
+    const distance = draftDistance(draft.content, final);
 
     await c.query(
-      `UPDATE ai_drafts SET status='accepted', decided_by=$1, decided_at=now(), edits=$2, content=$3
+      `UPDATE ai_drafts
+          SET status='accepted', decided_by=$1, decided_at=now(), edits=$2, content=$3,
+              edit_distance=$5
         WHERE id=$4`,
-      [actorId, JSON.stringify(edits), JSON.stringify(final), draftId],
+      [actorId, JSON.stringify(edits), JSON.stringify(final), draftId, distance],
     );
+
+    await recordExemplar(c, draft, final, distance);
 
     if (draft.agent_key === 'forensics-review') {
       await landForensics(c, draft.company_id, final, actorId);

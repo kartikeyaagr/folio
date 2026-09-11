@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { readTxn } from '@/lib/db.ts';
 import { failedRuns } from '@/lib/agents/queue.ts';
 import { pendingDrafts } from '@/lib/agents/review.ts';
+import { coverage, fieldHotspots, weeklyDistance } from '@/lib/agents/learning.ts';
 import { listCompanies } from '@/lib/companies.ts';
 import { AppHeader, Blank, Card, Chip, Empty, Stat, StatRow, type Tone } from '@/components/ui.tsx';
 
@@ -55,8 +56,9 @@ export default async function AgentsPage() {
   // Kept rather than discarded: model, effort and spend are admin-only. Everything else on this
   // page is what an agent is and what it has done, which is research context anybody needs.
   const user = await requireUser();
-  const [agents, drafts, failed, names] = await Promise.all([
+  const [agents, drafts, failed, names, learned, weeks, hotspots] = await Promise.all([
     registry(), pendingDrafts(), failedRuns(), listCompanies(),
+    coverage(), weeklyDistance(), fieldHotspots(),
   ]);
 
   // `sum()` skips NULLs and `?? 0` turns "unknown" into "nothing", which is how v2's Fleet page
@@ -149,6 +151,126 @@ export default async function AgentsPage() {
               </tbody>
             </table>
           </div>
+        </Card>
+
+        {/*
+          §7's exit test, on the screen. "If mean edit distance does not fall, the loop is not
+          working and should be turned off" — so the number has to be visible before anyone can act
+          on it, and the trend matters rather than the level.
+
+          Held, Retrievable and Model are three numbers because acceptance writes an exemplar for
+          every model-calling agent whether or not it learns: the flag gates retrieval, so a
+          non-zero Held against a non-learning agent is correct and would read as a bug if the two
+          were collapsed into one.
+        */}
+        <Card title="What it has learned from" padded={false}>
+          <div className="tbl-scroll">
+            <table className="tbl">
+              <thead>
+                <tr>
+                  <th>Agent</th>
+                  <th className="num">Held</th>
+                  <th className="num">Retrievable</th>
+                  <th>Model</th>
+                </tr>
+              </thead>
+              <tbody>
+                {learned.map((a) => (
+                  <tr key={a.agentKey}>
+                    <td>{a.label}</td>
+                    <td className="num">{a.held}</td>
+                    <td className="num">
+                      {a.learning ? (
+                        a.retrievable
+                      ) : (
+                        <Blank why="This agent does not retrieve examples; acceptance still keeps them, so turning it on later starts from a corpus rather than from nothing" />
+                      )}
+                    </td>
+                    <td>{a.model}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+
+        <Card title="Accepted, edited, rejected" padded={false}>
+          {weeks.length === 0 ? (
+            <Empty>Nothing has been decided yet. The measure needs decisions before it means anything.</Empty>
+          ) : (
+            <div className="tbl-scroll">
+              <table className="tbl">
+                <thead>
+                  <tr>
+                    <th>Week</th>
+                    <th>Agent</th>
+                    <th className="num">Accepted</th>
+                    <th className="num">Edited</th>
+                    <th className="num">Rejected</th>
+                    <th className="num">Mean distance</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {weeks.map((w) => (
+                    <tr key={`${w.week}-${w.agentKey}`}>
+                      <td>{w.week}</td>
+                      <td>{w.agentKey}</td>
+                      <td className="num">{w.accepted}</td>
+                      <td className="num">{w.edited}</td>
+                      <td className="num">{w.rejected}</td>
+                      <td className="num">
+                        {/*
+                          A mean over nothing is not zero, and 0.000 would read as "perfect". But
+                          null arrives for two different reasons and saying the wrong one is its own
+                          small lie: a week with no acceptances has nothing to average, while a week
+                          whose acceptances all predate R5a has acceptances with no distance
+                          recorded against them. The dev database showed "1 accepted" beside
+                          "nothing was accepted in this week" before this told them apart.
+                        */}
+                        {w.meanDistance === null ? (
+                          <Blank
+                            why={
+                              w.accepted === 0
+                                ? 'Nothing was accepted in this week, so there is no distance to average'
+                                : 'These were accepted before edit distance was recorded, so there is no figure for them'
+                            }
+                          />
+                        ) : (
+                          w.meanDistance.toFixed(3)
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Card>
+
+        <Card title="What it keeps getting wrong" padded={false}>
+          {hotspots.length === 0 ? (
+            <Empty>
+              No field has been corrected yet. Either the drafts have been right, or nobody has
+              changed one — the counts above say which.
+            </Empty>
+          ) : (
+            <div className="tbl-scroll">
+              <table className="tbl">
+                <thead>
+                  <tr><th>Agent</th><th>Field</th><th className="num">Corrected</th></tr>
+                </thead>
+                <tbody>
+                  {hotspots.map((h) => (
+                    <tr key={`${h.agentKey}-${h.field}`}>
+                      <td>{h.agentKey}</td>
+                      <td>{h.field.replace(/_/g, ' ')}</td>
+                      <td className="num">{h.corrections}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </Card>
 
         <Card title="Ask an agent">

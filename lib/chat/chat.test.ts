@@ -49,6 +49,7 @@ beforeEach(async () => {
     // Documents before drafts before runs: a document records the draft it came from and a draft
     // records its run, and each foreign key refuses to let the other go while it holds it.
     await c.query('DELETE FROM documents');
+    await c.query('DELETE FROM exemplars');
     await c.query('DELETE FROM ai_drafts');
     await c.query('DELETE FROM chat_tool_calls');
     await c.query('DELETE FROM chat_messages');

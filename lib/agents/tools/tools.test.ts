@@ -111,7 +111,7 @@ for (const [name, where] of Object.entries(SQL_LIVES_IN)) {
 
 const agent = (scope: string[]): AgentRow => ({
   key: 'desk-analyst', label: 'test', purpose: 'test', model: 'claude-opus-5',
-  effort: 'xhigh', data_scope: scope, tools: [...TOOLS.keys()], notify_on_draft: false,
+  effort: 'xhigh', data_scope: scope, tools: [...TOOLS.keys()], learning: true, notify_on_draft: false,
 });
 
 const ctx: ToolContext = { reads: async (fn) => fn({} as never), companyId: null };

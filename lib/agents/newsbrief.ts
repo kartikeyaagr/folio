@@ -144,6 +144,13 @@ registerHandler(KEY, async (ctx: RunContext): Promise<HandlerResult> => {
   return {
     draft: {
       content: answer.content,
+      // A quiet week over three names and a heavy week over twelve are different jobs, and the
+      // counts are what says which this was.
+      situation:
+        `${days}-day desk brief across ${material.length} followed names: ` +
+        `${material.reduce((n, m) => n + m.filings.length, 0)} filings, ` +
+        `${material.reduce((n, m) => n + m.news.length, 0)} news items, ` +
+        `${material.reduce((n, m) => n + m.alerts.length, 0)} alerts`,
       sources: material.map((m) => ({
         kind: 'company', symbol: m.symbol,
         filings: m.filings.length, news: m.news.length, events: m.events.length, alerts: m.alerts.length,

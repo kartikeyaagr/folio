@@ -183,6 +183,12 @@ registerHandler(KEY, async (ctx: RunContext): Promise<HandlerResult> => {
   return {
     draft: {
       content: answer.content,
+      // Length matters here in a way it does not elsewhere: a 40,000-character transcript and a
+      // 6,000-character one are different jobs, and whether a prior call exists decides whether
+      // the delta — the product of this agent — can be computed at all.
+      situation:
+        `Earnings call transcript, ${Math.round(call.text.length / 1000)}k characters, ` +
+        `${prior ? 'previous call held for comparison' : 'no previous call held'}`,
       sources: [
         { kind: 'document', ref: call.id, role: 'transcript', at: call.writtenAt },
         ...(prior ? [{ kind: 'document', ref: prior.id, role: 'prior_call', at: prior.writtenAt }] : []),

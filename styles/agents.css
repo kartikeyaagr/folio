@@ -376,6 +376,20 @@ input.field.ch-reason {
   color: var(--ink-2);
   line-height: 1.55;
 }
+/* A field a reviewer can correct before signing it off.
+   Matches `.draft-text` rather than an input, because what is in it is the draft as it will read
+   once accepted — a control that looked like a form field would make the reviewer feel they were
+   filling something in rather than editing a document. Resizable vertically: a headline and a
+   four-paragraph note share this one control, and the row count is only a first guess at which. */
+textarea.field.draft-edit {
+  width: 100%;
+  resize: vertical;
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--ink-2);
+  padding: 8px 10px;
+}
 .draft-list {
   display: grid;
   gap: 4px;

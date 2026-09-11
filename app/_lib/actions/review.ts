@@ -19,9 +19,29 @@ import { requireUser } from '../session.ts';
  * A rejection requires a reason. Not politeness: a queue of rejections with no reasons is a queue
  * that teaches nobody anything, and the reason is the only evidence that an agent is not working.
  */
+/**
+ * Accept, with whatever the reviewer changed.
+ *
+ * Until R5a this passed `null` unconditionally and the form carried no fields, so
+ * `ai_drafts.edits` was structurally always `{}` and mean edit distance — the number §7 stakes the
+ * whole learning loop on — would have rendered 0.000 for every agent forever. That reads as "the
+ * agents are perfect" and meant "nobody can correct them".
+ *
+ * Only string fields are editable, and they arrive as `f.<field>`. Nested values are rendered
+ * read-only, so what comes back here is a patch over what the agent wrote, never a replacement —
+ * see `acceptDraft`.
+ */
 export async function accept(form: FormData): Promise<void> {
   const user = await requireUser();
-  await acceptDraft(String(form.get('id') ?? ''), null, user.userId);
+
+  const edited: Record<string, unknown> = {};
+  for (const [key, value] of form.entries()) {
+    if (key.startsWith('f.') && typeof value === 'string') edited[key.slice(2)] = value;
+  }
+
+  // An empty patch and a patch that changes nothing are the same acceptance, and both are honest:
+  // `draftDistance` scores an unchanged draft 0, and the exemplar records `quality = 'accepted'`.
+  await acceptDraft(String(form.get('id') ?? ''), Object.keys(edited).length > 0 ? edited : null, user.userId);
   await flash(`Accepted as ${user.email}`);
   revalidatePath('/review');
 }

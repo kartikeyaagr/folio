@@ -22,7 +22,7 @@ const CO = 'c1';
 
 const agentRow = (scope: string[]): AgentRow => ({
   key: 'test', label: 'Test', purpose: 'p', model: 'claude-opus-5',
-  effort: 'high', data_scope: scope, tools: [], notify_on_draft: false,
+  effort: 'high', data_scope: scope, tools: [], learning: false, notify_on_draft: false,
 });
 
 before(async () => {
@@ -47,6 +47,7 @@ beforeEach(async () => {
     // holding that link refuses to let the draft go while it does.
     await c.query('DELETE FROM document_versions');
     await c.query('DELETE FROM documents');
+    await c.query('DELETE FROM exemplars');
     await c.query('DELETE FROM ai_drafts');
     await c.query('DELETE FROM agent_runs');
   });
@@ -83,7 +84,7 @@ for (const [kind, answer] of failures) {
         const { raise } = await import('./runner.ts');
         raise(a);
       }
-      return { draft: { content: {}, sources: [], model: 'm' } };
+      return { draft: { content: {}, situation: 'a test run', sources: [], model: 'm' } };
     });
     await serviceTxn('system:agents', async (c) => {
       await c.query(
@@ -118,7 +119,7 @@ test('a run gives up after MAX_ATTEMPTS and becomes visible as failed', async ()
       const { raise } = await import('./runner.ts');
       raise(a);
     }
-    return { draft: { content: {}, sources: [], model: 'm' } };
+    return { draft: { content: {}, situation: 'a test run', sources: [], model: 'm' } };
   });
   const runId = await enqueue({ agentKey: 'test', companyId: CO });
   const model = scriptedModel([{ ok: false, kind: 'error', detail: 'boom' }]);
@@ -146,7 +147,8 @@ test('a successful run writes one draft carrying cost and provenance', async () 
     if (!a.ok) throw new Error('unexpected');
     return {
       draft: {
-        content: a.content, sources: [{ kind: 'fundamentals', ref: 'f1' }],
+        content: a.content, situation: 'a test run with one prior period',
+        sources: [{ kind: 'fundamentals', ref: 'f1' }],
         verification: { agreed: true }, model: a.model,
         inputTokens: a.inputTokens, outputTokens: a.outputTokens, costUsd: a.costUsd,
       },
@@ -179,7 +181,12 @@ test('accepting lands a document and closes the draft', async () => {
   registerHandler('test', async (ctx) => {
     const a = await ctx.ask({ model: 'm', system: 's', task: 't', schema: {} });
     if (!a.ok) throw new Error('x');
-    return { draft: { content: a.content, sources: [], model: a.model, costUsd: a.costUsd } };
+    return {
+      draft: {
+        content: a.content, situation: 'a test run', sources: [],
+        model: a.model, costUsd: a.costUsd,
+      },
+    };
   });
   await enqueue({ agentKey: 'test', companyId: CO });
   await drain(1, scriptedModel([scriptedOk({ headline: 'As filed' })]));
@@ -211,7 +218,7 @@ test('rejecting requires a reason', async () => {
   registerHandler('test', async (ctx) => {
     const a = await ctx.ask({ model: 'm', system: 's', task: 't', schema: {} });
     if (!a.ok) throw new Error('x');
-    return { draft: { content: a.content, sources: [], model: a.model } };
+    return { draft: { content: a.content, situation: 'a test run', sources: [], model: a.model } };
   });
   await enqueue({ agentKey: 'test', companyId: CO });
   await drain(1, scriptedModel([scriptedOk({ headline: 'h' })]));
@@ -233,7 +240,7 @@ test('a draft cannot be decided twice', async () => {
   registerHandler('test', async (ctx) => {
     const a = await ctx.ask({ model: 'm', system: 's', task: 't', schema: {} });
     if (!a.ok) throw new Error('x');
-    return { draft: { content: a.content, sources: [], model: a.model } };
+    return { draft: { content: a.content, situation: 'a test run', sources: [], model: a.model } };
   });
   await enqueue({ agentKey: 'test', companyId: CO });
   await drain(1, scriptedModel([scriptedOk({ headline: 'h' })]));

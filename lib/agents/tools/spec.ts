@@ -77,6 +77,8 @@ export interface ToolContext {
     runId: string;
     threadId: string;
     model: string;
+    /** The question that opened the thread, for the exemplar's situation. Already loaded upstream. */
+    asked: string;
     cited: () => string[];
   };
   /** Where a finished call goes. Supplied by the chat layer; absent in a test that does not care. */

@@ -101,17 +101,24 @@ export const spec: ToolSpec = {
           const cited = turn.cited();
           const sources = cited.map((chunkId) => ({ kind: 'chunk', ref: chunkId }));
 
+          // What this agent saw, for the exemplar acceptance will write. Agent 8's inputs are the
+          // question and how much it read to answer it — the thread's title is its opening message,
+          // which is the question as the desk actually put it.
+          const situation = `Desk question: "${turn.asked}" — answered from ${cited.length} passage${
+            cited.length === 1 ? '' : 's'
+          }`;
+
           const draftId = id();
           await serviceTxn('system:agents', async (c) => {
             await c.query(
               `INSERT INTO ai_drafts
                  (id, run_id, agent_key, company_id, content, sources, model, status,
-                  thread_id, field_order)
-               VALUES ($1,$2,'desk-analyst',$3,$4,$5,$6,'pending',$7,$8)`,
+                  thread_id, field_order, situation)
+               VALUES ($1,$2,'desk-analyst',$3,$4,$5,$6,'pending',$7,$8,$9)`,
               [
                 draftId, turn.runId, companyId,
                 JSON.stringify(content), JSON.stringify(sources),
-                turn.model, turn.threadId, Object.keys(content),
+                turn.model, turn.threadId, Object.keys(content), situation,
               ],
             );
           });

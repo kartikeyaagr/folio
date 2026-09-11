@@ -182,6 +182,11 @@ registerHandler(KEY, async (ctx: RunContext): Promise<HandlerResult> => {
   return {
     draft: {
       content: { version, answers },
+      // How much history was available is the thing that varies: the checklist asks about five- and
+      // ten-year series, and answering it against three years is a different job from ten.
+      situation:
+        `Forensic checklist v${version}, ${items.length} items, ` +
+        `against ${history.length} annual period${history.length === 1 ? '' : 's'} held`,
       sources: [
         { kind: 'forensics_template', ref: String(version) },
         ...history.map((h) => ({ kind: 'fundamentals', period_end: h.period_end })),

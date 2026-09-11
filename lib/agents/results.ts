@@ -164,6 +164,14 @@ registerHandler(KEY, async (ctx: RunContext): Promise<HandlerResult> => {
   return {
     draft: {
       content: answer.content,
+      // The inputs, not the company: §4.3 wants "Q2 concall for a specialty chemicals maker", not
+      // a name. What varies between runs of this agent is the period shape, the basis, whether a
+      // comparison exists, and which figures were actually filed.
+      situation:
+        `${row.period_kind} results, ${row.basis}, ` +
+        `${prior ? 'with a comparable prior period held' : 'no comparable prior period held'}, ` +
+        `${[row.revenue, row.profit_after_tax, row.total_expenses].filter((v) => v !== null).length}` +
+        ' of 3 headline figures reported',
       sources: [
         { kind: 'fundamentals', ref: row.id, period: `${row.period_start}..${row.period_end}` },
         ...(prior ? [{ kind: 'fundamentals', ref: prior.id, role: 'comparison' }] : []),

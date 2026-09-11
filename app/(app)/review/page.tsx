@@ -187,24 +187,62 @@ export default async function ReviewPage() {
                   whether a brief is any good from that — which would make the gate a formality on
                   exactly the agent whose output is longest.
                 */}
-                {d.agentKey === 'news-brief' ? (
-                  <Brief content={d.content} />
-                ) : (
-                  <dl className="draft-fields">
-                    {orderedFields(d.content, d.fieldOrder).map(([k, v]) => (
-                      <div key={k}>
-                        <dt>{k.replace(/_/g, ' ')}</dt>
-                        <dd><Value value={v} /></dd>
-                      </div>
-                    ))}
-                  </dl>
+                {/*
+                  The fields are the accept form. Its submit lives below in `.draft-acts` and finds
+                  it by id, because the reject form sits beside that button and HTML has no nested
+                  forms.
+
+                  Editing them is what makes §7 possible at all: until R5a nothing on this screen
+                  could change a field, so `ai_drafts.edits` was always `{}` and mean edit distance
+                  — the number the whole learning loop is staked on — was pinned at zero.
+                */}
+                <form id={`accept-${d.id}`} action={accept}>
+                  <input type="hidden" name="id" value={d.id} />
+                  {d.agentKey === 'news-brief' ? (
+                    <Brief content={d.content} />
+                  ) : (
+                    <dl className="draft-fields">
+                      {orderedFields(d.content, d.fieldOrder).map(([k, v]) => (
+                        <div key={k}>
+                          <dt>{k.replace(/_/g, ' ')}</dt>
+                          <dd>
+                            {typeof v === 'string' ? (
+                              <textarea
+                                className="field draft-edit"
+                                name={`f.${k}`}
+                                defaultValue={v}
+                                rows={Math.min(14, Math.max(2, Math.ceil(v.length / 72)))}
+                                aria-label={`${k.replace(/_/g, ' ')} — edit before accepting`}
+                              />
+                            ) : (
+                              <Value value={v} />
+                            )}
+                          </dd>
+                        </div>
+                      ))}
+                    </dl>
+                  )}
+                </form>
+
+                {/*
+                  Said out loud rather than left to be discovered. A draft whose fields are all
+                  arrays cannot be corrected here, so its edit distance will be 0 however wrong it
+                  is — and a 0 that means "uncorrectable" must not be read as a 0 that means
+                  "right". Agent 6 is the whole of this case today: a brief is `by_company`,
+                  `nothing_to_report` and `coming_up`, and none of them is a string.
+                */}
+                {!orderedFields(d.content, d.fieldOrder).some(([, v]) => typeof v === 'string') && (
+                  <p className="hint">
+                    Nothing here can be corrected in place — every field is a list or an object.
+                    Accepting records no edit distance for this agent, which is not the same as
+                    the draft being right. Reject it with a reason if it is wrong.
+                  </p>
                 )}
 
                 <div className="draft-acts">
-                  <form action={accept}>
-                    <input type="hidden" name="id" value={d.id} />
-                    <button type="submit" className="btn btn-primary">Accept</button>
-                  </form>
+                  <button type="submit" form={`accept-${d.id}`} className="btn btn-primary">
+                    Accept
+                  </button>
                   <form action={reject} className="draft-reject">
                     <input type="hidden" name="id" value={d.id} />
                     <input

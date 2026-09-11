@@ -116,9 +116,13 @@ test('every audited table carries the trigger', async () => {
       -- beside it — ~22,000 rows on a three-name book, ten times news_items, rewritten on every
       -- re-index of an edited document;
       -- chat_tool_calls is itself the audit trail of what a model read, append-only and never
-      -- updated, so auditing it is the recursion audit_log is excluded for.
+      -- updated, so auditing it is the recursion audit_log is excluded for;
+      -- exemplars is derived from an accepted draft whose acceptance is already an audited write,
+      -- and its only later mutation is an embedding, which would put 384 floats into before and
+      -- 384 into after on every row.
       AND c.relname NOT IN ('actors', 'audit_log', 'schema_migrations', 'prices', 'ingestion_runs',
-                            'news_items', 'news_matched_items', 'chunks', 'chat_tool_calls')
+                            'news_items', 'news_matched_items', 'chunks', 'chat_tool_calls',
+                            'exemplars')
       AND NOT EXISTS (
         SELECT 1 FROM pg_trigger t WHERE t.tgrelid = c.oid AND t.tgname = 'audit'
       )`);

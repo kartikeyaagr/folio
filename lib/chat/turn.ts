@@ -79,7 +79,7 @@ export const ANSWER_SCHEMA = {
 async function loadAgent(key: string): Promise<AgentRow> {
   const agent = await readTxn(async (c) => {
     const { rows } = await c.query<AgentRow>(
-      `SELECT key, label, purpose, model, effort, data_scope, tools, notify_on_draft
+      `SELECT key, label, purpose, model, effort, data_scope, tools, learning, notify_on_draft
          FROM agents WHERE key = $1 AND enabled`,
       [key],
     );
@@ -154,6 +154,10 @@ export async function takeTurn(
       runId,
       threadId,
       model: agent.model,
+      // The thread is already loaded here, so a tool that needs the question does not have to go
+      // and read `chat_threads` for itself — which would also widen agent 8's data_scope to a
+      // table it has no other business in.
+      asked: found.thread.title,
       // Read at call time, not captured: a draft proposed after four searches should cite four
       // searches' worth of passages, not the none that had been read when the tools were bound.
       cited: () => [...new Set(calls.flatMap((c) => c.chunkIds))],
