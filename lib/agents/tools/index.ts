@@ -21,15 +21,17 @@ import type { BetaRunnableTool } from '@anthropic-ai/sdk/lib/tools/BetaRunnableT
 import { assertInScope, type AgentRow } from '../runner.ts';
 import { spec as position } from './book.ts';
 import { spec as corpus } from './corpus.ts';
+import { spec as draftDocument } from './draft.ts';
 import { spec as filings } from './filings.ts';
 import { spec as financials } from './financials.ts';
+import { spec as runAgent } from './queue-run.ts';
 import type { ToolContext, ToolSpec } from './spec.ts';
 
 export class UnknownTool extends Error {}
 
-/** Every tool that exists. R3's four are read-only; `run_agent` and `draft_document` are R4's. */
+/** Every tool that exists. Four read; two write, and only into the review queue. */
 export const TOOLS: ReadonlyMap<string, ToolSpec> = new Map(
-  [corpus, financials, position, filings].map((s) => [s.name, s]),
+  [corpus, financials, position, filings, runAgent, draftDocument].map((s) => [s.name, s]),
 );
 
 function specsFor(names: string[]): ToolSpec[] {
@@ -42,9 +44,26 @@ function specsFor(names: string[]): ToolSpec[] {
   });
 }
 
-/** Every table the named tools read, deduplicated. Exported so a migration's scope can be checked. */
+/**
+ * Every table the named tools **touch**, read or written, deduplicated.
+ *
+ * Writes are included because `data_scope` is the answer to "what runs unattended, over what data",
+ * and a table an agent writes is emphatically part of that answer. The name is kept from R3 — it
+ * pairs with `assertInScope`, which has always compared against `data_scope` as a whole.
+ * Exported so a migration's seed can be checked against it.
+ */
 export function toolReads(names: string[]): string[] {
-  return [...new Set(specsFor(names).flatMap((s) => s.reads))].sort();
+  return [...new Set(specsFor(names).flatMap((s) => [...s.reads, ...(s.writes ?? [])]))].sort();
+}
+
+/**
+ * Every table the named tools write, deduplicated.
+ *
+ * The whole containment argument in `spec.ts` rests on this set being exactly `agent_runs` and
+ * `ai_drafts`, so it is a function rather than a comment and `tools.test.ts` asserts it.
+ */
+export function toolWrites(names: string[]): string[] {
+  return [...new Set(specsFor(names).flatMap((s) => s.writes ?? []))].sort();
 }
 
 export function bindTools(agent: AgentRow, names: string[], ctx: ToolContext): BetaRunnableTool[] {

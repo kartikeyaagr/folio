@@ -12,6 +12,7 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { migrate } from '../../db/migrate.ts';
 import { closePool, readTxn, serviceTxn } from '../db.ts';
+import { enqueue } from '../agents/queue.ts';
 import type { ToolModel } from '../agents/loop.ts';
 import { ask, listThreads, MAX_HISTORY_CHARS, recordAnswer, startThread, threadWithMessages, titleFrom, withinBudget, type MessageRow } from './threads.ts';
 import { render, takeTurn } from './turn.ts';
@@ -45,11 +46,28 @@ after(async () => {
 
 beforeEach(async () => {
   await serviceTxn('system:agents', async (c) => {
+    // Documents before drafts before runs: a document records the draft it came from and a draft
+    // records its run, and each foreign key refuses to let the other go while it holds it.
+    await c.query('DELETE FROM documents');
+    await c.query('DELETE FROM ai_drafts');
     await c.query('DELETE FROM chat_tool_calls');
     await c.query('DELETE FROM chat_messages');
     await c.query('DELETE FROM chat_threads');
+    await c.query('DELETE FROM agent_runs');
   });
 });
+
+/**
+ * A turn, the way production takes one: a queued run, then `takeTurn` against it.
+ *
+ * The run is real rather than a made-up id because `ai_drafts.run_id` is NOT NULL and references
+ * `agent_runs` — a draft proposed mid-turn hangs on it, so a fake id would pass every test that
+ * does not write a draft and fail the one that does.
+ */
+async function turn(threadId: string, ask: ToolModel) {
+  const runId = await enqueue({ agentKey: 'desk-analyst', subjectRef: threadId });
+  return takeTurn(threadId, runId, ask);
+}
 
 /** A model that runs one named tool, then answers. The tool call is real; only the model is not. */
 function scriptedTurn(
@@ -106,7 +124,7 @@ test('the history budget drops the oldest first and always keeps one', () => {
 
 test('a turn writes the answer and what it read, and the figures are real', async () => {
   const id = await startThread('What did Praj report last quarter?', ME);
-  const result = await takeTurn(id, scriptedTurn('get_financials', { symbol: 'PRAJIND' }, {
+  const result = await turn(id, scriptedTurn('get_financials', { symbol: 'PRAJIND' }, {
     answer: 'Revenue was 219.1 cr [chunk 1].',
     citations: [{ chunk_id: '1', supports: 'revenue for the December quarter' }],
     could_not_find: [],
@@ -130,7 +148,7 @@ test('a turn writes the answer and what it read, and the figures are real', asyn
 
 test('a tool that refuses records the refusal, and the turn still answers', async () => {
   const id = await startThread('What does ENRON hold?', ME);
-  await takeTurn(id, scriptedTurn('get_financials', { symbol: 'ENRON' }, {
+  await turn(id, scriptedTurn('get_financials', { symbol: 'ENRON' }, {
     answer: 'This system does not follow that name.',
     citations: [],
     could_not_find: ['any company with symbol ENRON'],
@@ -147,7 +165,7 @@ test('a tool that refuses records the refusal, and the turn still answers', asyn
 test('a model failure still leaves a message saying which failure it was', async () => {
   // A turn that left nothing would be indistinguishable from a question nobody had asked yet.
   const id = await startThread('Anything on Praj?', ME);
-  await takeTurn(id, async () => ({ ok: false, kind: 'refusal', detail: 'declined (cyber)' }));
+  await turn(id, async () => ({ ok: false, kind: 'refusal', detail: 'declined (cyber)' }));
 
   const found = await threadWithMessages(id);
   assert.equal(found!.messages.length, 2);
@@ -160,7 +178,7 @@ test('a turn records what it spent', async () => {
   // Found by running it: the first live turn made six tool calls and the system could not say what
   // it had spent, because `takeTurn` computed the figure and dropped it.
   const id = await startThread('What did Praj report?', ME);
-  await takeTurn(id, scriptedTurn('get_financials', { symbol: 'PRAJIND' }, {
+  await turn(id, scriptedTurn('get_financials', { symbol: 'PRAJIND' }, {
     answer: 'Revenue was 219.1 cr.', citations: [], could_not_find: [],
   }));
 
@@ -174,7 +192,7 @@ test('a turn that failed records null, never zero', async () => {
   // D5: a zero is a claim about the bill, a null is an admission. A failed turn really did spend
   // tokens — recording 0 would say it was free, which is the lie v2's $0.00 dashboard told.
   const id = await startThread('Anything?', ME);
-  await takeTurn(id, async () => ({ ok: false, kind: 'error', detail: 'the far end hung up' }));
+  await turn(id, async () => ({ ok: false, kind: 'error', detail: 'the far end hung up' }));
 
   const reply = (await threadWithMessages(id))!.messages[1]!;
   assert.equal(reply.costUsd, null);

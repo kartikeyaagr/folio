@@ -20,6 +20,26 @@ import { requireUser } from '../../_lib/session.ts';
 export const dynamic = 'force-dynamic';
 
 /**
+ * One source, as a line rather than as JSON.
+ *
+ * Only the plain `{kind, ref}` shape is unwrapped, and that narrowness is deliberate: agents 1, 2
+ * and 6 carry extra fields on theirs — a period, a count of filings — and stringifying those whole
+ * is still the most honest rendering available until somebody designs a real one. What changed is
+ * that a chat draft can cite a dozen passages, and a dozen lines of `{"ref":"2742","kind":"chunk"}`
+ * is provenance a reader skips, which trains exactly the waving-through this screen exists to stop.
+ */
+function sourceLine(s: unknown): string {
+  if (s !== null && typeof s === 'object') {
+    const o = s as Record<string, unknown>;
+    const keys = Object.keys(o).sort();
+    if (keys.length === 2 && keys[0] === 'kind' && keys[1] === 'ref') {
+      return `${String(o['kind'])} ${String(o['ref'])}`;
+    }
+  }
+  return JSON.stringify(s);
+}
+
+/**
  * The fields, in the order the agent wrote them.
  *
  * jsonb stores keys sorted by length and then alphabetically, so a results draft rendered as
@@ -106,12 +126,23 @@ export default async function ReviewPage() {
                 */}
                 <Eyebrow>Built from</Eyebrow>
                 <ul className="draft-sources">
+                  {/*
+                    A draft proposed inside a thread links back to it. Everything above this line
+                    says what was read; this says what was being asked, which is the half a reader
+                    needs to judge whether the answer is to the right question. Null for every
+                    draft an agent wrote off a sweep, which is most of them.
+                  */}
+                  {d.threadId && (
+                    <li>
+                      <Link href={`/chat?thread=${d.threadId}`}>Read the conversation →</Link>
+                    </li>
+                  )}
                   {d.sources.length === 0 ? (
                     <li>
                       <Blank why="This draft recorded no sources, which is itself worth asking about" />
                     </li>
                   ) : (
-                    d.sources.map((s, i) => <li key={i}>{JSON.stringify(s)}</li>)
+                    d.sources.map((s, i) => <li key={i}>{sourceLine(s)}</li>)
                   )}
                 </ul>
 

@@ -132,6 +132,7 @@ export interface TurnResult extends Spend {
  */
 export async function takeTurn(
   threadId: string,
+  runId: string,
   ask: ToolModel = liveToolModel,
 ): Promise<TurnResult> {
   const found = await threadWithMessages(threadId);
@@ -147,6 +148,16 @@ export async function takeTurn(
     reads: readTxn,
     companyId: null, // §4.2 puts no company on a thread: the model names one, and only followed names resolve.
     record: (call) => calls.push(call),
+    turn: {
+      // The run this turn is already claimed under. `ai_drafts.run_id` is NOT NULL, so a draft
+      // proposed mid-turn hangs on it — which only works because R3 made a turn a queued run.
+      runId,
+      threadId,
+      model: agent.model,
+      // Read at call time, not captured: a draft proposed after four searches should cite four
+      // searches' worth of passages, not the none that had been read when the tools were bound.
+      cited: () => [...new Set(calls.flatMap((c) => c.chunkIds))],
+    },
   });
 
   const timeout = AbortSignal.timeout(TURN_TIMEOUT_MS);

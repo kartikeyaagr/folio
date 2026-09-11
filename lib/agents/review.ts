@@ -37,6 +37,8 @@ export interface PendingDraft {
   createdAt: Date;
   /** The order the agent wrote its fields in; jsonb does not keep it. Null on older drafts. */
   fieldOrder: string[] | null;
+  /** The conversation this was proposed in, or null when it came from a sweep. R4. */
+  threadId: string | null;
 }
 
 /**
@@ -50,6 +52,7 @@ export async function pendingDrafts(limit = 50): Promise<PendingDraft[]> {
     const { rows } = await c.query<PendingDraft>(
       `SELECT d.id, d.agent_key AS "agentKey", a.label AS "agentLabel",
               d.company_id AS "companyId", co.symbol, d.field_order AS "fieldOrder",
+              d.thread_id AS "threadId",
               d.content, d.sources, d.verification, d.model,
               d.cost_usd::text AS "costUsd", d.created_at AS "createdAt"
          FROM ai_drafts d
@@ -165,6 +168,34 @@ const DOCUMENT_KIND: Record<string, string> = {
   'news-brief': 'brief',
 };
 
+/**
+ * What a draft may ask to become, when it asks.
+ *
+ * The map above is keyed by agent, which works while each agent writes one kind of thing. Agent 8
+ * does not: a chat thread produces a note one day and a memo the next, and the kind is a choice
+ * made in the conversation. So a draft whose content names a kind gets it — from this list only.
+ *
+ * Deliberately narrower than `documents_kind_check`. `transcript`, `brief`, `checklist` and `sheet`
+ * each belong to a pipeline that produces them, and `meeting` to somebody who was in one; a draft
+ * claiming to be one of those would misstate where it came from, which is the thing the column
+ * exists to keep straight. `draft_document`'s own schema offers the same two, so this is the
+ * second of two gates rather than the only one.
+ */
+const DRAFT_MAY_CHOOSE = new Set(['note', 'memo']);
+
+/**
+ * The kind the draft asked for, if it asked for one this list allows.
+ *
+ * Read from the content *after* the analyst's edits, so changing `kind` in the review screen
+ * changes what lands — the same as every other field. An unrecognised value falls through to the
+ * per-agent map rather than raising: a draft is not worth refusing at the moment of acceptance over
+ * a field the reviewer can see and the agent can get wrong.
+ */
+function chosenKind(content: Record<string, unknown>): string | null {
+  const kind = content['kind'];
+  return typeof kind === 'string' && DRAFT_MAY_CHOOSE.has(kind) ? kind : null;
+}
+
 /** A title somebody can pick out of a list, without opening it. */
 function documentTitle(agentKey: string, content: Record<string, unknown>): string {
   const headline = content['headline'];
@@ -190,7 +221,7 @@ async function landDocument(
      VALUES ($1,$2,$3,$4,$5,$6)`,
     [
       docId, draft.company_id, documentTitle(draft.agent_key, content),
-      DOCUMENT_KIND[draft.agent_key] ?? 'note', actorId,
+      chosenKind(content) ?? DOCUMENT_KIND[draft.agent_key] ?? 'note', actorId,
       // The link the review gate spends its whole design showing. Losing it at the moment of
       // acceptance is losing it exactly when it starts to matter.
       draft.id,

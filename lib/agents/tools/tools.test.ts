@@ -17,25 +17,48 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
 import { ScopeViolation, type AgentRow } from '../runner.ts';
-import { bindTools, TOOLS, toolReads, UnknownTool } from './index.ts';
+import { bindTools, TOOLS, toolReads, toolWrites, UnknownTool } from './index.ts';
 import { resolveSubject, type ToolContext } from './spec.ts';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const read = (rel: string): string => readFileSync(path.join(here, rel), 'utf8');
 
 /**
- * Table names a file's SQL reads.
+ * Table names a file's SQL touches, read or written.
+ *
+ * `INSERT INTO` and `UPDATE` are in the pattern because R4 added tools that write, and the version
+ * without them reported `draft_document` as declaring a table no SQL touched — its only statement
+ * is an `INSERT INTO ai_drafts`, which has no `FROM` at all. The test caught that on the first run,
+ * which is the argument for having it.
  *
  * CTE aliases are excluded by name because `search.ts` fuses two of them; `LATERAL` because it
- * follows a JOIN without being a table. Deliberately crude — its job is to catch a `reads` entry
- * that names a table nothing queries, not to parse SQL.
+ * follows a JOIN without being a table. Deliberately crude — its job is to catch a declaration that
+ * names a table nothing touches, not to parse SQL.
  */
 function tablesIn(source: string): Set<string> {
+  // Only string literals that begin with a SQL verb are scanned, and that narrowing is the whole
+  // trick. Scanning the file as prose reads English as SQL: "from here", "update before" and
+  // "proposed from inside a chat turn" all matched the pattern below and arrived as tables called
+  // `here`, `before` and `inside` the moment this directory grew prose-heavy headers and
+  // user-facing refusal messages. Comments and messages are not SQL; the statements are.
   const skip = new Set(['lateral', 'v', 'f', 'q', 'c', 'h', 'p', 's', 'a', 'co', 'r']);
   const found = new Set<string>();
-  for (const m of source.matchAll(/\b(?:FROM|JOIN)\s+([a-z_][a-z0-9_]*)/gi)) {
-    const name = m[1]!.toLowerCase();
-    if (!skip.has(name)) found.add(name);
+
+  // Comments go first so that an apostrophe in prose — "the fund's", "TypeScript loses" — cannot
+  // open a string the scanner then reads to the next apostrophe, swallowing real statements on the
+  // way. All three quote forms are consumed as units for the same reason: a double-quoted message
+  // containing an apostrophe desynchronises a scanner that only knows about single quotes.
+  const code = source.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/\/\/.*$/gm, ' ');
+
+  for (const literal of code.matchAll(/`([^`]*)`|'((?:[^'\\]|\\.)*)'|"((?:[^"\\]|\\.)*)"/g)) {
+    const body = literal[1] ?? literal[2] ?? literal[3] ?? '';
+    if (!/^\s*(?:SELECT|INSERT|UPDATE|DELETE|WITH)\b/i.test(body)) continue;
+    // `--` inside the statement is a SQL comment, and several in this tree name tables in prose.
+    const sql = body.replace(/--.*$/gm, ' ');
+    for (const m of sql.matchAll(/\b(?:FROM|JOIN|INSERT\s+INTO|UPDATE)\s+([a-z_][a-z0-9_]*)/gi)) {
+      const name = m[1]!.toLowerCase();
+      if (!skip.has(name)) found.add(name);
+    }
   }
   return found;
 }
@@ -44,8 +67,8 @@ function tablesIn(source: string): Set<string> {
  * Where each tool's SQL actually lives.
  *
  * `spec.ts` is in every row because `resolveSubject` is what reads `companies`, and every tool
- * calls it. Three of the four delegate their main query to a module that holds other queries too,
- * so those get containment rather than equality — stated here rather than left implied, because a
+ * calls it. Four of the six delegate their main query to a module that holds other queries too, so
+ * those get containment rather than equality — stated here rather than left implied, because a
  * check that looks stronger than it is would be worse than this one.
  */
 const SQL_LIVES_IN: Record<string, { files: string[]; exact: boolean }> = {
@@ -53,6 +76,8 @@ const SQL_LIVES_IN: Record<string, { files: string[]; exact: boolean }> = {
   get_financials: { files: ['./spec.ts', './financials.ts'], exact: true },
   get_position: { files: ['./spec.ts', '../../book.ts'], exact: false },
   list_filings: { files: ['./spec.ts', '../../filings.ts'], exact: false },
+  run_agent: { files: ['./spec.ts', '../queue.ts'], exact: false },
+  draft_document: { files: ['./spec.ts', './draft.ts'], exact: true },
 };
 
 test('every tool is accounted for here', () => {
@@ -62,20 +87,21 @@ test('every tool is accounted for here', () => {
 for (const [name, where] of Object.entries(SQL_LIVES_IN)) {
   test(`${name} declares the tables its SQL names`, () => {
     const spec = TOOLS.get(name)!;
+    const declared = [...spec.reads, ...(spec.writes ?? [])];
     const queried = new Set<string>();
     for (const file of where.files) for (const t of tablesIn(read(file))) queried.add(t);
 
-    for (const declared of spec.reads) {
+    for (const table of declared) {
       assert.ok(
-        queried.has(declared),
-        `${name} declares ${declared} but no SQL in ${where.files.join(', ')} reads it`,
+        queried.has(table),
+        `${name} declares ${table} but no SQL in ${where.files.join(', ')} touches it`,
       );
     }
     if (where.exact) {
       // The tool owns its SQL, so the reverse holds too: nothing is read that was not declared.
       assert.deepEqual(
-        [...queried].sort(), [...spec.reads].sort(),
-        `${name} reads exactly what it declares`,
+        [...queried].sort(), [...declared].sort(),
+        `${name} touches exactly what it declares`,
       );
     }
   });
@@ -162,4 +188,38 @@ test('an unpinned call with no symbol asks for one instead of guessing', async (
   const r = await resolveSubject({ reads: withCompanies([PRAJ]), companyId: null });
   assert.equal(r.ok, false);
   assert.ok(!r.ok && /symbol/.test(r.why));
+});
+
+// ---- what a tool may write ---------------------------------------------------------------------
+
+test('the only tables any tool writes are the two that make up the review queue', () => {
+  // The containment argument in spec.ts's header rests on exactly this. §9.2: "No tool has a side
+  // effect outside the gate. run_agent enqueues; draft_document writes a pending draft. Neither
+  // publishes." A third write tool has to change this line, which is the point — it forces the
+  // argument to be made again rather than quietly weakened.
+  assert.deepEqual(toolWrites([...TOOLS.keys()]), ['agent_runs', 'ai_drafts']);
+});
+
+test('the ledger is unreachable, and not because a transaction happens to be read-only', () => {
+  // A review gate on ai_drafts would not protect a transactions row, because a trade is not a
+  // draft. What protects it is that no tool names these tables at all.
+  const ledger = ['transactions', 'cash_ledger', 'holdings', 'tax_lots'];
+  const written = toolWrites([...TOOLS.keys()]);
+  for (const table of ledger) {
+    assert.ok(!written.includes(table), `no tool writes ${table}`);
+  }
+  // get_position reads the book on purpose — §6.2 drops v2's constraint excluding it, because
+  // "what do we own in this and what did it cost" is a reason to open a chat.
+  assert.ok(toolReads(['get_position']).includes('holdings'));
+});
+
+test('a writing tool declares what it writes', () => {
+  // A tool whose SQL writes but whose spec says nothing would pass every check above by omission.
+  for (const name of ['run_agent', 'draft_document']) {
+    const spec = TOOLS.get(name)!;
+    assert.ok((spec.writes ?? []).length > 0, `${name} declares its writes`);
+  }
+  for (const name of ['search_corpus', 'get_financials', 'get_position', 'list_filings']) {
+    assert.deepEqual(TOOLS.get(name)!.writes ?? [], [], `${name} writes nothing`);
+  }
 });

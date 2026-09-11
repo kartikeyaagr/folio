@@ -29,7 +29,12 @@ registerHandler(KEY, async (ctx: RunContext): Promise<HandlerResult> => {
 
   // Scope is asserted inside `takeTurn`, by `bindTools`, before a client is constructed — so an
   // agent row whose data_scope no longer covers its tools fails here without spending anything.
-  await takeTurn(ctx.subjectRef);
+  //
+  // The run id goes with the thread because `draft_document` hangs an `ai_drafts` row on it, and
+  // `ai_drafts.run_id` is NOT NULL. This is the payoff for R3's decision to make a chat turn a
+  // queued run rather than a bare function call: the write path needed a run and there already was
+  // one.
+  await takeTurn(ctx.subjectRef, ctx.runId);
 
   // No draft. A chat answer is a message in a thread, not a thing in the review queue; turning one
   // into a document is `draft_document`, which is R4's.

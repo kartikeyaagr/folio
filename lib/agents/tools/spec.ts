@@ -7,10 +7,26 @@
  * `tools.test.ts` asserts the declaration *equals* what the SQL actually names. Before R3,
  * `assertInScope` compared one hardcoded array against another and never saw a query.
  *
- * **Every tool runs on `ctx.reads`, a `readTxn`.** Postgres issues `BEGIN READ ONLY` and refuses a
- * write on it — containment by the database, not by convention or by a lint rule. `v4.md §9.3`
- * requires the ledger to be unreachable; this is how. `get_position` reads the book and there is
- * no tool that can write to it.
+ * **Reads run on `ctx.reads`, a `readTxn`.** Postgres issues `BEGIN READ ONLY` and refuses a write
+ * on it — containment by the database, not by convention or by a lint rule.
+ *
+ * **Two tools write, and only into the gate.** R4 added `run_agent` and `draft_document`. Until
+ * then this header said *every* tool ran read-only, and leaving that sentence here would be the
+ * worst outcome available: a header reassuring a reader about a property the file no longer has.
+ * What is true now is `v4.md §9.2`, and it is a narrower claim carried by three things rather than
+ * one:
+ *
+ *   * a writing tool touches exactly `agent_runs` (a queued run) or `ai_drafts` (a row with
+ *     `status = 'pending'`). **Neither publishes.** Injected text can at worst cause a draft a
+ *     person then rejects, or a run whose own output lands in the same queue;
+ *   * each tool declares the tables it writes, and `tools.test.ts` asserts the whole set is those
+ *     two — so a third write tool cannot be added without this argument being revisited;
+ *   * `agents.data_scope` must name them, checked before the model is called.
+ *
+ * **The ledger is still unreachable**, and for a better reason than the transaction being
+ * read-only: no tool's SQL names `transactions`, `cash_ledger`, `holdings` or `tax_lots` for
+ * writing, and a review gate on `ai_drafts` would not have protected a `transactions` row anyway,
+ * because a trade is not a draft. `get_position` reads the book; nothing can write to it.
  *
  * **Every call is recorded before its result reaches the model.** `chat_tool_calls` is the
  * transparency surface `v4.md §4.2` calls "not optional" — *"You can always see what it read."*
@@ -43,6 +59,26 @@ export interface ToolContext {
    * `companies` — which is itself the containment: only names the fund follows exist to be named.
    */
   companyId: string | null;
+  /**
+   * What a writing tool needs to attribute what it writes. Absent means no tool here writes.
+   *
+   * One optional field rather than four, so that "this context can write" is a single readable
+   * condition instead of a handful of undefined checks that can disagree with each other.
+   *
+   * `ai_drafts.run_id` is `NOT NULL REFERENCES agent_runs`, so a draft cannot exist without a run —
+   * and a chat turn already has one, because R3 made every turn a queued run rather than a bare
+   * function call. That decision is what lets `draft_document` write a draft at all.
+   *
+   * `cited()` returns the chunks read so far in this turn, so a draft arrives at `/review` with its
+   * "Built from" list populated like every other draft rather than empty, which the review screen
+   * correctly calls out as *"worth asking about"*.
+   */
+  turn?: {
+    runId: string;
+    threadId: string;
+    model: string;
+    cited: () => string[];
+  };
   /** Where a finished call goes. Supplied by the chat layer; absent in a test that does not care. */
   record?: (call: ToolCall) => void;
 }
@@ -58,6 +94,15 @@ export interface ToolSpec {
   name: string;
   /** Tables the SQL behind this tool names. Asserted against the SQL itself in `tools.test.ts`. */
   reads: string[];
+  /**
+   * Tables this tool writes, if any. Empty for a reading tool, and empty is the normal case.
+   *
+   * Declared rather than inferred so that the set across all tools is a checkable fact: the whole
+   * containment argument in this file's header rests on it being exactly `agent_runs` and
+   * `ai_drafts`, and a test asserts that. A tool that writes anywhere else has to change the test,
+   * which is the point — it forces the argument to be made again rather than quietly weakened.
+   */
+  writes?: string[];
   build(ctx: ToolContext): BetaRunnableTool;
 }
 
