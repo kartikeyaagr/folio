@@ -22,6 +22,9 @@
  * Pure and database-free, so the boundary cases below are cheap to assert.
  */
 
+import { shape } from './paths.ts';
+import { fieldAt, type Field } from './shapes.ts';
+
 /** §7's boundary between "prose" and "a short value". A stated default, not a finding. */
 export const PROSE_WORDS = 8;
 
@@ -80,19 +83,124 @@ export function fieldDistance(from: unknown, to: unknown): number {
 }
 
 /**
- * A whole draft's distance: the mean across every field, not only the changed ones.
+ * Every position in a draft where the two sides can be compared, changed or not.
  *
- * Averaging over the changed fields alone would score a draft where one of seven fields was
+ * One walk, two consumers: `diffFields` keeps the ones that moved, `draftDistance` scores them
+ * against the ones that did not. They were separate before, which was survivable while a position
+ * was always a top-level key; once a correction can land three levels down, two walks that agree
+ * today is a bug waiting for the first draft that disagrees.
+ *
+ * **An array whose length changed is one position, not N.** A reviewer dropping the second of four
+ * bullets shifts the third and fourth down, and comparing positionally would read that as three
+ * rewrites and a removal. It is one act — *"the agent invented this"* — and the record should say
+ * so, or three deletions would clear `MIN_DISTANCE` and raise a rule about prose nobody was making
+ * a point about.
+ */
+export interface Position {
+  path: string;
+  from: unknown;
+  to: unknown;
+}
+
+const isObject = (v: unknown): v is Record<string, unknown> =>
+  typeof v === 'object' && v !== null && !Array.isArray(v);
+
+export function positions(from: unknown, to: unknown, path = ''): Position[] {
+  if (Array.isArray(from) && Array.isArray(to)) {
+    if (from.length !== to.length) return [{ path, from, to }];
+    return from.flatMap((v, i) => positions(v, to[i], `${path}[${i}]`));
+  }
+  if (isObject(from) && isObject(to)) {
+    const keys = [...new Set([...Object.keys(from), ...Object.keys(to)])];
+    return keys.flatMap((k) => positions(from[k], to[k], path === '' ? k : `${path}.${k}`));
+  }
+  // Everything else — two scalars, or a value whose very type changed — is one position. A
+  // top-level key on one side only lands here too, as `undefined` against its value.
+  return [{ path, from, to }];
+}
+
+/**
+ * A whole draft's distance: the mean across every position somebody *could* have corrected, not
+ * only the ones that moved.
+ *
+ * Averaging over the changed positions alone would score a draft where one of seven fields was
  * rewritten identically to one where the only field was — and §7's example is precisely the
  * difference between those two: *"they rewrote `guidance_delta` and left the other six fields
  * alone, every quarter, for four quarters."* The six left alone are the evidence.
+ *
+ * **Weighted by shape, not by position.** Scoring every leaf equally lets the widest field decide
+ * the whole number: a news brief has one `period` and ten positions under `by_company`, so a
+ * rewritten period would count for a thirteenth of the draft and a rewritten judgement for a
+ * tenth of a third. Averaging each shape's instances first, then each key's shapes, makes every
+ * top-level key weigh the same however wide it is — which is the agent's schema deciding, not the
+ * week's news.
+ *
+ * Instances still average, and that is deliberate rather than a leftover: a brief covering twenty
+ * names where one judgement was rewritten *is* a better brief than one covering two where one was,
+ * and §7 says so — *"the six left alone are the evidence."* What shape-weighting fixes is the
+ * denominator being unbounded, not the average being an average.
+ *
+ *     draft  = mean over top-level keys
+ *     key    = mean over the distinct shapes beneath it
+ *     shape  = mean over its own instances
+ *
+ * **And positions nobody may correct are out of the denominator.** A figure, a flag and an identity
+ * are guaranteed zeros; 15 of forensics' 43 positions are read-only, and leaving them in would cap
+ * a total repudiation of that agent below the 0.25 that counts as one correction at all. "The six
+ * left alone" means six somebody could have changed.
+ *
+ * `declared` is optional: without it every position counts, which is what a draft from an agent
+ * this system has no declaration for should do, and what every caller did before this existed.
  */
 export function draftDistance(
   original: Record<string, unknown>,
   final: Record<string, unknown>,
+  declared?: Field,
 ): number {
-  const fields = [...new Set([...Object.keys(original), ...Object.keys(final)])];
-  if (fields.length === 0) return 0;
-  const total = fields.reduce((sum, key) => sum + fieldDistance(original[key], final[key]), 0);
-  return total / fields.length;
+  const keys = [...new Set([...Object.keys(original), ...Object.keys(final)])];
+  if (keys.length === 0) return 0;
+
+  let total = 0;
+  let counted = 0;
+
+  for (const key of keys) {
+    const here = positions(original[key], final[key], key).filter(
+      (p) => !declared || correctable(fieldAt(declared, p.path), p),
+    );
+
+    // Nothing here anybody could have corrected, so it is not evidence either way and stays out of
+    // the denominator. **This is also what keeps a NaN out of the column.** `nothing_to_report: []`
+    // is in the one real brief in this tree and `guidance_changes` is empty whenever there was no
+    // prior call, so an empty field is the ordinary case; dividing by its zero positions would
+    // write a NaN that is greater than zero in SQL and not greater than zero in JavaScript — the
+    // column calling a draft edited while the exemplar beside it calls the same draft accepted.
+    if (here.length === 0) continue;
+
+    const byShape = new Map<string, number[]>();
+    for (const p of here) {
+      const s = shape(p.path);
+      byShape.set(s, [...(byShape.get(s) ?? []), fieldDistance(p.from, p.to)]);
+    }
+
+    const shapes = [...byShape.values()].map((xs) => xs.reduce((a, b) => a + b, 0) / xs.length);
+    total += shapes.reduce((a, b) => a + b, 0) / shapes.length;
+    counted++;
+  }
+
+  return counted === 0 ? 0 : total / counted;
+}
+
+/**
+ * A position a reviewer can act on: prose they can rewrite, a choice they can pick, or a list they
+ * can drop an element from. Everything else is shown and never touched.
+ *
+ * **A position the declaration does not describe is inferred, not excluded.** `shapes.ts` fails
+ * closed for *writing* — a path it does not know is not editable — but failing closed here would
+ * silently zero the one number §7 stakes the loop on the day an agent's schema changed and nobody
+ * updated the registry. `/review` renders an undeclared field rather than dropping it, for the same
+ * reason, so the two agree: what is shown as correctable is what is counted.
+ */
+function correctable(field: Field | null, at: Position): boolean {
+  if (field === null) return typeof at.from === 'string' || typeof at.to === 'string';
+  return field.kind === 'text' || field.kind === 'choice' || (field.kind === 'list' && field.removable);
 }

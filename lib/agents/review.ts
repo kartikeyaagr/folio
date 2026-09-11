@@ -16,13 +16,17 @@
 
 import { randomBytes } from 'node:crypto';
 
-import { draftDistance } from './distance.ts';
+import { draftDistance, positions } from './distance.ts';
 import { recordExemplar } from './exemplars.ts';
+import { removeAt, setPath, UnwritablePath } from './paths.ts';
+import { fieldAt, shapeFor } from './shapes.ts';
 import { readTxn, writeTxn, type Client } from '../db.ts';
 
 export class UnknownDraft extends Error {}
 export class AlreadyDecided extends Error {}
 export class ReasonRequired extends Error {}
+export class NotAChoice extends Error {}
+export { UnwritablePath };
 
 const id = (): string => randomBytes(16).toString('hex');
 
@@ -70,18 +74,84 @@ export async function pendingDrafts(limit = 50): Promise<PendingDraft[]> {
   });
 }
 
-/** Field-by-field difference between what the model said and what was signed off. */
+/**
+ * What the person changed, position by position, keyed by path.
+ *
+ * **Flat, and that is load-bearing.** `rule_observations.field` holds one of these keys and
+ * `lib/agents/rules.ts` reads the correction back with a single-arrow `d.edits -> o.field`, while
+ * `learning.ts` and `distil.ts` unpack the blob with `jsonb_object_keys` and `jsonb_each`. Nesting
+ * `edits` to mirror the content would break all three silently — the arrow would return null and
+ * `/rules` would show a candidate with no evidence under it, which §7 says must not be shown.
+ *
+ * For flat content this is byte-for-byte what it always returned: a top-level key is its own path.
+ */
 export function diffFields(
   original: Record<string, unknown>,
   edited: Record<string, unknown>,
 ): Record<string, { from: unknown; to: unknown }> {
   const out: Record<string, { from: unknown; to: unknown }> = {};
-  for (const key of new Set([...Object.keys(original), ...Object.keys(edited)])) {
-    const a = JSON.stringify(original[key] ?? null);
-    const b = JSON.stringify(edited[key] ?? null);
-    if (a !== b) out[key] = { from: original[key] ?? null, to: edited[key] ?? null };
+  for (const p of positions(original, edited)) {
+    if (JSON.stringify(p.from ?? null) !== JSON.stringify(p.to ?? null)) {
+      out[p.path] = { from: p.from ?? null, to: p.to ?? null };
+    }
   }
   return out;
+}
+
+/**
+ * What a reviewer did to a draft before signing it off.
+ *
+ * Two gestures, because they are two different acts. Correcting a position is *"this is worded
+ * wrongly"*; dropping one is *"the agent invented this"*. Blanking a textarea is not the second: a
+ * cleared bullet renders as an empty `<li>` in the permanent document, and scores 1.0 — identical
+ * to a total rewrite — so three of them would raise a rule about prose nobody was making a point
+ * about.
+ */
+export interface Correction {
+  /** Path → the text a person put there. Only text; a figure is never retypeable here. */
+  edits?: Record<string, string>;
+  /** Path of a list → the positions to drop from it. */
+  drops?: Record<string, readonly number[]>;
+}
+
+/**
+ * Apply a correction to what the agent wrote.
+ *
+ * Corrections first, then removals, and removals **deepest first** — dropping a company before the
+ * bullet inside it would leave the bullet's path pointing at a company that has moved. Every step
+ * goes through `setPath`/`removeAt`, which refuse a position that does not already exist and refuse
+ * to retype anything that is not already text.
+ */
+function apply(content: Record<string, unknown>, correction: Correction): Record<string, unknown> {
+  let out = content;
+  for (const [path, value] of Object.entries(correction.edits ?? {})) out = setPath(out, path, value);
+
+  const deepestFirst = Object.entries(correction.drops ?? {}).sort((a, b) => b[0].length - a[0].length);
+  for (const [path, indices] of deepestFirst) out = removeAt(out, path, indices);
+  return out;
+}
+
+/**
+ * Refuse a value the agent's own schema does not allow, before Postgres does.
+ *
+ * `forensics_answers_verdict_check` raises 23514 on a verdict outside its four, and it raises it
+ * *inside* the acceptance transaction — so a crafted POST, or a select that got past the browser,
+ * would roll back the whole accept and hand the reviewer Next's default error page with every box
+ * they had filled. Only what the person actually typed is checked: a value the model got wrong is
+ * the agent's problem and this screen exists to catch it, not to refuse to open.
+ */
+function checkChoices(
+  agentKey: string,
+  content: Record<string, unknown>,
+  edits: Record<string, string>,
+): void {
+  const declared = shapeFor(agentKey, content);
+  for (const [path, value] of Object.entries(edits)) {
+    const field = fieldAt(declared, path);
+    if (field?.kind === 'choice' && field.enforced && !field.options.includes(value)) {
+      throw new NotAChoice(`"${value}" is not one of ${field.options.join(', ')}`);
+    }
+  }
 }
 
 interface DraftRow {
@@ -116,23 +186,31 @@ async function lockDraft(c: Client, draftId: string): Promise<DraftRow> {
 export async function acceptDraft(
   draftId: string,
   /**
-   * Fields the person changed, **merged over** what the agent wrote — a patch, not a replacement.
+   * What the person changed, **applied to** what the agent wrote — a patch, not a replacement.
    *
-   * A replacement would mean `/review` had to round-trip every field it cannot edit through the
+   * A replacement would mean `/review` had to round-trip every position it cannot edit through the
    * form and back, so a draft's nested arrays would depend on a hidden input surviving a browser.
-   * Merging happens here instead, against the row already held `FOR UPDATE`, so it cannot race a
+   * The fold happens here instead, against the row already held `FOR UPDATE`, so it cannot race a
    * second decision either. Null for accepting exactly what the agent wrote.
+   *
+   * A single-segment path behaves exactly as the shallow spread this used to do, which is why the
+   * callers that hand it a flat object still mean what they meant.
    */
-  edited: Record<string, unknown> | null,
+  correction: Correction | null,
   actorId: string,
 ): Promise<void> {
   await writeTxn(actorId, async (c) => {
     const draft = await lockDraft(c, draftId);
-    const final = edited === null ? draft.content : { ...draft.content, ...edited };
+    if (correction?.edits) checkChoices(draft.agent_key, draft.content, correction.edits);
+    const final = correction === null ? draft.content : apply(draft.content, correction);
     const edits = diffFields(draft.content, final);
     // Computed once, here, from code — the same discipline cost_usd follows. The alternative is
     // running word-level Levenshtein over jsonb on every render of /agents.
-    const distance = draftDistance(draft.content, final);
+    //
+    // The declaration is passed so that positions nobody may correct stay out of the denominator:
+    // 15 of a forensic draft's 43 are read-only, and leaving them in capped a total repudiation of
+    // that agent below the 0.25 that counts as one correction at all.
+    const distance = draftDistance(draft.content, final, shapeFor(draft.agent_key, draft.content));
 
     await c.query(
       `UPDATE ai_drafts

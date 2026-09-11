@@ -54,6 +54,15 @@ export interface WeeklyDistance {
   rejected: number;
   /** Null when nothing was accepted that week. A mean over nothing is not zero. */
   meanDistance: number | null;
+  /**
+   * Whether the review screen could reach inside a draft when these were decided.
+   *
+   * Grouped on, not averaged across. Before `0051` two agents had no correctable field at all, so
+   * their distance was structurally 0 — and a mean that mixed those weeks with the ones after would
+   * read as a rise in how wrong the agents are, when what rose was how much of them can be
+   * corrected. `v4.md §7`'s test is "did it fall", and this is what keeps that question answerable.
+   */
+  nestedEditable: boolean;
 }
 
 /**
@@ -68,6 +77,7 @@ export async function weeklyDistance(weeks = 12): Promise<WeeklyDistance[]> {
     const { rows } = await c.query<WeeklyDistance>(
       `SELECT agent_key AS "agentKey",
               to_char(date_trunc('week', decided_at), 'YYYY-MM-DD') AS week,
+              nested_editable AS "nestedEditable",
               count(*) FILTER (WHERE status = 'accepted')::int AS accepted,
               -- "Edited" is a distance above zero, not a non-empty edits blob: a field replaced by
               -- an identical string is an edit that changed nothing, and should not count as one.
@@ -77,8 +87,8 @@ export async function weeklyDistance(weeks = 12): Promise<WeeklyDistance[]> {
          FROM ai_drafts
         WHERE decided_at IS NOT NULL
           AND decided_at > now() - ($1 || ' weeks')::interval
-        GROUP BY agent_key, date_trunc('week', decided_at)
-        ORDER BY date_trunc('week', decided_at) DESC, agent_key`,
+        GROUP BY agent_key, date_trunc('week', decided_at), nested_editable
+        ORDER BY date_trunc('week', decided_at) DESC, agent_key, nested_editable`,
       [String(weeks)],
     );
     return rows;
@@ -99,17 +109,24 @@ export interface FieldHotspot {
  *   written."*
  *
  * This is that sentence as a query, and it is the input R6's distillation reads. `jsonb_object_keys`
- * over `edits` gives one row per field a person actually changed, so a field nobody has ever
+ * over `edits` gives one row per position a person actually changed, so a field nobody has ever
  * touched does not appear at all rather than appearing with a zero.
+ *
+ * **Grouped by `edit_field(field)`, spelled out rather than by the alias.** A key of `edits` is a
+ * path now, and `by_company[0].why_it_matters` and `by_company[1].why_it_matters` are the same
+ * field. `GROUP BY field` would not do it: Postgres resolves a bare name in GROUP BY to the *input
+ * column*, not to a same-named alias, so the grouping would silently fall back to the raw path —
+ * one row per array position, each with count 1, and `LIMIT` then evicting every other agent's
+ * hotspots behind the repeats. Checked in psql before it was written this way.
  */
 export async function fieldHotspots(limit = 20): Promise<FieldHotspot[]> {
   return readTxn(async (c) => {
     const { rows } = await c.query<FieldHotspot>(
-      `SELECT agent_key AS "agentKey", field, count(*)::int AS corrections
+      `SELECT agent_key AS "agentKey", edit_field(field) AS field, count(*)::int AS corrections
          FROM ai_drafts, jsonb_object_keys(edits) AS field
         WHERE status = 'accepted' AND edits IS NOT NULL AND edits <> '{}'::jsonb
-        GROUP BY agent_key, field
-        ORDER BY count(*) DESC, agent_key, field
+        GROUP BY agent_key, edit_field(field)
+        ORDER BY count(*) DESC, agent_key, edit_field(field)
         LIMIT $1`,
       [limit],
     );

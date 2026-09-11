@@ -192,7 +192,7 @@ test('accepting lands a document and closes the draft', async () => {
   await drain(1, scriptedModel([scriptedOk({ headline: 'As filed' })]));
 
   const [d] = await pendingDrafts();
-  await acceptDraft(d!.id, { headline: 'Corrected headline' }, ME);
+  await acceptDraft(d!.id, { edits: { headline: 'Corrected headline' } }, ME);
 
   const doc = await readTxn(async (c) => {
     const { rows } = await c.query<{ title: string; created_by: string }>(

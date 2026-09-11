@@ -93,7 +93,7 @@ const draftRow = (id: string) =>
 
 test('accepting with a correction records which field moved, and how far', async () => {
   const d = await aDraft();
-  await acceptDraft(d.id, { headline: 'Revenue rose on a larger order book and a richer mix of engineering work' }, ME);
+  await acceptDraft(d.id, { edits: { headline: 'Revenue rose on a larger order book and a richer mix of engineering work' } }, ME);
 
   const row = await draftRow(d.id);
   assert.ok('headline' in row.edits, 'the edited field is named');
@@ -104,7 +104,7 @@ test('accepting with a correction records which field moved, and how far', async
 test('a corrected draft becomes an exemplar of what was signed off, not of what the model said', async () => {
   const d = await aDraft();
   const corrected = 'Revenue rose on a larger order book and a richer mix of engineering work';
-  await acceptDraft(d.id, { headline: corrected }, ME);
+  await acceptDraft(d.id, { edits: { headline: corrected } }, ME);
 
   const [e] = await exemplars();
   assert.ok(e);
@@ -143,7 +143,7 @@ test('what a person changes is merged over the draft, never a replacement', asyn
   // /review can only edit string fields, so a patch that replaced the whole object would drop
   // every array the agent wrote. The merge happens under the row lock in acceptDraft.
   const d = await aDraft({ headline: HEADLINE, by_company: [{ symbol: 'PRAJIND' }] });
-  await acceptDraft(d.id, { headline: 'A corrected headline that is long enough to be prose' }, ME);
+  await acceptDraft(d.id, { edits: { headline: 'A corrected headline that is long enough to be prose' } }, ME);
 
   const [e] = await exemplars();
   assert.deepEqual(e?.output['by_company'], [{ symbol: 'PRAJIND' }], 'the untouched array survived');
@@ -171,7 +171,7 @@ test('the weekly view counts an edit only when something actually moved', async 
   const a = await aDraft();
   await acceptDraft(a.id, null, ME);
   const b = await aDraft();
-  await acceptDraft(b.id, { headline: `${HEADLINE} and a better order intake` }, ME);
+  await acceptDraft(b.id, { edits: { headline: `${HEADLINE} and a better order intake` } }, ME);
   const c = await aDraft();
   await rejectDraft(c.id, 'wrong period', ME);
 
@@ -186,8 +186,40 @@ test('the weekly view counts an edit only when something actually moved', async 
 test('the hotspot view names the field, which is what a rule gets written about', async () => {
   for (let i = 0; i < 2; i++) {
     const d = await aDraft();
-    await acceptDraft(d.id, { headline: `${HEADLINE} — corrected ${i}` }, ME);
+    await acceptDraft(d.id, { edits: { headline: `${HEADLINE} — corrected ${i}` } }, ME);
   }
   const hot = await fieldHotspots();
   assert.deepEqual(hot, [{ agentKey: 'news-brief', field: 'headline', corrections: 2 }]);
+});
+
+test('a field corrected at two positions is one hotspot, not two of one', async () => {
+  // `edits` is keyed by path now, so `by_company[0].why_it_matters` and `by_company[1]....` are the
+  // same field seen twice. Grouped raw they would each read as a single correction, and with a
+  // LIMIT on the query the repeats would push every other agent's hotspots off the screen.
+  //
+  // The grouping has to be spelled out as `GROUP BY agent_key, edit_field(field)`: Postgres
+  // resolves a bare `field` in GROUP BY to the input column rather than to the same-named alias,
+  // so `GROUP BY agent_key, field` compiles, runs, and quietly groups by the raw path.
+  const co = (symbol: string) => ({ symbol, what_happened: ['A filing.'], why_it_matters: 'Quiet.' });
+  const d = await aDraft({
+    period: 'The last 7 days',
+    by_company: [co('PRAJIND'), co('AERON')],
+    nothing_to_report: [],
+    coming_up: [],
+  });
+  await acceptDraft(
+    d.id,
+    {
+      edits: {
+        'by_company[0].why_it_matters': 'A rewritten judgement about the first name.',
+        'by_company[1].why_it_matters': 'A rewritten judgement about the second name.',
+      },
+    },
+    ME,
+  );
+
+  const hot = await fieldHotspots();
+  assert.deepEqual(hot, [
+    { agentKey: 'news-brief', field: 'by_company[].why_it_matters', corrections: 2 },
+  ]);
 });

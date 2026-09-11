@@ -92,6 +92,29 @@ async function corrected(
   });
 }
 
+
+/** An accepted draft in which somebody changed several positions at once. */
+async function correctedMany(
+  edits: Record<string, { from: unknown; to: unknown }>,
+  agentKey = AGENT,
+): Promise<string> {
+  return serviceTxn('system:agents', async (c) => {
+    const { rows: r } = await c.query<{ id: string }>(
+      `INSERT INTO agent_runs (id, agent_key, company_id)
+       VALUES (md5(random()::text), $1, $2) RETURNING id`,
+      [agentKey, CO],
+    );
+    const { rows: d } = await c.query<{ id: string }>(
+      `INSERT INTO ai_drafts (id, run_id, agent_key, company_id, content, model,
+                              status, decided_by, decided_at, edits)
+       VALUES (md5(random()::text), $1, $2, $3, '{}'::jsonb, 'claude-opus-5',
+               'accepted', $4, now(), $5) RETURNING id`,
+      [r[0]!.id, agentKey, CO, ME, JSON.stringify(edits)],
+    );
+    return d[0]!.id;
+  });
+}
+
 const candidateFor = async (field: string): Promise<string> => {
   const cs = await openCandidates();
   const hit = cs.find((c) => c.observations.some((o) => o.field === field));
@@ -114,7 +137,7 @@ test('two corrections are a coincidence and three are a pattern', async () => {
   const [c] = await openCandidates();
   assert.equal(c!.origin, 'distilled');
   assert.equal(c!.rule, null, 'the distiller writes no rule — §7 forbids it');
-  assert.match(c!.finding!, /^3 corrections to guidance_delta, mean distance 0\.54\./);
+  assert.match(c!.finding!, /^3 corrections across 3 drafts to guidance_delta, mean distance 0\.54\./);
   assert.equal(c!.observations.length, 3, 'and it shows the three drafts that produced it');
   assert.ok(c!.observations.every((o) => o.from === WROTE && o.to === SIGNED), 'with the corrections themselves');
 });
@@ -274,4 +297,67 @@ test('rules are numbered in the order they were signed', async () => {
     'Name the quarter and the guided figure.',
   ]);
   assert.deepEqual(await approvedRules('news-brief'), [], "another agent's rules are not this one's");
+});
+
+// ---- corrections that reach inside a draft ------------------------------------------------------
+
+const WHY = (n: number) => `by_company[${n}].why_it_matters`;
+
+test('the same field corrected in three briefs is one pattern, wherever in each it sat', async () => {
+  // The point of collapsing positions. Grouped by their literal paths these are three patterns of
+  // one, none of them ever reaching three, and nothing is learned about an agent that has been
+  // making the same mistake for a month.
+  await corrected(WHY(0), WROTE, SIGNED);
+  await corrected(WHY(4), WROTE, SIGNED);
+  await corrected(WHY(2), WROTE, SIGNED);
+
+  assert.equal((await distil()).raised, 1);
+  const [c] = await openCandidates();
+  assert.match(c!.finding!, /^3 corrections across 3 drafts to by_company\[\]\.why_it_matters,/);
+  assert.equal(c!.observations.length, 3);
+  assert.deepEqual(
+    c!.observations.map((o) => o.field).sort(),
+    [WHY(0), WHY(2), WHY(4)],
+    'and each observation still says where it actually happened, so /rules can show the correction',
+  );
+});
+
+test('a candidate already open about a field is not raised again from another position', async () => {
+  // `rule_observations.field` holds the position and the guard is about the field, so comparing
+  // the two raw never matches and every pass raises the same question again — which is exactly
+  // what distil.ts forbids in as many words.
+  for (const n of [0, 1, 2]) await corrected(WHY(n), WROTE, SIGNED);
+  assert.equal((await distil()).raised, 1);
+
+  for (const n of [7, 8, 9]) await corrected(WHY(n), WROTE, SIGNED);
+  assert.equal((await distil()).raised, 0, 'the same question is already in front of somebody');
+  assert.equal(await pendingRules(), 1);
+});
+
+test('many corrections in one brief is one analyst, not a pattern', async () => {
+  // Before a correction could reach inside a draft, one draft could contribute at most one
+  // correction per field and "three observations" and "three drafts" were the same number. A brief
+  // covering twenty names can now carry twenty, and three of those is a careful morning.
+  await correctedMany({
+    [WHY(0)]: { from: WROTE, to: SIGNED },
+    [WHY(1)]: { from: WROTE, to: SIGNED },
+    [WHY(2)]: { from: WROTE, to: SIGNED },
+    [WHY(3)]: { from: WROTE, to: SIGNED },
+  });
+
+  const r = await distil();
+  assert.equal(r.observed, 4, 'all four are real corrections');
+  assert.equal(r.raised, 0, 'and they are all one draft');
+
+  // A second brief making the same mistake is still not three.
+  await correctedMany({ [WHY(0)]: { from: WROTE, to: SIGNED } });
+  assert.equal((await distil()).raised, 0);
+  await correctedMany({ [WHY(0)]: { from: WROTE, to: SIGNED } });
+  assert.equal((await distil()).raised, 1, 'three briefs is');
+});
+
+test('a position is still spent once, so the same correction cannot be counted twice', async () => {
+  for (const n of [0, 1, 2]) await corrected(WHY(n), WROTE, SIGNED);
+  await distil();
+  assert.deepEqual(await distil(), { considered: 0, observed: 0, raised: 0 });
 });

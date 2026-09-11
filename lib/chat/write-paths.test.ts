@@ -135,7 +135,7 @@ test('a kind outside the allowed two falls back rather than refusing at acceptan
     { tool: 'draft_document', args: { kind: 'note', title: 'T', body: 'B' } },
   ], ANSWERED));
   const draft = (await pendingDrafts())[0]!;
-  await acceptDraft(draft.id, { ...draft.content, kind: 'sheet' }, ME);
+  await acceptDraft(draft.id, { edits: { kind: 'sheet' } }, ME);
 
   const kind = await readTxn(async (c) => {
     const { rows } = await c.query<{ kind: string }>('SELECT kind FROM documents LIMIT 1');
