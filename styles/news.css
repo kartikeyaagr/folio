@@ -426,3 +426,54 @@ a.brief-item-title:hover {
 .brief-none {
   color: var(--muted);
 }
+
+/* A brief being corrected is still a brief.
+   `Brief`'s own docstring is the reason: reviewing a brief rendered as form controls is reviewing a
+   different artefact from the one that will be read. So the control inherits `.brief.prose` — Lora
+   15.5/1.65 — and shows no chrome until it is touched. Discoverability comes from the eyebrow above
+   the article, not from making every paragraph look like a field. */
+.brief-editing textarea.brief-edit {
+  width: 100%;
+  font: inherit;
+  color: inherit;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  padding: 2px 6px;
+  margin: -2px -6px;
+  min-height: 0;
+  field-sizing: content;
+  resize: none;
+}
+.brief-editing textarea.brief-edit:hover {
+  border-color: var(--line);
+  background: var(--surface-2);
+}
+.brief-editing textarea.brief-edit:focus-visible {
+  outline: none;
+  border-color: var(--navy);
+  background: var(--surface);
+  box-shadow: 0 0 0 3px var(--ring);
+}
+/* The period is chrome rather than prose, so its control follows the eyebrow it replaces. */
+.brief-editing .brief-period textarea.brief-edit {
+  font: inherit;
+  text-transform: uppercase;
+}
+.brief-editing .brief-co h3 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.brief-editing li {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+.brief-symbols {
+  list-style: none;
+  padding-left: 0;
+  display: grid;
+  gap: 2px;
+  color: var(--muted);
+}

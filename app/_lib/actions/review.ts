@@ -2,7 +2,8 @@
 
 import { revalidatePath } from 'next/cache';
 
-import { acceptDraft, rejectDraft } from '@/lib/agents/review.ts';
+import { acceptDraft, NotAChoice, rejectDraft, UnwritablePath } from '@/lib/agents/review.ts';
+import { positionOf } from '@/lib/agents/paths.ts';
 import { requeue } from '@/lib/agents/queue.ts';
 import { enqueue } from '@/lib/agents/queue.ts';
 
@@ -27,22 +28,40 @@ import { requireUser } from '../session.ts';
  * whole learning loop on — would have rendered 0.000 for every agent forever. That reads as "the
  * agents are perfect" and meant "nobody can correct them".
  *
- * Only string fields are editable, and they arrive as `f.<field>`. Nested values are rendered
- * read-only, so what comes back here is a patch over what the agent wrote, never a replacement —
- * see `acceptDraft`.
+ * Two grammars, both carrying a path from `lib/agents/paths.ts`: `f.<path>` is what a position was
+ * corrected to, `d.<path>` is a position to drop. Everything after the two-character prefix is the
+ * path, and `acceptDraft` refuses any that does not already name a piece of text in the draft — so
+ * what comes back from here is a patch over what the agent wrote, never a replacement.
+ *
+ * **A refused path is flashed, not swallowed.** The alternative is a correction that silently did
+ * not happen, on the one screen whose entire purpose is that corrections happen.
  */
 export async function accept(form: FormData): Promise<void> {
   const user = await requireUser();
 
-  const edited: Record<string, unknown> = {};
+  const edits: Record<string, string> = {};
+  const drops: Record<string, number[]> = {};
   for (const [key, value] of form.entries()) {
-    if (key.startsWith('f.') && typeof value === 'string') edited[key.slice(2)] = value;
+    if (typeof value !== 'string') continue;
+    if (key.startsWith('f.')) {
+      edits[key.slice(2)] = value;
+    } else if (key.startsWith('d.')) {
+      // A checkbox only appears in the FormData when it is ticked, so its presence is the request.
+      const at = positionOf(key.slice(2));
+      if (at) drops[at.array] = [...(drops[at.array] ?? []), at.index];
+    }
   }
 
-  // An empty patch and a patch that changes nothing are the same acceptance, and both are honest:
-  // `draftDistance` scores an unchanged draft 0, and the exemplar records `quality = 'accepted'`.
-  await acceptDraft(String(form.get('id') ?? ''), Object.keys(edited).length > 0 ? edited : null, user.userId);
-  await flash(`Accepted as ${user.email}`);
+  const touched = Object.keys(edits).length > 0 || Object.keys(drops).length > 0;
+  try {
+    // An empty patch and a patch that changes nothing are the same acceptance, and both are honest:
+    // `draftDistance` scores an unchanged draft 0, and the exemplar records `quality = 'accepted'`.
+    await acceptDraft(String(form.get('id') ?? ''), touched ? { edits, drops } : null, user.userId);
+    await flash(`Accepted as ${user.email}`);
+  } catch (err) {
+    if (err instanceof UnwritablePath || err instanceof NotAChoice) await flash(err.message);
+    else throw err;
+  }
   revalidatePath('/review');
 }
 

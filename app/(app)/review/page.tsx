@@ -1,7 +1,10 @@
 import Link from 'next/link';
 
 import { pendingDrafts } from '@/lib/agents/review.ts';
+import { shapeFor } from '@/lib/agents/shapes.ts';
+import { label } from '@/lib/agents/paths.ts';
 import { Brief } from '@/components/Brief.tsx';
+import { DraftFields, readOnly } from '@/components/DraftFields.tsx';
 import { AppHeader, Blank, Card, Chip, Empty, Eyebrow } from '@/components/ui.tsx';
 
 import { accept, reject } from '../../_lib/actions/review.ts';
@@ -39,43 +42,6 @@ function sourceLine(s: unknown): string {
   return JSON.stringify(s);
 }
 
-/**
- * The fields, in the order the agent wrote them.
- *
- * jsonb stores keys sorted by length and then alphabetically, so a results draft rendered as
- * "moved, figures, headline" — the headline third, because eight characters is longer than five.
- * The order is captured when the draft is written; anything not in it follows, so a field added
- * later still appears.
- */
-function orderedFields(
-  content: Record<string, unknown>,
-  order: string[] | null,
-): [string, unknown][] {
-  if (!order) return Object.entries(content);
-  const named = order.filter((k) => k in content).map((k): [string, unknown] => [k, content[k]]);
-  const rest = Object.entries(content).filter(([k]) => !order.includes(k));
-  return [...named, ...rest];
-}
-
-function Value({ value }: { value: unknown }) {
-  if (value === null || value === undefined || value === '') {
-    return <Blank why="The agent returned nothing for this field" />;
-  }
-  if (Array.isArray(value)) {
-    return value.length === 0 ? (
-      <span className="muted">none</span>
-    ) : (
-      <ul className="draft-list">
-        {value.map((v, i) => (
-          <li key={i}>{typeof v === 'object' ? JSON.stringify(v) : String(v)}</li>
-        ))}
-      </ul>
-    );
-  }
-  if (typeof value === 'object') return <pre className="draft-json">{JSON.stringify(value, null, 2)}</pre>;
-  return <p className="draft-text">{String(value)}</p>;
-}
-
 export default async function ReviewPage() {
   await requireUser();
   const drafts = await pendingDrafts();
@@ -100,6 +66,8 @@ export default async function ReviewPage() {
             const verified = d.verification as
               | { agreed: boolean | null; checks?: { field: string; filed: number | null; model: number | null; agreed: boolean }[]; note?: string }
               | null;
+            const shape = shapeFor(d.agentKey, d.content);
+            const shown = readOnly(d.content, shape);
             return (
               <Card
                 key={d.id}
@@ -199,43 +167,44 @@ export default async function ReviewPage() {
                 <form id={`accept-${d.id}`} action={accept}>
                   <input type="hidden" name="id" value={d.id} />
                   {d.agentKey === 'news-brief' ? (
-                    <Brief content={d.content} />
+                    <Brief content={d.content} editing />
                   ) : (
-                    <dl className="draft-fields">
-                      {orderedFields(d.content, d.fieldOrder).map(([k, v]) => (
-                        <div key={k}>
-                          <dt>{k.replace(/_/g, ' ')}</dt>
-                          <dd>
-                            {typeof v === 'string' ? (
-                              <textarea
-                                className="field draft-edit"
-                                name={`f.${k}`}
-                                defaultValue={v}
-                                rows={Math.min(14, Math.max(2, Math.ceil(v.length / 72)))}
-                                aria-label={`${k.replace(/_/g, ' ')} — edit before accepting`}
-                              />
-                            ) : (
-                              <Value value={v} />
-                            )}
-                          </dd>
-                        </div>
-                      ))}
-                    </dl>
+                    <DraftFields content={d.content} field={shape} order={d.fieldOrder} />
                   )}
                 </form>
 
                 {/*
-                  Said out loud rather than left to be discovered. A draft whose fields are all
-                  arrays cannot be corrected here, so its edit distance will be 0 however wrong it
-                  is — and a 0 that means "uncorrectable" must not be read as a 0 that means
-                  "right". Agent 6 is the whole of this case today: a brief is `by_company`,
-                  `nothing_to_report` and `coming_up`, and none of them is a string.
+                  What the agent returned, whole, under the controls that took it apart.
+                  An all-controls rendering has no countable structure — a reviewer could no longer
+                  glance and see "two companies, fourteen answers" and notice one missing, which is
+                  the omission this gate exists to catch and the one thing a correction cannot fix.
+                  A closed <details> still submits its inputs; this one has none to submit.
                 */}
-                {!orderedFields(d.content, d.fieldOrder).some(([, v]) => typeof v === 'string') && (
+                <details className="draft-raw">
+                  <summary>What the agent returned</summary>
+                  <pre className="draft-json">{JSON.stringify(d.content, null, 2)}</pre>
+                </details>
+
+                {/*
+                  Said out loud rather than left to be discovered, and it now names what is
+                  actually read-only rather than claiming the whole draft is.
+
+                  The sentence this replaces tested for any top-level string and asserted in its
+                  comment that agent 6 was "the whole of this case". A brief has `period`, which is
+                  a string, so it never fired for agent 6 — it fired for agent 7, whose content is
+                  `{version, answers}`. The screen was warning about the wrong agent, and the one it
+                  was written for got no warning while being the only one wholly uncorrectable.
+                */}
+                {shown.paths.length > 0 && (
                   <p className="hint">
-                    Nothing here can be corrected in place — every field is a list or an object.
-                    Accepting records no edit distance for this agent, which is not the same as
-                    the draft being right. Reject it with a reason if it is wrong.
+                    Shown and not correctable here:{' '}
+                    {shown.paths.map((p) => label(p)).join(', ')}.{' '}
+                    {shown.figures &&
+                      'A figure is never retyped at this gate — the filed reading and the agent\u2019s are both kept, neither corrected. '}
+                    {shown.identities &&
+                      'An identity is not corrected but rejected: an agent that named the wrong thing did not make a wording mistake. '}
+                    Nothing here moves the edit distance, which is not the same as the draft being
+                    right.
                   </p>
                 )}
 

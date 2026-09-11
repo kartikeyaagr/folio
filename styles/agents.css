@@ -389,6 +389,78 @@ textarea.field.draft-edit {
   line-height: 1.55;
   color: var(--ink-2);
   padding: 8px 10px;
+  /* `textarea.field` in globals.css sets `min-height: 70px`, which silently defeated the `rows`
+     heuristic above — every control was 70px whatever it held. Survivable at three fields a draft;
+     at a brief's ninety positions it is a thousand pixels of grey boxes around a hundred words.
+     `field-sizing` grows the box to its content where it is supported, and `rows` is still the
+     first guess where it is not. Capped, so one long note cannot set the height of a table row. */
+  min-height: 0;
+  field-sizing: content;
+  max-height: 40vh;
+}
+/* A choice, not a sentence. `verdict` is four values and a textarea would let a typo through to a
+   CHECK constraint inside the acceptance transaction. */
+select.field.draft-pick {
+  height: 32px;
+  font-size: 13px;
+}
+/* Inside a table cell the control is the cell; the padding is the td's. */
+.draft-tbl td textarea.field.draft-edit {
+  min-width: 220px;
+}
+.draft-tbl td {
+  vertical-align: top;
+}
+/* Dropping an element is rarer than correcting one, so it is quieter — and it is a label rather
+   than a bare checkbox because a 13px box on its own is not a 44px touch target. */
+.draft-drop,
+.brief-drop {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 44px;
+  padding: 0 4px;
+  font-family: var(--font);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--muted);
+  cursor: pointer;
+}
+.draft-drop:hover,
+.brief-drop:hover {
+  color: var(--red);
+}
+.draft-drop input:focus-visible,
+.brief-drop input:focus-visible {
+  outline: 2px solid var(--teal);
+  outline-offset: 2px;
+}
+.draft-list li {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+.draft-list li > textarea {
+  flex: 1;
+}
+/* What the agent returned, whole, under the controls that took it apart. Closed by default: it is
+   there to be counted when a reviewer suspects something is missing, not read every time. */
+.draft-raw {
+  margin-top: 14px;
+}
+.draft-raw summary {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--muted);
+  cursor: pointer;
+}
+.draft-raw summary:hover {
+  color: var(--ink-2);
+}
+.draft-raw[open] summary {
+  margin-bottom: 8px;
 }
 .draft-list {
   display: grid;
