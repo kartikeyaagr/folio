@@ -4,6 +4,7 @@ import { readTxn } from '@/lib/db.ts';
 import { failedRuns } from '@/lib/agents/queue.ts';
 import { pendingDrafts } from '@/lib/agents/review.ts';
 import { coverage, fieldHotspots, weeklyDistance } from '@/lib/agents/learning.ts';
+import { pendingRules } from '@/lib/agents/rules.ts';
 import { listCompanies } from '@/lib/companies.ts';
 import { AppHeader, Blank, Card, Chip, Empty, Stat, StatRow, type Tone } from '@/components/ui.tsx';
 
@@ -56,9 +57,9 @@ export default async function AgentsPage() {
   // Kept rather than discarded: model, effort and spend are admin-only. Everything else on this
   // page is what an agent is and what it has done, which is research context anybody needs.
   const user = await requireUser();
-  const [agents, drafts, failed, names, learned, weeks, hotspots] = await Promise.all([
+  const [agents, drafts, failed, names, learned, weeks, hotspots, candidates] = await Promise.all([
     registry(), pendingDrafts(), failedRuns(), listCompanies(),
-    coverage(), weeklyDistance(), fieldHotspots(),
+    coverage(), weeklyDistance(), fieldHotspots(), pendingRules(),
   ]);
 
   // `sum()` skips NULLs and `?? 0` turns "unknown" into "nothing", which is how v2's Fleet page
@@ -247,7 +248,22 @@ export default async function AgentsPage() {
           )}
         </Card>
 
-        <Card title="What it keeps getting wrong" padded={false}>
+        {/*
+          The distiller reads this table. A field here that has been corrected three times is what
+          raises a candidate on /rules, so the way across lives on the card that produced it —
+          the same reasoning that puts /review's link on the "waiting for review" stat.
+        */}
+        <Card
+          title="What it keeps getting wrong"
+          padded={false}
+          action={
+            <Link href="/rules">
+              {candidates === 0
+                ? 'Rules →'
+                : `${candidates} rule${candidates === 1 ? '' : 's'} waiting on a decision →`}
+            </Link>
+          }
+        >
           {hotspots.length === 0 ? (
             <Empty>
               No field has been corrected yet. Either the drafts have been right, or nobody has

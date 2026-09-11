@@ -446,3 +446,49 @@ textarea.field.draft-edit {
 .card-body > .box-head:not(:first-child) {
   margin-top: 20px;
 }
+
+/* ------------------------------------------------------------------------------------------------
+   /rules — the candidates, and what asked for them
+   ------------------------------------------------------------------------------------------------ */
+
+/* The finding, which is arithmetic. Set apart from the rule box below it so the two are never
+   mistaken for each other: one is what was measured, the other is what somebody decided it means. */
+.rule-finding {
+  color: var(--ink-2);
+  line-height: 1.55;
+  padding: 10px 12px;
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+}
+.rule-write {
+  display: grid;
+  gap: 6px;
+  margin-top: 18px;
+}
+.rule-propose {
+  display: grid;
+  gap: 6px;
+  justify-items: start;
+}
+.rule-propose .field {
+  width: 100%;
+}
+.rule-propose .btn {
+  margin-top: 6px;
+}
+/* What changed, side by side. Colour carries it rather than a +/- gutter: the two columns are
+   already labelled, and a diff marker would imply a line-level diff this is not. A tall correction
+   scrolls inside its own cell so one four-paragraph note cannot set the height of the table. */
+.rule-was,
+.rule-now {
+  white-space: pre-wrap;
+  max-height: 160px;
+  overflow-y: auto;
+  line-height: 1.5;
+}
+.rule-was {
+  color: var(--red);
+}
+.rule-now {
+  color: var(--teal);
+}

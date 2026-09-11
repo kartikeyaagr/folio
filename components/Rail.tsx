@@ -131,7 +131,10 @@ const HUBS: {
     key: 'agents',
     label: 'Agents',
     href: '/agents',
-    prefixes: ['/agents', '/review'],
+    // Three pages, one hub: what the agents are, what they are waiting to have accepted, and what
+    // they have been told. A rule is not a seventh destination — it is the thing /review's
+    // corrections turn into.
+    prefixes: ['/agents', '/review', '/rules'],
     icon: (
       <svg
         width="20"
