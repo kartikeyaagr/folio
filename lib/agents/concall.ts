@@ -26,7 +26,7 @@ const READS = ['companies', 'documents', 'document_versions', 'fundamentals'];
  */
 export const MIN_TRANSCRIPT_CHARS = 4000;
 
-const SCHEMA = {
+export const SCHEMA = {
   type: 'object',
   required: ['summary', 'guidance_changes', 'commitments', 'unanswered', 'comparison_available'],
   properties: {

@@ -30,7 +30,7 @@ const READS = [
  */
 const NOT_IN_A_FILING = new Set([8, 10, 11]); // attrition, culture and reputation, walk the talk
 
-const SCHEMA = {
+export const SCHEMA = {
   type: 'object',
   required: ['answers'],
   properties: {

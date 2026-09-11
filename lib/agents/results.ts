@@ -19,7 +19,7 @@ export const KEY = 'results-figures';
 
 const READS = ['filings', 'fundamentals', 'attachments'];
 
-const SCHEMA = {
+export const SCHEMA = {
   type: 'object',
   required: ['headline', 'moved', 'one_offs', 'watch_items', 'figures'],
   properties: {

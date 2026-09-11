@@ -22,7 +22,7 @@ export const KEY = 'news-brief';
 
 const READS = ['companies', 'filings', 'news_items', 'news_matches', 'calendar_events', 'alerts'];
 
-const SCHEMA = {
+export const SCHEMA = {
   type: 'object',
   required: ['period', 'by_company', 'nothing_to_report', 'coming_up'],
   properties: {
