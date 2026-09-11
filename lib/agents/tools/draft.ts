@@ -101,13 +101,6 @@ export const spec: ToolSpec = {
           const cited = turn.cited();
           const sources = cited.map((chunkId) => ({ kind: 'chunk', ref: chunkId }));
 
-          // What this agent saw, for the exemplar acceptance will write. Agent 8's inputs are the
-          // question and how much it read to answer it — the thread's title is its opening message,
-          // which is the question as the desk actually put it.
-          const situation = `Desk question: "${turn.asked}" — answered from ${cited.length} passage${
-            cited.length === 1 ? '' : 's'
-          }`;
-
           const draftId = id();
           await serviceTxn('system:agents', async (c) => {
             await c.query(
@@ -118,7 +111,9 @@ export const spec: ToolSpec = {
               [
                 draftId, turn.runId, companyId,
                 JSON.stringify(content), JSON.stringify(sources),
-                turn.model, turn.threadId, Object.keys(content), situation,
+                // The same line the turn retrieved against, so what the corpus stores is what a
+                // future question will be matched on.
+                turn.model, turn.threadId, Object.keys(content), turn.situation,
               ],
             );
           });

@@ -1,11 +1,19 @@
 /**
  * Everything the fund holds, made retrievable.
  *
+ * **Two queues, one loaded model.** Sources waiting to be chunked, and exemplars waiting to have
+ * their situation embedded. `v4.md §10` asks for both here rather than in two jobs "because both
+ * are the same operation against the same loaded model, and loading a 130MB model twice on a
+ * schedule is the kind of waste that is invisible until it is not". `embed()` caches its session at
+ * module scope, so one process doing both work items loads the model once — being one process is
+ * the whole mechanism.
+ *
  * **An empty queue is not a failure.** This is the third documented exemption to the
  * zero-items-is-a-failure rule, alongside the bhavcopy on a non-trading day and the news gate's
- * empty queue. It runs every ten minutes and most runs find nothing, because indexing follows
- * people saving documents and jobs ingesting filings rather than a schedule of its own. A dead
- * indexer is caught by the lag figure on /admin, not by this exit code.
+ * empty queue, and it now covers both queues for the same reason. It runs every ten minutes and
+ * most runs find nothing, because indexing follows people saving documents, jobs ingesting filings
+ * and analysts accepting drafts rather than a schedule of its own. A dead indexer is caught by the
+ * lag figure on /admin, not by this exit code.
  *
  * The narrowing that keeps that exemption honest (see jobs/news-gate.ts's own header for the full
  * argument) applies here too: the exemption is for an EMPTY queue, and only that. A source that
@@ -20,6 +28,7 @@
  */
 import { closePool, readTxn, serviceTxn } from '../lib/db.ts';
 import { drain, type DrainResult } from '../lib/retrieval/index.ts';
+import { embedPending } from '../lib/agents/exemplars.ts';
 
 /** Sources still waiting to be claimed — queried only to print `--all`'s progress line. */
 async function remaining(): Promise<number> {
@@ -80,7 +89,23 @@ async function main(): Promise<void> {
 
   try {
     const r = all ? await drainAll() : await drain();
-    const detail = `${r.registered} registered, ${r.indexed} indexed, ${r.failed} failed`;
+
+    // The second queue, in the same process and therefore against the same loaded model. Run after
+    // the sources rather than before: a source batch is the larger job and the one a backfill is
+    // waiting on, and an exemplar accepted while it ran is caught by the next run either way.
+    //
+    // `--all` loops it too, for the same reason it loops sources: a backfill over a corpus that has
+    // been accumulating should finish, not stop at one batch.
+    let embedded = 0;
+    for (;;) {
+      const n = await embedPending();
+      embedded += n;
+      if (n === 0 || !all) break;
+    }
+
+    const detail =
+      `${r.registered} registered, ${r.indexed} indexed, ${r.failed} failed, ` +
+      `${embedded} exemplars embedded`;
     // Written before the possible throw below, so a claimed-and-failed run still records the real
     // tally rather than just the error that follows it — the catch block's COALESCE keeps this.
     await serviceTxn('system:index', async (c) => {

@@ -19,6 +19,7 @@
 import { readTxn } from '../db.ts';
 import { liveToolModel, type ToolModel } from '../agents/loop.ts';
 import { bindTools, type ToolCall } from '../agents/tools/index.ts';
+import { systemFor } from '../agents/prompt.ts';
 import type { AgentRow } from '../agents/runner.ts';
 import { recordAnswer, threadWithMessages, withinBudget, UnknownThread, type MessageRow, type Spend } from './threads.ts';
 
@@ -141,6 +142,14 @@ export async function takeTurn(
   const agent = await loadAgent(AGENT_KEY);
   const history = withinBudget(found.messages);
 
+  // What this agent saw, and the one line a future question is matched against. The question as the
+  // desk put it — the thread's title is its opening message.
+  //
+  // It used to also carry how many passages the turn read, which was wrong twice over: that number
+  // is not known until the turn has finished, so retrieval could never use it, and it is an outcome
+  // rather than an input, which is not what §4.3 asks a situation to describe.
+  const situation = `Desk question: "${found.thread.title}"`;
+
   // Collected as the loop runs, written with the message it belongs to. A call that happened and
   // was not recorded would leave an answer whose provenance cannot be checked.
   const calls: ToolCall[] = [];
@@ -157,7 +166,7 @@ export async function takeTurn(
       // The thread is already loaded here, so a tool that needs the question does not have to go
       // and read `chat_threads` for itself — which would also widen agent 8's data_scope to a
       // table it has no other business in.
-      asked: found.thread.title,
+      situation,
       // Read at call time, not captured: a draft proposed after four searches should cite four
       // searches' worth of passages, not the none that had been read when the tools were bound.
       cited: () => [...new Set(calls.flatMap((c) => c.chunkIds))],
@@ -168,7 +177,7 @@ export async function takeTurn(
   const answer = await ask({
     model: agent.model,
     ...(agent.effort ? { effort: agent.effort as 'low' | 'medium' | 'high' | 'xhigh' | 'max' } : {}),
-    system: agent.purpose,
+    system: await systemFor(agent, situation),
     task: transcript(history),
     schema: ANSWER_SCHEMA as unknown as Record<string, unknown>,
     tools,

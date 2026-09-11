@@ -13,6 +13,7 @@
  */
 
 import { assertInScope, raise, registerHandler, type HandlerResult, type RunContext } from './runner.ts';
+import { systemFor } from './prompt.ts';
 import { enqueue } from './queue.ts';
 import { serviceTxn, type Client } from '../db.ts';
 
@@ -167,10 +168,15 @@ registerHandler(KEY, async (ctx: RunContext): Promise<HandlerResult> => {
     ...items.map((i) => `${i.item}. [${i.section}] ${i.prompt}\n    ${i.guidance}`),
   ].join('\n');
 
+  // Before the model call: the same line retrieval matches against and the draft stores.
+  const situation =
+    `Forensic checklist v${version}, ${items.length} items, ` +
+    `against ${history.length} annual period${history.length === 1 ? '' : 's'} held`;
+
   const answer = await ctx.ask({
     model: ctx.agent.model,
     effort: (ctx.agent.effort ?? 'high') as 'high',
-    system: ctx.agent.purpose,
+    system: await systemFor(ctx.agent, situation),
     task,
     schema: SCHEMA as unknown as Record<string, unknown>,
   });
@@ -184,9 +190,7 @@ registerHandler(KEY, async (ctx: RunContext): Promise<HandlerResult> => {
       content: { version, answers },
       // How much history was available is the thing that varies: the checklist asks about five- and
       // ten-year series, and answering it against three years is a different job from ten.
-      situation:
-        `Forensic checklist v${version}, ${items.length} items, ` +
-        `against ${history.length} annual period${history.length === 1 ? '' : 's'} held`,
+      situation,
       sources: [
         { kind: 'forensics_template', ref: String(version) },
         ...history.map((h) => ({ kind: 'fundamentals', period_end: h.period_end })),

@@ -15,6 +15,7 @@
  */
 
 import { assertInScope, raise, registerHandler, type HandlerResult, type RunContext } from './runner.ts';
+import { systemFor } from './prompt.ts';
 import { type Client } from '../db.ts';
 
 export const KEY = 'news-brief';
@@ -132,10 +133,17 @@ registerHandler(KEY, async (ctx: RunContext): Promise<HandlerResult> => {
       'the mechanism attached to each news item is why it was admitted, and you may rely on it.',
   ].join('\n');
 
+  // Before the model call: the same line retrieval matches against and the draft stores.
+  const situation =
+    `${days}-day desk brief across ${material.length} followed names: ` +
+    `${material.reduce((n, m) => n + m.filings.length, 0)} filings, ` +
+    `${material.reduce((n, m) => n + m.news.length, 0)} news items, ` +
+    `${material.reduce((n, m) => n + m.alerts.length, 0)} alerts`;
+
   const answer = await ctx.ask({
     model: ctx.agent.model,
     effort: (ctx.agent.effort ?? 'xhigh') as 'xhigh',
-    system: ctx.agent.purpose,
+    system: await systemFor(ctx.agent, situation),
     task,
     schema: SCHEMA as unknown as Record<string, unknown>,
   });
@@ -146,11 +154,7 @@ registerHandler(KEY, async (ctx: RunContext): Promise<HandlerResult> => {
       content: answer.content,
       // A quiet week over three names and a heavy week over twelve are different jobs, and the
       // counts are what says which this was.
-      situation:
-        `${days}-day desk brief across ${material.length} followed names: ` +
-        `${material.reduce((n, m) => n + m.filings.length, 0)} filings, ` +
-        `${material.reduce((n, m) => n + m.news.length, 0)} news items, ` +
-        `${material.reduce((n, m) => n + m.alerts.length, 0)} alerts`,
+      situation,
       sources: material.map((m) => ({
         kind: 'company', symbol: m.symbol,
         filings: m.filings.length, news: m.news.length, events: m.events.length, alerts: m.alerts.length,

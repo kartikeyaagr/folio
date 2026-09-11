@@ -11,6 +11,7 @@
  */
 
 import { assertInScope, raise, registerHandler, type RunContext, type HandlerResult } from './runner.ts';
+import { systemFor } from './prompt.ts';
 import { serviceTxn, type Client } from '../db.ts';
 import { enqueue } from './queue.ts';
 
@@ -137,10 +138,19 @@ registerHandler(KEY, async (ctx: RunContext): Promise<HandlerResult> => {
     'Report figures in crore. Where a figure was not reported, say so rather than estimating it.',
   ].join('\n');
 
+  // Built before the model call, not after it: it is both what past work is matched against and
+  // what this run will be remembered by, and those have to be the same line or retrieval matches
+  // something the corpus does not store.
+  const situation =
+    `${row.period_kind} results, ${row.basis}, ` +
+    `${prior ? 'with a comparable prior period held' : 'no comparable prior period held'}, ` +
+    `${[row.revenue, row.profit_after_tax, row.total_expenses].filter((v) => v !== null).length}` +
+    ' of 3 headline figures reported';
+
   const answer = await ctx.ask({
     model: ctx.agent.model,
     effort: (ctx.agent.effort ?? 'high') as 'high',
-    system: ctx.agent.purpose,
+    system: await systemFor(ctx.agent, situation),
     task,
     schema: SCHEMA as unknown as Record<string, unknown>,
   });
@@ -167,11 +177,7 @@ registerHandler(KEY, async (ctx: RunContext): Promise<HandlerResult> => {
       // The inputs, not the company: §4.3 wants "Q2 concall for a specialty chemicals maker", not
       // a name. What varies between runs of this agent is the period shape, the basis, whether a
       // comparison exists, and which figures were actually filed.
-      situation:
-        `${row.period_kind} results, ${row.basis}, ` +
-        `${prior ? 'with a comparable prior period held' : 'no comparable prior period held'}, ` +
-        `${[row.revenue, row.profit_after_tax, row.total_expenses].filter((v) => v !== null).length}` +
-        ' of 3 headline figures reported',
+      situation,
       sources: [
         { kind: 'fundamentals', ref: row.id, period: `${row.period_start}..${row.period_end}` },
         ...(prior ? [{ kind: 'fundamentals', ref: prior.id, role: 'comparison' }] : []),

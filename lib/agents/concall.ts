@@ -12,6 +12,7 @@
  */
 
 import { assertInScope, raise, registerHandler, type HandlerResult, type RunContext } from './runner.ts';
+import { systemFor } from './prompt.ts';
 import { enqueue } from './queue.ts';
 import { serviceTxn, type Client } from '../db.ts';
 
@@ -171,10 +172,15 @@ registerHandler(KEY, async (ctx: RunContext): Promise<HandlerResult> => {
         'guidance_changes empty, and do not describe anything in this call as a change.',
   ].join('\n');
 
+  // Before the model call: the same line retrieval matches against and the draft stores.
+  const situation =
+    `Earnings call transcript, ${Math.round(call.text.length / 1000)}k characters, ` +
+    `${prior ? 'previous call held for comparison' : 'no previous call held'}`;
+
   const answer = await ctx.ask({
     model: ctx.agent.model,
     effort: (ctx.agent.effort ?? 'xhigh') as 'xhigh',
-    system: ctx.agent.purpose,
+    system: await systemFor(ctx.agent, situation),
     task,
     schema: SCHEMA as unknown as Record<string, unknown>,
   });
@@ -186,9 +192,7 @@ registerHandler(KEY, async (ctx: RunContext): Promise<HandlerResult> => {
       // Length matters here in a way it does not elsewhere: a 40,000-character transcript and a
       // 6,000-character one are different jobs, and whether a prior call exists decides whether
       // the delta — the product of this agent — can be computed at all.
-      situation:
-        `Earnings call transcript, ${Math.round(call.text.length / 1000)}k characters, ` +
-        `${prior ? 'previous call held for comparison' : 'no previous call held'}`,
+      situation,
       sources: [
         { kind: 'document', ref: call.id, role: 'transcript', at: call.writtenAt },
         ...(prior ? [{ kind: 'document', ref: prior.id, role: 'prior_call', at: prior.writtenAt }] : []),
