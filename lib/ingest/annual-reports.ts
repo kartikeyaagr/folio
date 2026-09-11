@@ -15,7 +15,14 @@
  * migration beside this file records the ask, not just the success.
  */
 
-import { NseSession } from './nse.ts';
+import { createHash } from 'node:crypto';
+import { mkdir, writeFile } from 'node:fs/promises';
+import { dirname } from 'node:path';
+
+import type { Client } from '../db.ts';
+import { unzip, UnreadableZip } from '../import/zip.ts';
+import { pathFor } from './attachments.ts';
+import { NseError, NseSession } from './nse.ts';
 
 export interface AnnualReport {
   symbol: string;
@@ -107,4 +114,133 @@ export async function fetchAnnualReports(
     );
   }
   return parseAnnualReports(symbol, rows);
+}
+
+/**
+ * Which entry in a multi-entry archive is the report.
+ *
+ * 3 of 12 readable PRAJIND zips hold a `FormA_*.pdf` beside the `AR_*.pdf` — a 2-page compliance
+ * cover that is a scan and extracts nothing. Picked by size, not name: the report is a whole
+ * annual report and the cover is a couple of scanned pages, an order of magnitude smaller in every
+ * case checked, and NSE's own naming is not consistent enough across companies to match by
+ * convention. `null` only for an empty map, which `unzip` never actually returns — a zip with a
+ * central directory but zero entries — but the type stays honest about it.
+ */
+export function pickReport(zip: Map<string, Buffer>): string | null {
+  let best: string | null = null;
+  let bestBytes = -1;
+  for (const [name, buf] of zip) {
+    if (buf.length > bestBytes) {
+      best = name;
+      bestBytes = buf.length;
+    }
+  }
+  return best;
+}
+
+/**
+ * Record the ask, whatever the outcome. `annual_report_attempts` (migration 0046) is the queue:
+ * its absence is "not yet asked", and any row — `stored` or `unavailable` — means it need not be
+ * asked again.
+ */
+async function recordAttempt(
+  c: Client,
+  companyId: string,
+  fromYr: string,
+  state: 'stored' | 'unavailable',
+  sha256: string | null,
+  reason: string | null,
+): Promise<void> {
+  await c.query(
+    `INSERT INTO annual_report_attempts (company_id, from_yr, state, sha256, reason)
+     VALUES ($1, $2, $3, $4, $5)`,
+    [companyId, fromYr, state, sha256, reason],
+  );
+}
+
+/**
+ * Fetch one annual report and store it as a content-addressed attachment.
+ *
+ * Stays an `attachment`, never a `documents` row: a 795,000-character annual report as a
+ * `document_version` body would be a JSONB blob nobody opens, and `documents` is the *authored*
+ * record. `extractPending` (`lib/ingest/extract.ts`) picks up `kind = 'annual_report'` through its
+ * existing `LEFT JOIN filings` and fills in `extracted_text` the same way it does for every other
+ * PDF — nothing here does that work twice.
+ *
+ * Short-circuits on an existing `annual_report_attempts` row before any network call: `stored` or
+ * `unavailable`, either way the ask has already been answered and NSE will not answer differently
+ * on a retry. Terminal outcomes — `UnreadableZip` (the FY2019-20 archive's missing central
+ * directory) and a genuine 404 — are caught and recorded as `unavailable` with the reason. A
+ * truncated body is deliberately *not* caught here: `NseSession.bytes` already throws a plain
+ * `Error` for it, which propagates so the caller's `attempt()` harness logs it as a failure worth
+ * retrying next run, rather than writing a terminal row for what might just be a bad connection.
+ */
+export async function storeAnnualReport(
+  c: Client,
+  companyId: string,
+  r: AnnualReport,
+  session?: NseSession,
+): Promise<'stored' | 'held' | 'unavailable'> {
+  const { rows: asked } = await c.query(
+    'SELECT 1 FROM annual_report_attempts WHERE company_id = $1 AND from_yr = $2',
+    [companyId, r.fromYr],
+  );
+  if (asked.length > 0) return 'held';
+
+  const s = session ?? (await NseSession.open());
+
+  let raw: Buffer;
+  try {
+    raw = await s.bytes(r.url);
+  } catch (err) {
+    // Only a definite 404 is treated as permanent — verified live against NSE. Any other status,
+    // or a network fault, is left to throw: it might be NSE having a bad minute, not a dead link.
+    if (err instanceof NseError && err.status === 404) {
+      await recordAttempt(c, companyId, r.fromYr, 'unavailable', null, err.message);
+      return 'unavailable';
+    }
+    throw err;
+  }
+
+  let pdf: Buffer;
+  let filename: string;
+  if (r.isZip) {
+    let zip: Map<string, Buffer>;
+    try {
+      zip = unzip(raw);
+    } catch (err) {
+      if (err instanceof UnreadableZip) {
+        await recordAttempt(c, companyId, r.fromYr, 'unavailable', null, `unreadable zip: ${err.message}`);
+        return 'unavailable';
+      }
+      throw err;
+    }
+    const name = pickReport(zip);
+    if (!name) {
+      await recordAttempt(c, companyId, r.fromYr, 'unavailable', null, 'zip held no entries');
+      return 'unavailable';
+    }
+    pdf = zip.get(name)!;
+    filename = name;
+  } else {
+    pdf = raw;
+    filename = decodeURIComponent(r.url.split('/').pop() || `${r.symbol}_${r.fromYr}_${r.toYr}.pdf`);
+  }
+
+  // Content-addressed, same store `lib/ingest/attachments.ts` uses for everything else: the sha
+  // decides identity, so a report re-served under a different URL is recognised as the same bytes.
+  const sha256 = createHash('sha256').update(pdf).digest('hex');
+  const file = pathFor(sha256);
+  await mkdir(dirname(file), { recursive: true });
+  await writeFile(file, pdf);
+
+  await c.query(
+    `INSERT INTO attachments (sha256, company_id, filename, media_type, bytes, kind, source_note, added_by)
+     VALUES ($1, $2, $3, 'application/pdf', $4, 'annual_report', $5, 'system:ingest')
+     ON CONFLICT (sha256) DO NOTHING`,
+    [sha256, companyId, filename, pdf.length, `NSE annual report FY${r.fromYr}-${r.toYr}`],
+  );
+
+  await recordAttempt(c, companyId, r.fromYr, 'stored', sha256, null);
+  return 'stored';
 }

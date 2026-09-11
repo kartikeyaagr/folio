@@ -100,7 +100,15 @@ export class NseSession {
     return pickRows<T>(await res.json());
   }
 
-  /** Raw bytes from anywhere on NSE, archives included. */
+  /**
+   * Raw bytes from anywhere on NSE, archives included.
+   *
+   * Both NSE and SEBI have been observed serving a body short of its own declared `content-length`
+   * under a full HTTP 200 — the connection closes early and nothing about the response says so. A
+   * truncated PDF still often extracts plausible text, so a shortfall throws here, once, rather
+   * than being handed to every caller as a complete document. A plain `Error`, not `NseError`: this
+   * is a transport fault worth retrying, not a fact about what NSE has at the URL.
+   */
   async bytes(url: string): Promise<Buffer> {
     const res = await fetch(url, {
       headers: this.headers(),
@@ -108,7 +116,14 @@ export class NseSession {
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });
     if (!res.ok) throw new NseError(`${res.status} fetching ${url}`, res.status);
-    return Buffer.from(await res.arrayBuffer());
+    const buf = Buffer.from(await res.arrayBuffer());
+    const declared = Number(res.headers.get('content-length'));
+    if (Number.isFinite(declared) && declared > 0 && buf.length < declared) {
+      throw new Error(
+        `truncated: ${url} declared content-length ${declared}, delivered ${buf.length} bytes`,
+      );
+    }
+    return buf;
   }
 
   async text(url: string): Promise<string> {

@@ -31,10 +31,12 @@ import {
   storeFilings,
   type Board,
 } from '../lib/ingest/filings.ts';
+import { fetchAnnualReports, storeAnnualReport } from '../lib/ingest/annual-reports.ts';
 import { fetchAttachments } from '../lib/ingest/attachments.ts';
 import { fetchAnnouncements, storeAnnouncements, type Board as CaBoard } from '../lib/ingest/corporate-actions.ts';
 import { extractPending } from '../lib/ingest/extract.ts';
 import { fetchResultsForSymbol, ingestFundamentals } from '../lib/ingest/fundamentals.ts';
+import { NseSession } from '../lib/ingest/nse.ts';
 import { ingestShareholding } from '../lib/ingest/shareholding.ts';
 
 const run = promisify(execFile);
@@ -86,6 +88,38 @@ async function backfill(t: Target, priceDays: number): Promise<Step[]> {
       `${got.fetched} fetched, ${got.skipped} already held, ${got.failed} failed; ` +
       `${read.extracted} read, ${read.documents} transcripts, ${read.scanned} scans`
     );
+  });
+
+  // A report arrives once a year per name — on a three-name book, one every seventeen weeks. That
+  // is the hypothetical a weekly scheduled job would be built for, which the ground rules forbid;
+  // this step is the whole reason a name's history is worth fetching once, here, rather than on a
+  // timer. One session shared across the symbol's whole filed history (16 years for PRAJIND) and
+  // every report in it, rather than a fresh cookie-priming round trip per year.
+  await attempt('annual reports', async () => {
+    if (!t.platform) throw new Error('no securities row; refresh the master first');
+    const board = t.platform === 'nse_emerge' ? 'sme' : 'equities';
+    const session = await NseSession.open();
+    const reports = await fetchAnnualReports(t.symbol, board, session);
+
+    let stored = 0;
+    let held = 0;
+    let unavailable = 0;
+    let failed = 0;
+    for (const r of reports) {
+      try {
+        const state = await serviceTxn('system:ingest', (c) => storeAnnualReport(c, t.id, r, session));
+        if (state === 'stored') stored++;
+        else if (state === 'held') held++;
+        else unavailable++;
+      } catch (err) {
+        // One bad year — a truncated download, say — should not cost the other fifteen. Recorded
+        // and counted rather than aborting the loop; it is retried on the next run since nothing
+        // was written to annual_report_attempts for it.
+        failed++;
+        console.error(`${t.symbol} FY${r.fromYr}: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+    return `${reports.length} offered, ${stored} stored, ${held} already held, ${unavailable} unavailable, ${failed} failed`;
   });
 
   // Asked by symbol, which is the difference between one quarter and twenty years of them. The
