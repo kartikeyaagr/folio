@@ -5,14 +5,20 @@ ask agents to do the reading.
 
 Long-only Indian small/mid-cap, ~40 names, end-of-day only, three users, one VM in Mumbai.
 
-## This is v3
+## This is v3, extended by v4
 
 v2 lives at `../trisula` and is not being extended. It is 62,000 lines across 85 tables, two
 languages and eleven agents, and it was never deployed. Almost every mechanism in it is argued for
 well; it answered a question (provability for a regulator) that turned out not to be the question.
 
-v3 keeps the UI and the design system, ports the code that already works, and drops the rest.
-The design, capabilities and phase plan live in `docs/superpowers/specs/` — private, gitignored.
+v3 keeps the UI and the design system, ports the code that already works, and drops the rest — and
+it is what runs today. **v4 adds the layer v3 deliberately cut**: a content store over everything
+the fund holds, retrieval across it, chat, and the learning loop. It extends v3 rather than
+replacing it.
+
+The design, capabilities and phase plans live in `docs/specs/` and `docs/plans/` — private,
+gitignored. Start with `docs/specs/v4.md`: §2 describes the built system, the rest describes what is
+being added.
 
 ## Ground rules
 
