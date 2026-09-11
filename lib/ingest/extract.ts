@@ -13,7 +13,7 @@ import { readFile } from 'node:fs/promises';
 
 import { extractText, getDocumentProxy } from 'unpdf';
 
-import { serviceTxn } from '../db.ts';
+import { serviceTxn, type Client } from '../db.ts';
 import { pathFor } from './attachments.ts';
 
 /**
@@ -54,11 +54,76 @@ export interface ExtractResult {
   failed: number;
 }
 
-interface Row {
+export interface Row {
   sha256: string;
   company_id: string | null;
   filename: string;
   kind: string;
+  // The date of the CALL, not the date it happens to be extracted — see promoteTranscript below.
+  // Null for an attachment with no linking filing (an imported PDF, or one dragged into the import
+  // dialog), which is the one case with no true date to carry.
+  announced_at: string | null;
+}
+
+/**
+ * A transcript becomes a document, stamped with the date of the CALL.
+ *
+ * The version insert used to take no `written_at`, so it fell through to the column's `now()`
+ * default — the date the job happened to run, not the date of the call. Every transcript in the
+ * corpus carried this: 18 rows, 1 distinct date. `row.announced_at` — the linking filing's date —
+ * is the fix: checked against the filename-embedded date on every row of the live corpus, all
+ * matched exactly (`PRAJIND_21102022153139_...` to `2022-10-21`, and so on).
+ *
+ * `COALESCE(..., now())` rather than requiring a filing: an imported PDF or one dragged into the
+ * import dialog has no filings row and so no true date to carry, and falling back to "when we
+ * received it" is an honest, defensible answer. Silently writing the wrong date — which is what
+ * the bug this replaces did — is not.
+ */
+export async function promoteTranscript(c: Client, row: Row, text: string): Promise<boolean> {
+  const id = randomBytes(16).toString('hex');
+  await c.query(
+    `INSERT INTO documents (id, company_id, title, kind, created_by, from_attachment)
+     VALUES ($1, $2, $3, 'transcript', 'system:ingest', $4)`,
+    [id, row.company_id, row.filename, row.sha256],
+  );
+  await c.query(
+    `INSERT INTO document_versions (document_id, body, written_by, written_at)
+     VALUES ($1, $2, 'system:ingest', COALESCE($3::timestamptz, now()))`,
+    [id, JSON.stringify({ text }), row.announced_at],
+  );
+  return true;
+}
+
+/**
+ * What has no text yet, and the date each will carry if it turns out to be a transcript.
+ *
+ * The linking filing, not just the attachment: an attachment carries only when it was fetched,
+ * never what it is ABOUT. `filings.attachment_sha256` is not unique — the same content-addressed
+ * PDF can back more than one announcement, the exact fan-out register.ts's ATTACHMENTS_SELECT
+ * already had to handle — so the inner query picks one deterministically (most recently announced)
+ * before the outer query re-applies the caller's own added_at ordering and limit. LEFT JOIN is
+ * load-bearing: an imported PDF or an annual report from /api/annual-reports has no filings row at
+ * all, and it must still be extracted rather than silently skipped.
+ *
+ * Exported so the date resolution can be tested without a real PDF on disk — see extract.test.ts.
+ */
+export async function pendingAttachments(c: Client, limit: number): Promise<Row[]> {
+  const { rows } = await c.query<Row>(
+    `SELECT sha256, company_id, filename, kind, announced_at
+       FROM (
+         SELECT DISTINCT ON (a.sha256)
+                a.sha256, a.company_id, a.filename, a.kind, a.added_at, f.announced_at
+           FROM attachments a
+           LEFT JOIN filings f ON f.attachment_sha256 = a.sha256
+          WHERE a.extracted_text IS NULL
+            AND a.media_type LIKE '%pdf%'
+          ORDER BY a.sha256, f.announced_at DESC NULLS LAST
+       ) x
+      ORDER BY added_at DESC
+      LIMIT $1`,
+    [limit],
+  );
+  return rows;
 }
 
 /**
@@ -68,18 +133,7 @@ interface Row {
  * cannot lose one to a window.
  */
 export async function extractPending(limit = 100): Promise<ExtractResult> {
-  const pending = await serviceTxn('system:ingest', async (c) => {
-    const { rows } = await c.query<Row>(
-      `SELECT sha256, company_id, filename, kind
-         FROM attachments
-        WHERE extracted_text IS NULL
-          AND media_type LIKE '%pdf%'
-        ORDER BY added_at DESC
-        LIMIT $1`,
-      [limit],
-    );
-    return rows;
-  });
+  const pending = await serviceTxn('system:ingest', (c) => pendingAttachments(c, limit));
 
   let extracted = 0;
   let documents = 0;
@@ -118,18 +172,7 @@ export async function extractPending(limit = 100): Promise<ExtractResult> {
       ]);
       if (seen.length > 0) return false;
 
-      const id = randomBytes(16).toString('hex');
-      await c.query(
-        `INSERT INTO documents (id, company_id, title, kind, created_by, from_attachment)
-         VALUES ($1, $2, $3, 'transcript', 'system:ingest', $4)`,
-        [id, row.company_id, row.filename, row.sha256],
-      );
-      await c.query(
-        `INSERT INTO document_versions (document_id, body, written_by)
-         VALUES ($1, $2, 'system:ingest')`,
-        [id, JSON.stringify({ text })],
-      );
-      return true;
+      return promoteTranscript(c, row, text);
     });
 
     extracted++;
