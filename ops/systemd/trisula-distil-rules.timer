@@ -1,0 +1,18 @@
+[Unit]
+Description=Distil recurring corrections into candidate rules
+
+[Timer]
+# Once a day, after the desk has closed. Corrections arrive at the speed of three people reviewing
+# drafts, so a candidate raised an hour sooner helps nobody — and a candidate is a question put to
+# a person, which is worth batching into one a day rather than trickling.
+#
+# The unit ships with the job on purpose. `v4.md`'s opening audit found `backfill-company` had a
+# queue, a correct drainer and no timer at all, so "the toast still says a thing a human must do,
+# which is exactly what the migration set out to remove". A learning loop with no schedule is that
+# failure with a longer fuse.
+OnCalendar=*-*-* 19:30
+Persistent=true
+Unit=trisula-job@distil-rules.service
+
+[Install]
+WantedBy=timers.target

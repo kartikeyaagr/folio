@@ -267,6 +267,9 @@ sudo systemctl enable --now \
   trisula-news-poll.timer \
   trisula-news-gate.timer \
   trisula-agents.timer \
+  trisula-index-content.timer \
+  trisula-backfill-company.timer \
+  trisula-distil-rules.timer \
   trisula-alerts.timer \
   trisula-backup.timer \
   trisula-backup-verify.timer \
@@ -274,6 +277,13 @@ sudo systemctl enable --now \
 
 systemctl list-timers 'trisula-*'
 ```
+
+**Three of those were unit files nobody enabled**, found on 11-Sep-2026 while adding the third.
+`index-content` shipped with R1 and `backfill-company` with `676b375` — the commit that *fixed*
+`v4.md`'s opening audit finding, which was a queue with a correct drainer and no timer. The timer
+was written and this list was not updated, so the queue still drained only when somebody typed the
+command. Count this list against `ls ops/systemd/*.timer` before believing it; a unit file is not a
+schedule.
 
 Every unit carries `TZ=Asia/Kolkata`. Every time in this system is IST and every date it computes
 is an Indian trading date; inheriting the box's timezone is how a reporting period silently moves
