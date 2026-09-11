@@ -5,22 +5,37 @@ long-only Indian small/mid-cap book. Internal tool, behind a private network, no
 guest access. The people using it open it before the market opens and after it closes; the work is
 reading and judgement, not reacting.
 
-**This is v3, a rebuild.** The previous system lives at `../trisula` and is being replaced. Read
-nothing from it as evidence about this one — several of its subsystems were deliberately not
-carried forward. Its `docs/` holds the design documents this tree was built from; copies are in
-`docs/specs/` here.
+**This tree is v3, extended by v4.** v3 is what is built and running; **v4 is the retrieval, chat
+and learning layer being added on top of it**, and it does not replace v3 — `v4.md` §2 describes the
+v3 system as its own foundation. The system before both lives at `../trisula` and is not being
+extended. Read nothing from it as evidence about this one: several of its subsystems were
+deliberately not carried forward.
 
 ## The design documents
 
-`docs/specs/` (gitignored, private):
+`docs/specs/` and `docs/plans/` (gitignored, private):
 
 | File | What it settles |
 |---|---|
-| `capabilities.md` | The *what*: capability list A1–A8, B, C1–C8, D1–D6, E, and what was explicitly cut |
-| `design.md` | The *how*: schema, the seven agents, error handling, build order P0–P7 |
-| `design-system.md` | The UI's standing rules — read before adding any screen |
+| `v4.md` | **Current.** The whole system: what v3 built (§2) and what v4 adds — retrieval, chat, the learning loop, agent 8 |
+| `capabilities.md` | v3's *what*: capability list A1–A8, B, C1–C8, D1–D6, E, and what was explicitly cut |
+| `design.md` | v3's *how*: schema, the seven agents, error handling, build order P0–P7 |
 | `forensic-checklist.md` | The fund's own 14-item checklist, worked by agent 7 |
-| `v2-system-map.md` | What the old system did, for reference only |
+| `agent-specs.md` | Purposes, schemas, verifiers and sweep predicates for every agent, extracted before `lib/agents/` is rebuilt |
+| `v2-system-map.md` | What the system before v3 did, for reference only |
+| `plans/2026-09-10-v4-retrieval.md` | R0–R2: the content store, the embedder, hybrid search |
+| `plans/2026-09-11-v4-chat.md` | R3: `/chat`, the tool loop, agent 8 |
+| `plans/2026-09-11-v4-write-paths.md` | R4: `run_agent` and `draft_document`, both landing in the gate |
+| `plans/2026-09-11-v4-learning-measurable.md` | R5a: edit-before-accept, edit distance, exemplar capture |
+| `plans/2026-09-11-v4-learning-retrieval.md` | R5b: the embed queue, retrieval into prompts — **carries the 11-Dec-2026 review condition** |
+
+**The UI's standing rules are `.interface-design/system.md`** — tracked in git, 133 lines, and the
+only copy. A stale 105-line duplicate lived at `docs/specs/design-system.md` and was deleted
+11-Sep-2026; this table pointed at it, so every session that consulted a design document read the
+one missing the v3 amendments.
+
+**Open engineering items live in `tasks/open-items.md`**, consolidated 11-Sep-2026 from four
+superseded audit documents.
 
 **A gap against something the specs deliberately cut is not a gap.** Check before "fixing" it.
 D2 cut `/returns`, `/attribution`, `/thesis`, `/memo` and `/pipeline`. C7 declines clustering.
