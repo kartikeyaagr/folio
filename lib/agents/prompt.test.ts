@@ -15,7 +15,8 @@ import { execFileSync } from 'node:child_process';
 import { migrate } from '../../db/migrate.ts';
 import { closePool, serviceTxn } from '../db.ts';
 import { embedPending, retrieveExemplars, MAX_EXEMPLARS } from './exemplars.ts';
-import { EXEMPLAR_PREAMBLE, exemplarCost, systemFor } from './prompt.ts';
+import { EXEMPLAR_PREAMBLE, exemplarCost, RULE_PREAMBLE, ruleCost, systemFor } from './prompt.ts';
+import { approveRule, writeRule, retireRule } from './rules.ts';
 import type { AgentRow } from './runner.ts';
 
 const DB = `trisula_prompt_${process.pid}`;
@@ -47,6 +48,9 @@ after(async () => {
 
 beforeEach(async () => {
   await serviceTxn('system:agents', async (c) => {
+    // rule_observations references both prompt_rules and ai_drafts, with no cascade on either.
+    await c.query('DELETE FROM rule_observations');
+    await c.query('DELETE FROM prompt_rules');
     await c.query('DELETE FROM exemplars');
     await c.query('DELETE FROM ai_drafts');
     await c.query('DELETE FROM agent_runs');
@@ -113,9 +117,10 @@ test('retrieval is scoped to the agent, and capped at three', async () => {
 
 // ---- the prompt ---------------------------------------------------------------------------------
 
-test('an agent that does not learn gets its purpose, byte for byte', async () => {
+test('an agent that does not learn, and has no rules, gets its purpose byte for byte', async () => {
   // §7 gates retrieval on the flag, not capture — so a corpus can exist for an agent that reads
   // none of it, and turning the flag on later starts from that corpus rather than from zero.
+  // "and has no rules" is R6's narrowing: a rule is not retrieval and is not gated on the flag.
   await seed('Earnings call transcript, 41k characters');
   await embedPending();
   assert.equal(await systemFor(agent({ learning: false }), 'an earnings call'), PURPOSE);
@@ -131,7 +136,7 @@ test('the blocks are in §7’s order: purpose, then the examples', async () => 
   await embedPending();
   const prompt = await systemFor(agent(), 'Earnings call transcript, 38k characters');
 
-  assert.ok(prompt.startsWith(PURPOSE), 'purpose first — R6 inserts approved rules below it');
+  assert.ok(prompt.startsWith(PURPOSE), 'purpose first — approved rules sit below it');
   assert.ok(prompt.includes(EXEMPLAR_PREAMBLE));
   assert.ok(prompt.indexOf(PURPOSE) < prompt.indexOf(EXEMPLAR_PREAMBLE), 'ordered by authority');
   assert.match(prompt, /Guidance held at eighteen percent/, 'and the signed-off output is shown');
@@ -146,6 +151,54 @@ test('an example corrected by an analyst says so, because it is different eviden
   });
   const prompt = await systemFor(agent(), 'an earnings call');
   assert.match(prompt, /corrected by an analyst before acceptance/);
+});
+
+// ---- the rules ----------------------------------------------------------------------------------
+
+/** A rule in force for `concall-insights`, through the gate rather than around it. */
+async function inForce(text: string): Promise<string> {
+  const id = await writeRule('concall-insights', text, ME);
+  await approveRule(id, text, ME);
+  return id;
+}
+
+test('an approved rule sits below the purpose and above the examples', async () => {
+  await seed('Earnings call transcript, 41k characters, previous call held for comparison');
+  await embedPending();
+  await inForce('Name the quarter the guidance covers.');
+
+  const prompt = await systemFor(agent(), 'Earnings call transcript, 38k characters');
+
+  assert.ok(prompt.startsWith(PURPOSE));
+  assert.ok(prompt.indexOf(PURPOSE) < prompt.indexOf(RULE_PREAMBLE), 'ordered by authority');
+  assert.ok(prompt.indexOf(RULE_PREAMBLE) < prompt.indexOf(EXEMPLAR_PREAMBLE), 'a rule outranks an example');
+  assert.match(prompt, /1\. Name the quarter the guidance covers\./, 'numbered, so "the third one" means something');
+});
+
+test('a candidate and a withdrawn rule are both absent, and for different reasons', async () => {
+  // A candidate has nobody's name against it; a retired one had somebody's and does not any more.
+  // Neither is in force, and a prompt that could not tell them apart would be a prompt that could
+  // not tell "not yet decided" from "decided against".
+  await writeRule('concall-insights', 'Never state a figure the transcript does not carry.', ME);
+  const retired = await inForce('Always open with the headline number.');
+  await retireRule(retired, 'It made every summary read the same.', ME);
+
+  const prompt = await systemFor(agent(), 'an earnings call');
+  assert.equal(prompt, PURPOSE, 'nothing in force, nothing retrieved, so nothing but the purpose');
+});
+
+test('an agent that does not learn still does what it is told', async () => {
+  // The one place this departs from a literal §7. The flag exists because retrieval is a guess —
+  // the nearest three situations, with no relevance floor under them. An approved rule is not a
+  // guess, and gating it here would make §7 part 4 useless for agent 1, whose flag is off because
+  // a deterministic verifier is a better teacher than an example.
+  await seed('Earnings call transcript, 41k characters');
+  await embedPending();
+  await inForce('Say which figures you could not verify against the filing.');
+
+  const prompt = await systemFor(agent({ learning: false }), 'an earnings call');
+  assert.match(prompt, /Say which figures you could not verify/);
+  assert.ok(!prompt.includes(EXEMPLAR_PREAMBLE), 'and still retrieves nothing');
 });
 
 // ---- what it costs ------------------------------------------------------------------------------
@@ -169,4 +222,26 @@ test('the exemplar block costs what it costs, and the number is asserted rather 
   // starts embedding whole drafts into every prompt, not a claim about the exact size.
   assert.ok(cost < 4000, `one example should not dominate a prompt, got ${cost} characters`);
   assert.equal(await exemplarCost(agent({ learning: false }), situation), 0, 'and nothing when off');
+});
+
+test('the rules block is priced separately, because it is bought differently', async () => {
+  // Examples are retrieved on every run and grow with the corpus; rules are approved one at a time
+  // by a person. Two costs, measured through the same assembler that builds the prompt, so neither
+  // can be measured by a code path the run does not take.
+  await seed('Earnings call transcript, 41k characters, previous call held for comparison');
+  await embedPending();
+  const a = agent();
+  const situation = 'Earnings call transcript, 38k characters';
+
+  assert.equal(await ruleCost(a, situation), 0, 'no rule in force costs nothing');
+  await inForce('Name the quarter the guidance covers.');
+
+  const rules = await ruleCost(a, situation);
+  assert.ok(rules > RULE_PREAMBLE.length, 'the preamble plus the rule itself');
+  assert.ok(rules < 400, `one rule should not dominate a prompt, got ${rules} characters`);
+
+  // The two are independent: pricing the examples must not quietly include the rules above them.
+  const examples = await exemplarCost(a, situation);
+  const whole = (await systemFor(a, situation)).length;
+  assert.equal(whole, PURPOSE.length + rules + examples, 'the parts account for the whole');
 });
