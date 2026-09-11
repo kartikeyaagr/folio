@@ -221,6 +221,10 @@ export async function recentRuns(limit = 40): Promise<Run[]> {
   });
 }
 
+// A retrieval-health question, not an administrative one, so the query itself lives in
+// lib/retrieval/health.ts — re-exported here because the ops tab renders it beside these runs.
+export { indexingLag } from './retrieval/health.ts';
+
 // ------------------------------------------------------------------------------------------------
 // Alert rules and news sources
 // ------------------------------------------------------------------------------------------------

@@ -1,4 +1,5 @@
 import {
+  indexingLag,
   listAgents,
   listAlertRules,
   listNewsSources,
@@ -7,7 +8,7 @@ import {
 } from '@/lib/admin.ts';
 import { listRequests } from '@/lib/access-requests.ts';
 import { failedRuns } from '@/lib/agents/runner.ts';
-import { AppHeader, Card, Chip, Empty, Tabs, type Tone } from '@/components/ui.tsx';
+import { AppHeader, Blank, Card, Chip, Empty, Stat, StatRow, Tabs, type Tone } from '@/components/ui.tsx';
 
 import {
   decideRequestAction,
@@ -55,7 +56,7 @@ export default async function AdminPage({
   const admin = await requireAdmin();
   const tab = (await searchParams).tab ?? 'access';
 
-  const [requests, users, agents, runs, failed, rules, sources] = await Promise.all([
+  const [requests, users, agents, runs, failed, rules, sources, lag] = await Promise.all([
     listRequests(),
     listUsers(),
     listAgents(),
@@ -63,6 +64,7 @@ export default async function AdminPage({
     failedRuns(20),
     listAlertRules(),
     listNewsSources(),
+    indexingLag(),
   ]);
 
   const pending = requests.filter((r) => r.status === 'pending');
@@ -300,6 +302,29 @@ export default async function AdminPage({
 
         {tab === 'ops' && (
           <>
+            {/* A stopped indexer and a caught-up one look identical everywhere else in this app —
+                retrieval just answers worse. This is the one place that tells them apart, so
+                nothing pending renders <Blank>, never a bare 0: elsewhere in this system a 0 is a
+                measured fact, and this is the one number where that reading would be exactly
+                backwards. */}
+            <StatRow>
+              <Stat label="Chunks indexed" value={String(lag.chunks)} />
+              <Stat
+                label="Pending"
+                value={lag.pending > 0 ? String(lag.pending) : <Blank why="Nothing waiting to be indexed" />}
+                tone={lag.pending > 0 ? 'warn' : undefined}
+              />
+              <Stat
+                label="Oldest pending"
+                value={lag.oldestPendingAt ? when(new Date(lag.oldestPendingAt)) : <Blank why="Nothing waiting to be indexed" />}
+              />
+              <Stat
+                label="Failed"
+                value={String(lag.failed)}
+                tone={lag.failed > 0 ? 'bad' : undefined}
+              />
+            </StatRow>
+
             <Card title="Ingestion runs" padded={false}>
               {/* Nothing in the application read this table before. The audit's finding was that a
                   failed job reached no human by any path: report-failure.ts wrote a row and nothing
