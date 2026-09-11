@@ -12,7 +12,8 @@
  * `unanswerable` is a first-class verdict and the structural check enforces that it is used.
  */
 
-import { assertInScope, enqueue, raise, registerHandler, type HandlerResult, type RunContext } from './runner.ts';
+import { assertInScope, raise, registerHandler, type HandlerResult, type RunContext } from './runner.ts';
+import { enqueue } from './queue.ts';
 import { serviceTxn, type Client } from '../db.ts';
 
 export const KEY = 'forensics-review';
@@ -121,25 +122,30 @@ export function verifyStructure(
 registerHandler(KEY, async (ctx: RunContext): Promise<HandlerResult> => {
   assertInScope(ctx.agent, READS);
 
-  const { rows: co } = await ctx.c.query<{ symbol: string; name: string }>(
-    'SELECT symbol, name FROM companies WHERE id = $1',
-    [ctx.companyId],
-  );
-  const company = co[0];
-  if (!company) throw new Error(`no company ${ctx.companyId}`);
+  // One read transaction for the whole gather: the answers cite the checklist version they were
+  // answered under, so the version and the history it was applied to must be the same snapshot.
+  const { company, version, items, history } = await ctx.reads(async (c) => {
+    const { rows: co } = await c.query<{ symbol: string; name: string }>(
+      'SELECT symbol, name FROM companies WHERE id = $1',
+      [ctx.companyId],
+    );
+    const company = co[0];
+    if (!company) throw new Error(`no company ${ctx.companyId}`);
 
-  const { version, items } = await activeChecklist(ctx.c);
+    const { version, items } = await activeChecklist(c);
 
-  // Ten years of history, because the checklist asks for it explicitly.
-  const { rows: history } = await ctx.c.query<{
-    period_end: string; revenue: string | null; profit_after_tax: string | null; facts: Record<string, string>;
-  }>(
-    `SELECT period_end, revenue::text, profit_after_tax::text, facts
-       FROM fundamentals
-      WHERE company_id = $1 AND superseded_by IS NULL AND (period_end - period_start) > 300
-      ORDER BY period_end DESC LIMIT 10`,
-    [ctx.companyId],
-  );
+    // Ten years of history, because the checklist asks for it explicitly.
+    const { rows: history } = await c.query<{
+      period_end: string; revenue: string | null; profit_after_tax: string | null; facts: Record<string, string>;
+    }>(
+      `SELECT period_end, revenue::text, profit_after_tax::text, facts
+         FROM fundamentals
+        WHERE company_id = $1 AND superseded_by IS NULL AND (period_end - period_start) > 300
+        ORDER BY period_end DESC LIMIT 10`,
+      [ctx.companyId],
+    );
+    return { company, version, items, history };
+  });
 
   const task = [
     `${company.name} (${company.symbol}) — forensic review, checklist version ${version}.`,

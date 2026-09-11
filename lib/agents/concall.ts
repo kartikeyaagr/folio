@@ -11,7 +11,8 @@
  * another way documents appear rather than a precondition for the agent existing.
  */
 
-import { assertInScope, enqueue, raise, registerHandler, type HandlerResult, type RunContext } from './runner.ts';
+import { assertInScope, raise, registerHandler, type HandlerResult, type RunContext } from './runner.ts';
+import { enqueue } from './queue.ts';
 import { serviceTxn, type Client } from '../db.ts';
 
 export const KEY = 'concall-insights';
@@ -146,12 +147,17 @@ export async function sweep(limit = 20): Promise<number> {
 registerHandler(KEY, async (ctx: RunContext): Promise<HandlerResult> => {
   assertInScope(ctx.agent, READS);
 
-  const call = ctx.subjectRef ? await load(ctx.c, ctx.subjectRef) : null;
-  if (!call) throw new Error(`no transcript document ${ctx.subjectRef}`);
-  if (call.text.length < MIN_TRANSCRIPT_CHARS) {
-    throw new Error(`transcript ${call.id} is ${call.text.length} chars, below the floor`);
-  }
-  const prior = await priorCall(ctx.c, call);
+  // One read transaction for both calls: the delta is the product, so the two must come from the
+  // same snapshot. The length check stays ahead of `priorCall` so a transcript about to be refused
+  // does not pay for the lookup.
+  const { call, prior } = await ctx.reads(async (c) => {
+    const call = ctx.subjectRef ? await load(c, ctx.subjectRef) : null;
+    if (!call) throw new Error(`no transcript document ${ctx.subjectRef}`);
+    if (call.text.length < MIN_TRANSCRIPT_CHARS) {
+      throw new Error(`transcript ${call.id} is ${call.text.length} chars, below the floor`);
+    }
+    return { call, prior: await priorCall(c, call) };
+  });
 
   const task = [
     `${call.name} (${call.symbol}) — ${call.title}, recorded ${call.writtenAt}.`,

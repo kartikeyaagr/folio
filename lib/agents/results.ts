@@ -12,7 +12,7 @@
 
 import { assertInScope, raise, registerHandler, type RunContext, type HandlerResult } from './runner.ts';
 import { serviceTxn, type Client } from '../db.ts';
-import { enqueue } from './runner.ts';
+import { enqueue } from './queue.ts';
 
 export const KEY = 'results-figures';
 
@@ -112,9 +112,13 @@ const cr = (v: string | null): string => (v === null ? 'not reported' : `${(Numb
 registerHandler(KEY, async (ctx: RunContext): Promise<HandlerResult> => {
   assertInScope(ctx.agent, READS);
 
-  const row = ctx.subjectRef ? await load(ctx.c, ctx.subjectRef) : null;
-  if (!row) throw new Error(`no fundamentals row ${ctx.subjectRef}`);
-  const prior = await priorPeriod(ctx.c, row);
+  // One read transaction for the whole gather, so both periods are read from the same snapshot —
+  // a re-filing landing between the two queries would otherwise be compared against itself.
+  const { row, prior } = await ctx.reads(async (c) => {
+    const row = ctx.subjectRef ? await load(c, ctx.subjectRef) : null;
+    if (!row) throw new Error(`no fundamentals row ${ctx.subjectRef}`);
+    return { row, prior: await priorPeriod(c, row) };
+  });
 
   const task = [
     `${row.name} (${row.symbol}) — ${row.period_kind} ${row.period_start} to ${row.period_end}, ${row.basis}.`,

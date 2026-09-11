@@ -8,7 +8,7 @@
  *   pnpm exec tsx jobs/requeue.ts <run-id>   put it back
  */
 import { closePool } from '../lib/db.ts';
-import { failedRuns, requeue } from '../lib/agents/runner.ts';
+import { failedRuns, requeue } from '../lib/agents/queue.ts';
 
 async function main(): Promise<void> {
   const runId = process.argv[2];

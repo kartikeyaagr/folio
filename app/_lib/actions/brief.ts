@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 
-import { enqueue } from '@/lib/agents/runner.ts';
+import { enqueue } from '@/lib/agents/queue.ts';
 import { briefInFlight, pendingBrief } from '@/lib/briefs.ts';
 
 import { flash } from '../flash.ts';

@@ -9,7 +9,8 @@ import {
 import {
   drainOutbox, MAX_SEND_ATTEMPTS, recordUnitFailure, undeliverable, type Mail,
 } from './notify.ts';
-import { drain, sweepScheduled } from './agents/runner.ts';
+import { drain } from './agents/runner.ts';
+import { sweepScheduled } from './agents/queue.ts';
 import './agents/notify.ts';
 
 const DB = `trisula_rem_${process.pid}`;

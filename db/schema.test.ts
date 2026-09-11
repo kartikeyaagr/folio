@@ -17,6 +17,7 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import pg from 'pg';
 import { migrate } from './migrate.ts';
+import { toolReads } from '../lib/agents/tools/index.ts';
 
 const DB = `trisula_test_${process.pid}`;
 let client: pg.Client;
@@ -113,9 +114,11 @@ test('every audited table carries the trigger', async () => {
       -- table here within a month; news_matched_items is a set of item ids and nothing else;
       -- chunks is derived rows written only by the indexer, whose provenance is the sources row
       -- beside it — ~22,000 rows on a three-name book, ten times news_items, rewritten on every
-      -- re-index of an edited document.
+      -- re-index of an edited document;
+      -- chat_tool_calls is itself the audit trail of what a model read, append-only and never
+      -- updated, so auditing it is the recursion audit_log is excluded for.
       AND c.relname NOT IN ('actors', 'audit_log', 'schema_migrations', 'prices', 'ingestion_runs',
-                            'news_items', 'news_matched_items', 'chunks')
+                            'news_items', 'news_matched_items', 'chunks', 'chat_tool_calls')
       AND NOT EXISTS (
         SELECT 1 FROM pg_trigger t WHERE t.tgrelid = c.oid AND t.tgname = 'audit'
       )`);
@@ -134,6 +137,20 @@ test('the runner refuses a migration whose bytes have changed', async () => {
 test('the indexer principal exists in the database as well as the type', async () => {
   const { rows } = await client.query("SELECT label FROM actors WHERE id = 'system:index'");
   assert.equal(rows[0]?.label, 'Content indexer');
+});
+
+test('the desk analyst can reach every table its tools read', async () => {
+  // `tools` and `data_scope` are two hand-written columns of one migration, and nothing else
+  // compares them. A tool added to the first without its tables added to the second fails at
+  // runtime — on a claimed run, after the queue has already spent an attempt on it — with a
+  // ScopeViolation that reads like a code bug rather than the seed data it is.
+  const { rows } = await client.query<{ tools: string[]; data_scope: string[] }>(
+    "SELECT tools, data_scope FROM agents WHERE key = 'desk-analyst'",
+  );
+  const row = rows[0];
+  assert.ok(row, 'agent 8 is seeded');
+  const missing = toolReads(row.tools).filter((t) => !row.data_scope.includes(t));
+  assert.deepEqual(missing, [], 'data_scope must name every table the declared tools read');
 });
 
 test('a source can only be registered once per referenced row', async () => {

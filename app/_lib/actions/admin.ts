@@ -12,7 +12,7 @@ import {
   setUserDisabled,
   WouldLockYouOut,
 } from '@/lib/admin.ts';
-import { requeue } from '@/lib/agents/runner.ts';
+import { requeue } from '@/lib/agents/queue.ts';
 
 import { flash } from '../flash.ts';
 import { requireAdmin } from '../session.ts';

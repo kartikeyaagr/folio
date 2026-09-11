@@ -12,10 +12,8 @@ import { execFileSync } from 'node:child_process';
 import { migrate } from '../../db/migrate.ts';
 import { closePool, readTxn, serviceTxn } from '../db.ts';
 import { costUsd, scriptedModel, scriptedOk, type Answer } from './model.ts';
-import {
-  assertInScope, drain, enqueue, failedRuns, HANDLERS, MAX_ATTEMPTS,
-  registerHandler, requeue, ScopeViolation, type AgentRow,
-} from './runner.ts';
+import { assertInScope, drain, HANDLERS, registerHandler, ScopeViolation, type AgentRow } from './runner.ts';
+import { enqueue, failedRuns, MAX_ATTEMPTS, requeue } from './queue.ts';
 import { acceptDraft, diffFields, pendingDrafts, ReasonRequired, rejectDraft } from './review.ts';
 
 const DB = `trisula_agents_${process.pid}`;
@@ -24,7 +22,7 @@ const CO = 'c1';
 
 const agentRow = (scope: string[]): AgentRow => ({
   key: 'test', label: 'Test', purpose: 'p', model: 'claude-opus-5',
-  effort: 'high', data_scope: scope, notify_on_draft: false,
+  effort: 'high', data_scope: scope, tools: [], notify_on_draft: false,
 });
 
 before(async () => {

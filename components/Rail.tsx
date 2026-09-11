@@ -5,13 +5,18 @@ import { usePathname } from 'next/navigation';
 import type { ReactNode } from 'react';
 
 /**
- * Five destinations, not twenty.
+ * Six destinations, not twenty.
  *
- * The rail is the one fixed point on the screen: navy in both themes, the same five hubs on every
+ * The rail is the one fixed point on the screen: navy in both themes, the same six hubs on every
  * page. Which hub is lit is read off the URL, so a page never has to say where it lives.
  *
- * Inside a hub, pages are tabs. Filings live under Desk rather than becoming a sixth hub, because
- * a filing is something that happened — the same question the desk answers, over a longer window.
+ * Inside a hub, pages are tabs. Filings live under Desk rather than becoming a hub of their own,
+ * because a filing is something that happened — the same question the desk answers, over a longer
+ * window.
+ *
+ * Chat is last, and the order is the order of the working day: what happened, then what is being
+ * said about it, then what we own, then the names, then what ran unattended — and last, what you
+ * asked. It carries no badge on purpose: a thread you left is not waiting on you.
  */
 
 /**
@@ -142,6 +147,29 @@ const HUBS: {
         <path d="M12 8V4H8" />
         <rect width="16" height="12" x="4" y="8" rx="2" />
         <path d="M2 14h2M20 14h2M15 13v2M9 13v2" />
+      </svg>
+    ),
+  },
+  {
+    key: 'chat',
+    label: 'Chat',
+    // One prefix, because one route exists. A prefix for a route that does not reads, to the next
+    // person, as a route that has gone missing — the reason four of them were removed in 676b375.
+    href: '/chat',
+    prefixes: ['/chat'],
+    icon: (
+      <svg
+        width="20"
+        height="20"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden="true"
+      >
+        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
       </svg>
     ),
   },

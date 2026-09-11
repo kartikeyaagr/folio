@@ -122,7 +122,7 @@ registerHandler(KEY, async (ctx: RunContext): Promise<HandlerResult> => {
   assertInScope(ctx.agent, READS);
 
   const days = typeof ctx.request['days'] === 'number' ? (ctx.request['days'] as number) : 7;
-  const material = await gather(ctx.c, days, ctx.companyId);
+  const material = await ctx.reads((c) => gather(c, days, ctx.companyId));
   if (material.length === 0) throw new Error('no companies to brief on');
 
   const task = [

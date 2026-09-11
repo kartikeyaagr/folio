@@ -7,7 +7,7 @@ import {
   recentRuns,
 } from '@/lib/admin.ts';
 import { listRequests } from '@/lib/access-requests.ts';
-import { failedRuns } from '@/lib/agents/runner.ts';
+import { failedRuns } from '@/lib/agents/queue.ts';
 import { AppHeader, Blank, Card, Chip, Empty, Stat, StatRow, Tabs, type Tone } from '@/components/ui.tsx';
 
 import {

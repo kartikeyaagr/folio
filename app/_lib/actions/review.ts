@@ -3,8 +3,8 @@
 import { revalidatePath } from 'next/cache';
 
 import { acceptDraft, rejectDraft } from '@/lib/agents/review.ts';
-import { requeue } from '@/lib/agents/runner.ts';
-import { enqueue } from '@/lib/agents/runner.ts';
+import { requeue } from '@/lib/agents/queue.ts';
+import { enqueue } from '@/lib/agents/queue.ts';
 
 import { flash } from '../flash.ts';
 import { requireUser } from '../session.ts';

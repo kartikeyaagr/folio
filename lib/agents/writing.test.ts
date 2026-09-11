@@ -14,7 +14,8 @@ import { closePool, readTxn, serviceTxn } from '../db.ts';
 import { scriptedModel, scriptedOk } from './model.ts';
 import { acceptDraft, pendingDrafts } from './review.ts';
 import { briefs, brief, pendingBrief } from '../briefs.ts';
-import { drain, enqueue } from './runner.ts';
+import { drain } from './runner.ts';
+import { enqueue } from './queue.ts';
 import * as concall from './concall.ts';
 import './newsbrief.ts';
 
@@ -204,16 +205,19 @@ test('a name with nothing gets an empty record rather than being left out', asyn
 // ---- the runner, under a handler that breaks --------------------------------------------------
 
 test('a handler that runs bad SQL records why, rather than being swallowed', async () => {
-  // The transaction the handler works in is the same one that records its failure. Without a
-  // savepoint the failing statement poisons it, the record fails too, and the run's error reads
-  // "current transaction is aborted" — which names nothing and sends you to read schemas.
+  // A failing statement poisons the transaction it ran in, so every later statement on that
+  // connection returns "current transaction is aborted" — which names nothing and sends you to
+  // read schemas. This used to be held off with `SAVEPOINT handler`; since R3 the handler's reads
+  // and the row recording its failure are different transactions on different connections, so the
+  // poisoned one is simply discarded. Lesson L6: the path that reports a failure must not depend
+  // on the thing that failed. The assertions below are unchanged — only the mechanism is.
   // Deliberately an agent whose real handler this file never loads. `registerHandler` replaces a
   // handler globally, so breaking one this file also exercises breaks every later test that uses
   // it — which is what happened when this was moved off `company-dossier` (cut in 0034) onto
   // `news-brief`. The key must still name a live agent: `agent_runs.agent_key` is a foreign key.
   const { registerHandler } = await import('./runner.ts');
   registerHandler('forensics-review', async (ctx) => {
-    await ctx.c.query('SELECT column_that_does_not_exist FROM companies');
+    await ctx.reads((c) => c.query('SELECT column_that_does_not_exist FROM companies'));
     return { done: true };
   });
 

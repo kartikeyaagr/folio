@@ -1,7 +1,7 @@
 import Link from 'next/link';
 
 import { readTxn } from '@/lib/db.ts';
-import { failedRuns } from '@/lib/agents/runner.ts';
+import { failedRuns } from '@/lib/agents/queue.ts';
 import { pendingDrafts } from '@/lib/agents/review.ts';
 import { listCompanies } from '@/lib/companies.ts';
 import { AppHeader, Blank, Card, Chip, Empty, Stat, StatRow, type Tone } from '@/components/ui.tsx';

@@ -8,7 +8,8 @@
  *   pnpm exec tsx jobs/agents.ts [limit]
  */
 import { closePool } from '../lib/db.ts';
-import { drain, sweepScheduled } from '../lib/agents/runner.ts';
+import { drain } from '../lib/agents/runner.ts';
+import { sweepScheduled } from '../lib/agents/queue.ts';
 import * as results from '../lib/agents/results.ts';
 import * as forensics from '../lib/agents/forensics.ts';
 import * as concall from '../lib/agents/concall.ts';
@@ -17,6 +18,9 @@ import * as concall from '../lib/agents/concall.ts';
 // handler must be registered before the queue is drained or a run finds no code to execute.
 import '../lib/agents/notify.ts';
 import '../lib/agents/newsbrief.ts';
+// Agent 8. Chat claims its own run immediately (`runNow`), so the timer only sees one whose web
+// process died mid-turn and whose lease expired — which is exactly what it is here for.
+import '../lib/agents/desk.ts';
 
 async function main(): Promise<void> {
   const limit = Number(process.argv[2] ?? 10);
