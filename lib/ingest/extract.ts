@@ -102,6 +102,40 @@ export async function promoteTranscript(c: Client, row: Row, text: string): Prom
 }
 
 /**
+ * Write one row's extracted text, and promote it to a document if it qualifies.
+ *
+ * Its own `serviceTxn` — a fresh transaction and connection, not shared with any other row's call
+ * to this function. That is what makes a plain try/catch enough in `extractPending` below, with no
+ * `SAVEPOINT` needed: `lib/retrieval/index.ts`'s `drain()` runs its whole batch inside *one*
+ * `serviceTxn` and takes a `SAVEPOINT` per item for exactly this reason — without it, one item's
+ * throw would poison the shared transaction and the very next statement (recording *why* it failed)
+ * would fail too. Nothing here is shared across rows, so there is nothing for one row's rejected
+ * write to poison.
+ *
+ * Exported so a write failure can be forced directly in a test without a byte-valid PDF fixture on
+ * disk — see extract.test.ts, which mirrors why `pendingAttachments` and `promoteTranscript` below
+ * are exported for the same reason.
+ */
+export async function writeExtracted(row: Row, text: string): Promise<boolean> {
+  return serviceTxn('system:ingest', async (c) => {
+    await c.query('UPDATE attachments SET extracted_text = $2 WHERE sha256 = $1', [row.sha256, text]);
+
+    // Only transcripts become documents, and only when there is enough of one to be worth a model.
+    // A two-page "we will hold a call on Tuesday" is filed under the same category as the
+    // transcript of the call itself.
+    if (row.kind !== 'transcript' || !row.company_id || text.length < TRANSCRIPT_MIN_CHARS) {
+      return false;
+    }
+
+    // Keyed on the attachment, so re-running makes no second document for the same bytes.
+    const { rows: seen } = await c.query('SELECT 1 FROM documents WHERE from_attachment = $1', [row.sha256]);
+    if (seen.length > 0) return false;
+
+    return promoteTranscript(c, row, text);
+  });
+}
+
+/**
  * What has no text yet, and the date each will carry if it turns out to be a transcript.
  *
  * The linking filing, not just the attachment: an attachment carries only when it was fetched,
@@ -138,6 +172,15 @@ export async function pendingAttachments(c: Client, limit: number): Promise<Row[
  *
  * `NOT EXISTS`-shaped again — "which attachment has no text" — so it resumes after a crash and
  * cannot lose one to a window.
+ *
+ * Both halves of the per-row work — reading (`pdfText`) and writing (`writeExtracted`) — are
+ * caught the same way, so a row can fail at either stage without taking any other row down with
+ * it. Before this, only the read was caught: a NUL byte in one of AERON's own annual reports
+ * (`SME_AR_27959_AERON_2024_2025...`, hit live 11-Sep-2026) made Postgres reject the write with
+ * "invalid byte sequence for encoding UTF8: 0x00", and because nothing caught *that*, it aborted
+ * every attachment still queued behind it — the sweep didn't log which document did it, only that
+ * extraction had stopped. `pdfText` now strips the NUL, which fixes that one instance; this fixes
+ * the class, since a NUL byte is not the only write Postgres can reject.
  */
 export async function extractPending(limit = 100): Promise<ExtractResult> {
   const pending = await serviceTxn('system:ingest', (c) => pendingAttachments(c, limit));
@@ -160,27 +203,16 @@ export async function extractPending(limit = 100): Promise<ExtractResult> {
       continue;
     }
 
-    const made = await serviceTxn('system:ingest', async (c) => {
-      await c.query('UPDATE attachments SET extracted_text = $2 WHERE sha256 = $1', [
-        row.sha256,
-        text,
-      ]);
-
-      // Only transcripts become documents, and only when there is enough of one to be worth a
-      // model. A two-page "we will hold a call on Tuesday" is filed under the same category as the
-      // transcript of the call itself.
-      if (row.kind !== 'transcript' || !row.company_id || text.length < TRANSCRIPT_MIN_CHARS) {
-        return false;
-      }
-
-      // Keyed on the attachment, so re-running makes no second document for the same bytes.
-      const { rows: seen } = await c.query('SELECT 1 FROM documents WHERE from_attachment = $1', [
-        row.sha256,
-      ]);
-      if (seen.length > 0) return false;
-
-      return promoteTranscript(c, row, text);
-    });
+    let made: boolean;
+    try {
+      made = await writeExtracted(row, text);
+    } catch (err) {
+      // Same shape as the pdfText() catch above: name the document, count it, move on. See
+      // writeExtracted's own comment for why no SAVEPOINT is needed here.
+      failed++;
+      console.error(`${row.filename}: ${err instanceof Error ? err.message : String(err)}`);
+      continue;
+    }
 
     extracted++;
     if (made) documents++;

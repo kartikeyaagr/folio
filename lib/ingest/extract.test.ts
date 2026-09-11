@@ -13,7 +13,7 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { migrate } from '../../db/migrate.ts';
 import { closePool, serviceTxn } from '../db.ts';
-import { pendingAttachments, promoteTranscript, type Row } from './extract.ts';
+import { pendingAttachments, promoteTranscript, writeExtracted, type Row } from './extract.ts';
 
 const DB = `trisula_extract_${process.pid}`;
 const CO = 'c1';
@@ -130,6 +130,75 @@ test('pendingAttachments resolves the queue date from the linking filing, most r
       '2023-05-30T15:39:04.000Z',
       'the most recently announced filing wins when one attachment backs two announcements',
     );
+  });
+});
+
+test('a row whose write fails does not poison the next row\'s write, and is counted apart', async () => {
+  // The class of bug the NUL-byte fix cured only one instance of: extractPending's per-row DB work
+  // (writeExtracted) used to sit outside any try/catch, so a rejected write took the whole sweep
+  // down with it, not just its own row — confirmed live on an AERON annual report whose text layer
+  // carried a NUL. pdfText() now strips that specific byte before writeExtracted ever sees it, so a
+  // NUL byte can no longer reach this test's target; a company_id that references no row is a
+  // different Postgres-rejected write (documents_company_id_fkey, thrown from promoteTranscript's
+  // INSERT), reaching the same previously-unguarded code path without it.
+  await serviceTxn('system:ingest', async (c) => {
+    await c.query(
+      `INSERT INTO attachments (sha256, company_id, filename, media_type, bytes, kind, added_by)
+       VALUES ('sha_bad_write', $1, 'BAD_2025.pdf', 'application/pdf', 100, 'transcript', 'system:ingest')`,
+      [CO],
+    );
+    await c.query(
+      `INSERT INTO attachments (sha256, company_id, filename, media_type, bytes, kind, added_by)
+       VALUES ('sha_good_write', $1, 'GOOD_2025.pdf', 'application/pdf', 100, 'transcript', 'system:ingest')`,
+      [CO],
+    );
+  });
+
+  const badRow: Row = {
+    sha256: 'sha_bad_write',
+    company_id: 'company_that_does_not_exist', // violates documents_company_id_fkey
+    filename: 'BAD_2025.pdf',
+    kind: 'transcript',
+    announced_at: null,
+  };
+  const goodRow: Row = {
+    sha256: 'sha_good_write',
+    company_id: CO,
+    filename: 'GOOD_2025.pdf',
+    kind: 'transcript',
+    announced_at: null,
+  };
+
+  await assert.rejects(
+    () => writeExtracted(badRow, LONG_TEXT),
+    /violates foreign key constraint/,
+    'a row naming a company that does not exist must fail loudly, not be silently dropped',
+  );
+
+  // The load-bearing assertion: if the failed call above had left a poisoned shared transaction (or
+  // any other state) behind, this call would fail too — Postgres refuses every further statement on
+  // an aborted transaction until it sees a ROLLBACK. It succeeds, because writeExtracted opens its
+  // own serviceTxn per call and shares nothing across rows — extractPending needs no SAVEPOINT for
+  // this reason, unlike lib/retrieval/index.ts's drain(), which shares one serviceTxn across its
+  // whole batch and does need one.
+  const made = await writeExtracted(goodRow, LONG_TEXT);
+  assert.equal(made, true, 'the row behind the failed one must still be written and promoted');
+
+  await serviceTxn('system:ingest', async (c) => {
+    const { rows: bad } = await c.query('SELECT extracted_text FROM attachments WHERE sha256 = $1', [
+      'sha_bad_write',
+    ]);
+    assert.equal(
+      bad[0]!.extracted_text,
+      null,
+      "the bad row's UPDATE must have rolled back along with its failed INSERT — an all-or-nothing " +
+        'failure, not a half-written row',
+    );
+
+    const { rows: good } = await c.query('SELECT extracted_text FROM attachments WHERE sha256 = $1', [
+      'sha_good_write',
+    ]);
+    assert.equal(good[0]!.extracted_text, LONG_TEXT);
   });
 });
 
