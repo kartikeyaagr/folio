@@ -80,21 +80,15 @@ async function backfill(t: Target, priceDays: number): Promise<Step[]> {
     return `${served} served, ${stored.stored} stored, ${skipped} skipped for want of a seq_id`;
   });
 
-  // After the filings, because it works from what they point at.
-  await attempt('documents', async () => {
-    const got = await fetchAttachments(500);
-    const read = await extractPending(500);
-    return (
-      `${got.fetched} fetched, ${got.skipped} already held, ${got.failed} failed; ` +
-      `${read.extracted} read, ${read.documents} transcripts, ${read.scanned} scans`
-    );
-  });
-
   // A report arrives once a year per name — on a three-name book, one every seventeen weeks. That
   // is the hypothetical a weekly scheduled job would be built for, which the ground rules forbid;
   // this step is the whole reason a name's history is worth fetching once, here, rather than on a
   // timer. One session shared across the symbol's whole filed history (16 years for PRAJIND) and
   // every report in it, rather than a fresh cookie-priming round trip per year.
+  //
+  // Before 'documents', not after: that step's extractPending sweep reads every attachment with no
+  // extracted_text yet, and running it first would leave these newly-stored PDFs unread until
+  // whatever backfill happens to touch this company next.
   await attempt('annual reports', async () => {
     if (!t.platform) throw new Error('no securities row; refresh the master first');
     const board = t.platform === 'nse_emerge' ? 'sme' : 'equities';
@@ -120,6 +114,16 @@ async function backfill(t: Target, priceDays: number): Promise<Step[]> {
       }
     }
     return `${reports.length} offered, ${stored} stored, ${held} already held, ${unavailable} unavailable, ${failed} failed`;
+  });
+
+  // After the filings and the annual reports, because it works from what they both point at.
+  await attempt('documents', async () => {
+    const got = await fetchAttachments(500);
+    const read = await extractPending(500);
+    return (
+      `${got.fetched} fetched, ${got.skipped} already held, ${got.failed} failed; ` +
+      `${read.extracted} read, ${read.documents} transcripts, ${read.scanned} scans`
+    );
   });
 
   // Asked by symbol, which is the difference between one quarter and twenty years of them. The
