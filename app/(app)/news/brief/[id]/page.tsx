@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 
 import { brief } from '@/lib/briefs.ts';
+import { label, shape } from '@/lib/agents/paths.ts';
 import { Brief } from '@/components/Brief.tsx';
 import { AppHeader, Card, Eyebrow } from '@/components/ui.tsx';
 
@@ -23,6 +24,10 @@ function ist(at: Date): string {
     hour: '2-digit', minute: '2-digit', hour12: false,
   }).format(at);
 }
+
+/** How many distinct things were corrected, as opposed to how many places. */
+const fields = (edits: Record<string, unknown>): number =>
+  new Set(Object.keys(edits).map(shape)).size;
 
 export default async function OneBriefPage({ params }: { params: Promise<{ id: string }> }) {
   await requireUser();
@@ -52,12 +57,20 @@ export default async function OneBriefPage({ params }: { params: Promise<{ id: s
           <Brief content={b.content} />
         </Card>
 
-        {b.edits && b.edits.length > 0 && (
+        {b.edits && Object.keys(b.edits).length > 0 && (
           <Card title="Changed before it was accepted">
-            <Eyebrow>{b.edits.length} {b.edits.length === 1 ? 'field' : 'fields'}</Eyebrow>
+            {/*
+              Counted by field, listed by position. Six corrections to `by_company[].why_it_matters`
+              are one thing this agent keeps getting wrong and six places it got it wrong, and the
+              two numbers answer different questions.
+            */}
+            <Eyebrow>
+              {fields(b.edits)} {fields(b.edits) === 1 ? 'field' : 'fields'} ·{' '}
+              {Object.keys(b.edits).length} corrected
+            </Eyebrow>
             <ul className="draft-sources">
-              {b.edits.map((e, i) => (
-                <li key={i}>{e.field}</li>
+              {Object.keys(b.edits).sort().map((path) => (
+                <li key={path}>{label(path, b.content)}</li>
               ))}
             </ul>
             <p className="hint">

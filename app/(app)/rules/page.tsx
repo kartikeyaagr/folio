@@ -1,6 +1,7 @@
 import { readTxn } from '@/lib/db.ts';
 import { openCandidates, standingRules, type Observation } from '@/lib/agents/rules.ts';
 import { MIN_DISTANCE, MIN_OBSERVATIONS } from '@/lib/agents/distil.ts';
+import { label } from '@/lib/agents/paths.ts';
 import { AppHeader, Card, Chip, Empty, Eyebrow } from '@/components/ui.tsx';
 
 import { approve, propose, refuse, retire } from '../../_lib/actions/rules.ts';
@@ -60,7 +61,7 @@ function Evidence({ observations }: { observations: Observation[] }) {
         <tbody>
           {observations.map((o) => (
             <tr key={`${o.draftId}-${o.field}`}>
-              <td>{o.field.replace(/_/g, ' ')}</td>
+              <td>{label(o.field)}</td>
               <td className="num">{o.distance.toFixed(3)}</td>
               <td className="cell-wrap">
                 <div className="rule-was">{text(o.from)}</div>

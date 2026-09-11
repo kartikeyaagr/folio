@@ -27,7 +27,9 @@ deliberately not carried forward.
 | `plans/2026-09-11-v4-chat.md` | R3: `/chat`, the tool loop, agent 8 |
 | `plans/2026-09-11-v4-write-paths.md` | R4: `run_agent` and `draft_document`, both landing in the gate |
 | `plans/2026-09-11-v4-learning-measurable.md` | R5a: edit-before-accept, edit distance, exemplar capture |
-| `plans/2026-09-11-v4-learning-retrieval.md` | R5b: the embed queue, retrieval into prompts — **carries the 11-Dec-2026 review condition** |
+| `plans/2026-09-11-v4-learning-retrieval.md` | R5b: the embed queue, retrieval into prompts — **carries the 11-Dec-2026 review condition**, amended 11-Sep |
+| `plans/2026-09-11-v4-rules.md` | R6: `prompt_rules`, distillation, `/rules` and the approval gate |
+| `plans/2026-09-11-v4-nested-editing.md` | A correction reaches inside a draft: the path grammar, shape-weighted distance, `/review`'s renderers |
 
 **The UI's standing rules are `.interface-design/system.md`** — tracked in git, 133 lines, and the
 only copy. A stale 105-line duplicate lived at `docs/specs/design-system.md` and was deleted

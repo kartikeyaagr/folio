@@ -5,6 +5,7 @@ import { failedRuns } from '@/lib/agents/queue.ts';
 import { pendingDrafts } from '@/lib/agents/review.ts';
 import { coverage, fieldHotspots, weeklyDistance } from '@/lib/agents/learning.ts';
 import { pendingRules } from '@/lib/agents/rules.ts';
+import { label } from '@/lib/agents/paths.ts';
 import { listCompanies } from '@/lib/companies.ts';
 import { AppHeader, Blank, Card, Chip, Empty, Stat, StatRow, type Tone } from '@/components/ui.tsx';
 
@@ -205,6 +206,7 @@ export default async function AgentsPage() {
                   <tr>
                     <th>Week</th>
                     <th>Agent</th>
+                    <th>Measured</th>
                     <th className="num">Accepted</th>
                     <th className="num">Edited</th>
                     <th className="num">Rejected</th>
@@ -213,9 +215,24 @@ export default async function AgentsPage() {
                 </thead>
                 <tbody>
                   {weeks.map((w) => (
-                    <tr key={`${w.week}-${w.agentKey}`}>
+                    <tr key={`${w.week}-${w.agentKey}-${String(w.nestedEditable)}`}>
                       <td>{w.week}</td>
                       <td>{w.agentKey}</td>
+                      {/*
+                        Which instrument took the number, because before 0051 a reviewer could only
+                        correct a top-level string — so agent 6's and agent 7's distance was
+                        structurally 0 and agent 1's counted only its headline. A mean across the
+                        two is a mean of two different measurements, and §7's whole test is whether
+                        the number FELL. A week that spans the change appears as two rows on
+                        purpose: that is what happened, and averaging them would hide it.
+                      */}
+                      <td>
+                        {w.nestedEditable ? (
+                          <span className="cell-sub">every field</span>
+                        ) : (
+                          <Chip tone="warn">top level only</Chip>
+                        )}
+                      </td>
                       <td className="num">{w.accepted}</td>
                       <td className="num">{w.edited}</td>
                       <td className="num">{w.rejected}</td>
@@ -279,7 +296,7 @@ export default async function AgentsPage() {
                   {hotspots.map((h) => (
                     <tr key={`${h.agentKey}-${h.field}`}>
                       <td>{h.agentKey}</td>
-                      <td>{h.field.replace(/_/g, ' ')}</td>
+                      <td>{label(h.field)}</td>
                       <td className="num">{h.corrections}</td>
                     </tr>
                   ))}

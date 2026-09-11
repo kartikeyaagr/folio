@@ -21,8 +21,16 @@ export interface BriefSummary {
 
 export interface BriefDocument extends BriefSummary {
   content: Record<string, unknown>;
-  /** The agent's own words, when a reviewer changed something before accepting. */
-  edits: { field: string; from: unknown; to: unknown }[] | null;
+  /**
+   * What a reviewer changed before accepting, keyed by path — `by_company[0].why_it_matters`.
+   *
+   * **An object, not an array**, which it always was: `diffFields` builds it as
+   * `{path: {from, to}}`. Typed as an array here since R5a, so `edits.length` was `undefined`,
+   * `undefined > 0` was false, and the "Changed before it was accepted" card on
+   * `/news/brief/[id]` never rendered for any brief however heavily corrected — and would have
+   * thrown on `.map` if it ever had. Nothing failed, because nothing ran.
+   */
+  edits: Record<string, { from: unknown; to: unknown }> | null;
   model: string | null;
   costUsd: string | null;
 }
