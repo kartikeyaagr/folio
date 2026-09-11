@@ -115,6 +115,57 @@ test('a source that fails records why and stays in the queue', async () => {
   });
 });
 
+// Regression test for the livelock finding: a 50-SOURCE claim limit meant nothing once a source
+// could be a 177-character filing or a 795,000-character annual report — a batch of the latter
+// shape blew well past the systemd job's 30-minute timeout, inside one transaction, with nothing
+// surviving the kill to say why. Bounding by chunk count instead is what this test pins: three
+// sources are claimed, but a budget of one chunk must stop the batch after the FIRST one, leaving
+// the other two `indexed_at IS NULL` for the next call — never "claimed all three because three is
+// under some source-count limit."
+test('drain bounds a batch by its chunk budget, not by how many sources it claims', async () => {
+  // Clear whatever the file's own fixtures left unindexed (the 'a source that fails' test above
+  // registers d_fail but never successfully indexes it; a real model is loaded again by now, so it
+  // would otherwise be the row this test's own claim picks up first).
+  await drain();
+
+  await serviceTxn('system:index', async (c) => {
+    await newDocument(c, 'd_budget_1', 'note', { text: 'first short memo, well under a thousand characters' });
+    await newDocument(c, 'd_budget_2', 'note', { text: 'second short memo, also just one chunk' });
+    await newDocument(c, 'd_budget_3', 'note', { text: 'third short memo, also just one chunk' });
+  });
+
+  const out = await drain(1);
+  assert.equal(out.registered, 3);
+  assert.equal(out.indexed, 1, 'a chunk budget of 1 must stop the batch after one source, not after claiming all three');
+  assert.equal(out.failed, 0);
+
+  await serviceTxn('system:index', async (c) => {
+    const { rows } = await c.query<{ n: string }>(
+      `SELECT count(*)::text AS n FROM sources
+        WHERE ref_id IN ('d_budget_1','d_budget_2','d_budget_3') AND indexed_at IS NULL`,
+    );
+    assert.equal(rows[0]!.n, '2', 'the two sources the budget did not reach must stay indexed_at IS NULL for the next tick');
+  });
+
+  // Proves the remainder was left alone rather than claimed-and-dropped: the very next call picks
+  // up exactly what the first one could not get to.
+  const rest = await drain(10);
+  assert.equal(rest.indexed, 2);
+});
+
+test('drain always indexes at least one source, even at a chunk budget of zero', async () => {
+  // The guard jobs/index-content.ts's --all loop depends on: untilQueueEmpty stops the moment a
+  // batch reports indexed:0, reading that as "no forward progress possible." A budget that could
+  // round down to zero sources processed would make a batch report indexed:0 despite unindexed
+  // sources still waiting — ending a backfill early while believing it finished.
+  await serviceTxn('system:index', async (c) => {
+    await newDocument(c, 'd_budget_zero', 'note', { text: 'a memo that must still be indexed' });
+  });
+
+  const out = await drain(0);
+  assert.equal(out.indexed, 1, 'a batch must always make forward progress, however small the budget');
+});
+
 test('indexing a source writes chunks that slice back to the original', async () => {
   // Long enough to break into several chunks (TARGET_CHARS is 1000), so the slice invariant is
   // checked across a real chunk boundary, not just on a single one-piece document.

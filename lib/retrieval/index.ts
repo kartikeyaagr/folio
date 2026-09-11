@@ -6,9 +6,12 @@
  *   indexOne(c, sourceId)   one source, inside whatever transaction the caller is already in.
  *                           Delete-then-write, so a half-indexed source can never exist and a
  *                           re-index always replaces rather than accumulates.
- *   drain(limit)            the sweep. registerAll() first (which reaps first — see register.ts),
- *                           then claims up to `limit` unindexed sources with
- *                           `FOR UPDATE SKIP LOCKED`, then indexes each behind its own SAVEPOINT.
+ *   drain(chunkBudget)      the sweep. registerAll() first (which reaps first — see register.ts),
+ *                           then claims a batch of unindexed sources with `FOR UPDATE SKIP LOCKED`
+ *                           and indexes them one by one, behind its own SAVEPOINT each, UNTIL the
+ *                           batch has written `chunkBudget` chunks — not until it runs out of
+ *                           claimed sources. See the comment on `drain` for why the bound is chunks
+ *                           and not source count.
  *
  * **Why a SAVEPOINT per source.** `drain` runs entirely inside one `serviceTxn`. Without a
  * savepoint, a source that throws partway through — chunking, embedding, or the insert itself —
@@ -34,28 +37,14 @@ import { registerAll, textFor, type Indexable } from './register.ts';
  * Which chunker applies is decided by content, not by kind. Every kind but `document_version` is
  * always prose (news, filings and fundamentals are all rendered to plain text in register.ts;
  * attachments are extracted PDF text). A `document_version` is prose or a grid depending on what
- * the desk saved — `lib/workspace.ts`: `{"text": …}` for prose, `{"cells": …}` for a sheet — and
- * `textFor`'s SQL (`coalesce(v.body->>'text', v.body::text)`) already resolved that: a prose body
- * comes back as the bare string that was written, but a sheet's body has no top-level `text` key,
- * so the fallback fires and what arrives here is the WHOLE body serialised as JSON. Detected by
- * shape, not assumed from a leading brace — a memo that happens to start with one is still prose.
+ * the desk saved — `lib/workspace.ts`: `{"text": …}` for prose, `{"cells": …}` for a sheet.
+ * `textFor` already did the detection (it has to, to decide what `text` itself even means for a
+ * sheet — see register.ts's `rawText`) and hands the parsed cells straight through on `source.cells`,
+ * so this is a lookup, not a second detection: re-sniffing `source.text`'s shape here was the bug
+ * (chunk.ts's file header has the full story) and is exactly what this file no longer does.
  */
-function sheetCellsIn(source: Indexable): Record<string, string> | null {
-  if (source.kind !== 'document_version') return null;
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(source.text);
-  } catch {
-    return null; // Not JSON at all: an ordinary prose memo.
-  }
-  if (parsed === null || typeof parsed !== 'object' || !('cells' in parsed)) return null;
-  const cells = (parsed as { cells: unknown }).cells;
-  return cells !== null && typeof cells === 'object' ? (cells as Record<string, string>) : null;
-}
-
 function piecesFor(source: Indexable): Piece[] {
-  const cells = sheetCellsIn(source);
-  return cells ? chunkCells(cells) : chunkText(source.text);
+  return source.cells ? chunkCells(source.cells) : chunkText(source.text);
 }
 
 /**
@@ -119,6 +108,35 @@ export interface DrainResult {
 }
 
 /**
+ * How much embedding work one `drain` call does, measured in CHUNKS WRITTEN — never in sources
+ * claimed. A source count means nothing when a source can be a 177-character filing announcement
+ * (one chunk) or a 795,000-character annual report (~900 chunks): a `limit=50` batch could be 50
+ * announcements or, following two new companies in one window, ~32 annual reports.
+ *
+ * Measured 11-Sep-2026, live corpus: 25 annual-report sources inside one `drain` batch took 922s
+ * end to end and wrote 12,168 chunks — 36.9s/source, ~75.8ms/chunk. `ops/systemd/trisula-job@.service`
+ * sets `TimeoutStartSec=30min`; a 50-source batch of that shape is already ~30.7min, past the
+ * timeout, and the failure is silent — see the finding this constant fixes for the full chain
+ * (systemd kills the transaction, every claimed row including its `index_error` rows rolls back,
+ * and the next tick claims the identical rows and dies identically, forever).
+ *
+ * Sized off the SLOWER of the two measured rates (75.8ms/chunk, vs. Task 8's 27.8 chunks/sec on a
+ * smaller-chunk corpus) with a further 2x margin for the deploy target: Task 1 measured cold start
+ * only on macOS ARM, and the Linux ARM production host is unverified. Even at half that speed
+ * (151.6ms/chunk), 5,000 chunks is ~12.6min — well under a third of the 30-minute timeout, leaving
+ * the rest of the window as headroom for whatever the next `drain` finds waiting.
+ */
+export const CHUNK_BUDGET = 5000;
+
+/**
+ * Upper bound on how many `sources` rows one call locks with `FOR UPDATE SKIP LOCKED` — NOT on how
+ * many it indexes; that bound is `chunkBudget`, above. Deliberately generous: a batch made entirely
+ * of small filings (~1 chunk each) should not stop at an arbitrary source count while the chunk
+ * budget still has room to do more in the same transaction.
+ */
+const CLAIM_CAP = 500;
+
+/**
  * Work the indexing queue: register (which reaps first), claim, index.
  *
  * One transaction for the whole call. `FOR UPDATE SKIP LOCKED` on the claim means two overlapping
@@ -127,24 +145,36 @@ export interface DrainResult {
  * `indexed_at IS NULL` — for the next run to pick up. Nothing here is a failure on its own: an
  * empty queue returns `{registered: 0, indexed: 0, failed: 0}`, not an error. See
  * `jobs/index-content.ts` for why that is the correct read of a zero.
+ *
+ * The claimed rows are indexed IN ORDER until `chunkBudget` chunks have been written, then the
+ * loop stops — the rows still claimed-but-untouched simply stay `indexed_at IS NULL` and are
+ * released back (the lock is scoped to this transaction) for the next call to pick up, exactly as
+ * `jobs/index-content.ts`'s own "stops on no forward progress" loop already expects. The first
+ * claimed row is ALWAYS indexed regardless of the budget — a `chunkBudget` smaller than a single
+ * oversized source must not round down to "index nothing", or `jobs/index-content.ts --all`'s
+ * `untilQueueEmpty` would read that as an empty queue and stop while sources still wait.
  */
-export async function drain(limit = 50): Promise<DrainResult> {
+export async function drain(chunkBudget = CHUNK_BUDGET, claimCap = CLAIM_CAP): Promise<DrainResult> {
   return serviceTxn('system:index', async (c) => {
     const registered = await registerAll(c);
 
     const { rows } = await c.query<{ id: string }>(
       `SELECT id FROM sources WHERE indexed_at IS NULL ORDER BY id LIMIT $1 FOR UPDATE SKIP LOCKED`,
-      [limit],
+      [claimCap],
     );
 
     let indexed = 0;
     let failed = 0;
-    for (const row of rows) {
+    let chunksWritten = 0;
+    for (let i = 0; i < rows.length; i++) {
+      if (i > 0 && chunksWritten >= chunkBudget) break;
+      const row = rows[i]!;
+
       // A savepoint per source — see the file header. One bad source records why it failed
       // without taking the rest of the batch, or registerAll's work above, down with it.
       await c.query('SAVEPOINT index_source');
       try {
-        await indexOne(c, row.id);
+        chunksWritten += await indexOne(c, row.id);
         await c.query('RELEASE SAVEPOINT index_source');
         await c.query('UPDATE sources SET indexed_at = now(), index_error = NULL WHERE id = $1::bigint', [
           row.id,
