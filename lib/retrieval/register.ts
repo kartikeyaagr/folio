@@ -37,6 +37,7 @@
 import { createHash } from 'node:crypto';
 import type { Client } from '../db.ts';
 import { reapAll } from './reap.ts';
+import { sheetGridText } from './chunk.ts';
 
 export type SourceKind =
   | 'document_version'
@@ -52,6 +53,12 @@ export interface Indexable {
   title: string;
   occurredAt: string | null;
   text: string;
+  // Non-null only for a document_version whose body is a sheet — see rawText's document_version
+  // branch. Carried through explicitly so lib/retrieval/index.ts's piecesFor can pick chunkCells
+  // without re-sniffing `text`'s shape: `text` is now sheetGridText(cells), the same string
+  // chunkCells itself computes offsets into, and a re-sniff would only risk the two falling out of
+  // step again.
+  cells: Record<string, string> | null;
 }
 
 export function contentHash(text: string): string {
@@ -356,47 +363,76 @@ export async function registerAll(c: Client): Promise<number> {
   return total + (await registerFundamentals(c));
 }
 
+/** A document_version's body is `{"cells": {...}}` for a sheet, detected by shape (see 0039). */
+function cellsIn(body: unknown): Record<string, string> | null {
+  if (body === null || typeof body !== 'object' || !('cells' in body)) return null;
+  const cells = (body as { cells: unknown }).cells;
+  return cells !== null && typeof cells === 'object' ? (cells as Record<string, string>) : null;
+}
+
+interface RawText {
+  text: string;
+  cells: Record<string, string> | null;
+}
+
+const asRawText = (text: string | null | undefined): RawText | null =>
+  text == null ? null : { text, cells: null };
+
 /**
- * The text a source hashed, reconstructed for chunking. Each branch mirrors exactly the expression
- * its kind's INSERT used to compute `content_hash` — same input, so the chunker always cuts up
- * what was actually indexed.
+ * The text a source's content_hash was computed FROM, reconstructed for the chunker. Every branch
+ * but `document_version`'s sheet case mirrors exactly the expression its kind's INSERT used to
+ * compute `content_hash` — same input, so the chunker cuts up what was actually indexed.
+ *
+ * `document_version`'s sheet case is the one deliberate exception. `content_hash` still hashes the
+ * raw JSONB body (DOCUMENTS_SELECT, above) — that only has to change WHEN the content changes, and
+ * it does: any edit to a qualifying cell changes the raw JSON too. But what this function returns
+ * for a sheet is `sheetGridText(cells)`, not the raw body, because `chunkCells` computes its offsets
+ * into that same grid — see chunk.ts's file header for the citation-offset bug this replaced (a
+ * chunk's char_from/char_to used to index into a string `textFor` never returned).
  */
-async function rawText(c: Client, kind: SourceKind, refId: string): Promise<string | null> {
+async function rawText(c: Client, kind: SourceKind, refId: string): Promise<RawText | null> {
   switch (kind) {
     case 'document_version': {
       // refId is the document's id (see DOCUMENTS_SELECT above), so re-derive the same "current
       // version" this document would register today, not a specific version row — same ordering,
       // shared via CURRENT_VERSION_ORDER_SQL so it cannot silently diverge from what DOCUMENTS
       // hashed.
-      const { rows } = await c.query<{ text: string }>(
-        `SELECT coalesce(v.body->>'text', v.body::text) AS text
+      const { rows } = await c.query<{ body: unknown }>(
+        `SELECT v.body
            FROM document_versions v
           WHERE v.document_id = $1
           ${CURRENT_VERSION_ORDER_SQL}`,
         [refId],
       );
-      return rows[0]?.text ?? null;
+      if (rows.length === 0) return null;
+      const body = rows[0]!.body;
+      const cells = cellsIn(body);
+      if (cells) return { text: sheetGridText(cells), cells };
+
+      const asObj = body !== null && typeof body === 'object' ? (body as Record<string, unknown>) : null;
+      const text = asObj && typeof asObj['text'] === 'string' ? asObj['text'] : JSON.stringify(body);
+      return { text, cells: null };
     }
     case 'attachment': {
       const { rows } = await c.query<{ text: string | null }>(
         `SELECT extracted_text AS text FROM attachments WHERE sha256 = $1`,
         [refId],
       );
-      return rows[0]?.text ?? null;
+      return asRawText(rows[0]?.text);
     }
     case 'filing': {
       const { rows } = await c.query<{ text: string }>(
         `SELECT ${FILING_TEXT_SQL} AS text FROM filings f WHERE f.id = $1`,
         [refId],
       );
-      return rows[0]?.text ?? null;
+      return asRawText(rows[0]?.text);
     }
     case 'news_item': {
       const { rows } = await c.query<{ text: string }>(
         `SELECT i.title || coalesce(i.summary,'') AS text FROM news_items i WHERE i.id = $1`,
         [refId],
       );
-      return rows[0]?.text ?? null;
+      return asRawText(rows[0]?.text);
     }
     case 'fundamentals_period': {
       const { rows } = await c.query<{
@@ -414,13 +450,15 @@ async function rawText(c: Client, kind: SourceKind, refId: string): Promise<stri
       );
       const r = rows[0];
       if (!r) return null;
-      return renderFundamentals({
-        companyName: r.name,
-        periodKind: r.period_kind,
-        periodEnd: r.period_end,
-        revenue: r.revenue,
-        profitAfterTax: r.profit_after_tax,
-      }).text;
+      return asRawText(
+        renderFundamentals({
+          companyName: r.name,
+          periodKind: r.period_kind,
+          periodEnd: r.period_end,
+          revenue: r.revenue,
+          profitAfterTax: r.profit_after_tax,
+        }).text,
+      );
     }
   }
 }
@@ -437,8 +475,8 @@ export async function textFor(c: Client, sourceId: string): Promise<Indexable | 
   const s = rows[0];
   if (!s) return null;
 
-  const text = await rawText(c, s.kind, s.ref_id);
-  if (text === null) return null;
+  const raw = await rawText(c, s.kind, s.ref_id);
+  if (raw === null) return null;
 
   return {
     kind: s.kind,
@@ -446,6 +484,7 @@ export async function textFor(c: Client, sourceId: string): Promise<Indexable | 
     companyId: s.company_id,
     title: s.title,
     occurredAt: s.occurred_at ? s.occurred_at.toISOString() : null,
-    text,
+    text: raw.text,
+    cells: raw.cells,
   };
 }

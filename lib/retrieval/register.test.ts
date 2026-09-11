@@ -4,6 +4,7 @@ import { execFileSync } from 'node:child_process';
 import { migrate } from '../../db/migrate.ts';
 import { closePool, serviceTxn, type Client } from '../db.ts';
 import { contentHash, registerAll, textFor } from './register.ts';
+import { chunkCells } from './chunk.ts';
 
 const DB = `trisula_reg_${process.pid}`;
 const CO = 'c1'; // Praj Industries Limited — the fund's own name
@@ -325,6 +326,47 @@ test('textFor reproduces the exact text a document source was hashed from', asyn
     assert.equal(indexable?.refId, DOC_ID);
     assert.equal(indexable?.companyId, CO);
     assert.equal(indexable?.text, EXISTING_TEXT);
+  });
+});
+
+test('a sheet document_version: chunkCells offsets slice back against textFor\'s own output', async () => {
+  // Regression test for the citation-offset bug: chunkCells used to compute char_from/char_to into
+  // a tab-and-newline grid it built INTERNALLY, while textFor returned the raw JSONB body — two
+  // different strings (verified live: a real chunk's char_from=0, char_to=109 sliced the actual
+  // source to '{"cells": {"A1": "Revenue FY26 (cr)"…', not to the chunk's own text). chunk.test.ts's
+  // own sheet tests never caught this because they compared chunkCells' offsets against the exact
+  // string chunkCells itself builds — right by construction, which is why nothing there could ever
+  // fail. This compares against textFor's ACTUAL return value instead.
+  const docId = 'd_sheet_offsets';
+  await serviceTxn('system:index', async (c) => {
+    await c.query(
+      `INSERT INTO documents (id, company_id, title, kind, created_by)
+       VALUES ($1,$2,'Model','sheet','system:index')`,
+      [docId, CO],
+    );
+    await c.query(`INSERT INTO document_versions (document_id, body, written_by) VALUES ($1, $2, 'system:index')`, [
+      docId,
+      JSON.stringify({ cells: { A1: 'Revenue FY26 (cr)', B1: '693.2', A2: 'PAT', B2: '58.1' } }),
+    ]);
+    await registerAll(c);
+
+    const { rows } = await c.query<{ id: string }>(
+      `SELECT id FROM sources WHERE kind = 'document_version' AND ref_id = $1`,
+      [docId],
+    );
+    const indexable = await textFor(c, rows[0]!.id);
+    assert.ok(indexable, 'the sheet must register and resolve');
+    assert.ok(indexable!.cells, 'a sheet body must come back with its parsed cells, not just text');
+
+    const pieces = chunkCells(indexable!.cells!);
+    assert.ok(pieces.length > 0);
+    for (const p of pieces) {
+      assert.equal(
+        indexable!.text.slice(p.charFrom, p.charTo),
+        p.text,
+        "a chunk's offsets must slice textFor's own text back to exactly the chunk's own text",
+      );
+    }
   });
 });
 

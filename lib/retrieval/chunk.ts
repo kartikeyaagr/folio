@@ -4,6 +4,12 @@
  * Pure by design: no database, no embedder, no I/O. The invariant that matters —
  * `source.slice(charFrom, charTo) === piece.text` — is what makes a citation open the document at
  * the right passage, and it is worth being able to test exhaustively without a Postgres instance.
+ * "`source`" here means specifically what `register.ts`'s `textFor` returns — that used to be true
+ * only by coincidence for prose and false for every spreadsheet, because `chunkCells` cut offsets
+ * into a grid it built internally while `textFor` handed back the raw JSONB body, two different
+ * strings (verified live: chunk 2069's `char_from=0, char_to=109` sliced the real source to
+ * `{"cells": {"A1": "Revenue FY26 (cr)"…`, not to the chunk's own text). `sheetGridText`, below,
+ * closes that gap by being the one function both sides call — see its own comment.
  *
  * **The numbers below are stated defaults, not findings.** `docs/specs/v4.md` §5.3 says so
  * explicitly: nothing in this tree has measured a chunk size, and v2 never chunked at all — it
@@ -104,6 +110,41 @@ function address(key: string): { col: string; row: number } | null {
 }
 
 /**
+ * Cells, sorted into rows then columns and rendered one line per row (tab between cells) —
+ * skipping formulas and empties. The shared core of `sheetGridText` and `chunkCells` below: both
+ * need exactly this same set of lines, in the same order, or their two ideas of "the sheet as
+ * text" would silently diverge.
+ */
+function sheetLines(cells: Record<string, string>): string[] {
+  const rows = new Map<number, { col: string; value: string }[]>();
+  for (const [key, value] of Object.entries(cells)) {
+    const a = address(key);
+    if (!a) continue;
+    const v = String(value ?? '').trim();
+    if (v === '' || v.startsWith('=')) continue;
+    if (!rows.has(a.row)) rows.set(a.row, []);
+    rows.get(a.row)!.push({ col: a.col, value: v });
+  }
+  return [...rows.entries()]
+    .sort((x, y) => x[0] - y[0])
+    .map(([, cs]) => cs.sort((x, y) => x.col.localeCompare(y.col)).map((c) => c.value).join('\t'));
+}
+
+/**
+ * The row-packed text a sheet renders to — tab between cells, newline between rows, formulas and
+ * empty cells dropped. `register.ts`'s `rawText` returns exactly this for a `document_version`
+ * whose body is a sheet, so it is what `textFor` hands back too: the "invariant the citation link
+ * depends on" (0041's own words on `chunks.char_from`) held only for prose until this function
+ * existed, because `chunkCells` computed its offsets into this derived grid while `textFor`
+ * returned the raw JSONB body — two different strings. Sharing this function between the two sides
+ * is the same fix `FILING_TEXT_SQL` and `CURRENT_VERSION_ORDER_SQL` already apply in register.ts:
+ * one definition, not two that can drift.
+ */
+export function sheetGridText(cells: Record<string, string>): string {
+  return sheetLines(cells).join('\n');
+}
+
+/**
  * A sheet chunks by row-block, never by character — the one invariant that matters here. A grid
  * cut mid-row retrieves as noise: a number with no idea which line it belonged to.
  *
@@ -122,20 +163,8 @@ function address(key: string): { col: string; row: number } | null {
  * the evaluated lookups rather than in `cells`.
  */
 export function chunkCells(cells: Record<string, string>): Piece[] {
-  const rows = new Map<number, { col: string; value: string }[]>();
-  for (const [key, value] of Object.entries(cells)) {
-    const a = address(key);
-    if (!a) continue;
-    const v = String(value ?? '').trim();
-    if (v === '' || v.startsWith('=')) continue;
-    if (!rows.has(a.row)) rows.set(a.row, []);
-    rows.get(a.row)!.push({ col: a.col, value: v });
-  }
-  if (rows.size === 0) return [];
-
-  const lines = [...rows.entries()]
-    .sort((x, y) => x[0] - y[0])
-    .map(([, cs]) => cs.sort((x, y) => x.col.localeCompare(y.col)).map((c) => c.value).join('\t'));
+  const lines = sheetLines(cells);
+  if (lines.length === 0) return [];
 
   const text = lines.join('\n');
 
