@@ -16,9 +16,12 @@
  * graveyard rests on the same argument.
  */
 
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
+import { mkdir, writeFile } from 'node:fs/promises';
+import { dirname } from 'node:path';
 
-import { readTxn, writeTxn } from './db.ts';
+import { readTxn, writeTxn, type Client } from './db.ts';
+import { pathFor } from './ingest/attachments.ts';
 
 export type DocKind = 'note' | 'memo' | 'meeting' | 'checklist' | 'sheet';
 
@@ -104,6 +107,46 @@ export async function provenanceOf(documentId: string): Promise<Provenance | nul
     );
     return rows[0] ?? null;
   });
+}
+
+/**
+ * Keep an uploaded file's bytes, content-addressed — the same store `fetchAttachments` and
+ * `storeAnnualReport` (`lib/ingest/attachments.ts`, `lib/ingest/annual-reports.ts`) write into, so
+ * a file dragged into this desk's own import dialog is indistinguishable on disk from one this
+ * system fetched itself. `ON CONFLICT (sha256) DO NOTHING` matches both: the same PDF imported
+ * twice is one row, not two, which is the whole reason identity is the content and not a filename.
+ *
+ * The import path used to parse a file into a document — a note's extracted text, a sheet's cells
+ * — and throw the bytes away, so no human upload was ever downloadable
+ * (`app/api/attachment/[sha]/route.ts`) or reachable by Task 6's own registration
+ * (`lib/retrieval/register.ts`), which walks `attachments` through a `LEFT JOIN filings` precisely
+ * so a file with no exchange filing behind it still reaches the index. Returns the sha256 so the
+ * caller can look the row back up.
+ */
+export async function keepUploadAsAttachment(
+  c: Client,
+  input: { companyId: string | null; kind: string; filename: string; bytes: Buffer; actorId: string },
+): Promise<string> {
+  const sha256 = createHash('sha256').update(input.bytes).digest('hex');
+  const file = pathFor(sha256);
+  await mkdir(dirname(file), { recursive: true });
+  await writeFile(file, input.bytes);
+
+  // Sniffed, not trusted from the extension — `lib/import/index.ts` decides a workbook by its
+  // bytes rather than its name for the same reason: a renamed file should not lie. This is also
+  // what `pendingAttachments` (lib/ingest/extract.ts, `media_type LIKE '%pdf%'`) keys on to pick
+  // the file up for text extraction at all — get it wrong and the row sits stored, but never
+  // becomes searchable.
+  const mediaType =
+    input.bytes.subarray(0, 5).toString('latin1') === '%PDF-' ? 'application/pdf' : 'application/octet-stream';
+
+  await c.query(
+    `INSERT INTO attachments (sha256, company_id, filename, media_type, bytes, kind, source_note, added_by)
+     VALUES ($1, $2, $3, $4, $5, $6, 'uploaded through the import dialog', $7)
+     ON CONFLICT (sha256) DO NOTHING`,
+    [sha256, input.companyId, input.filename, mediaType, input.bytes.length, input.kind, input.actorId],
+  );
+  return sha256;
 }
 
 const SELECT = `

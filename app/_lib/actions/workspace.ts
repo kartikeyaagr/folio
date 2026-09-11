@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 
+import { writeTxn } from '@/lib/db.ts';
 import {
   readUpload,
   UnreadableDocument,
@@ -15,6 +16,7 @@ import type { Lookups } from '@/lib/sheet/evaluate.ts';
 import {
   archiveDocument,
   createDocument,
+  keepUploadAsAttachment,
   NoSuchDocument,
   renameDocument,
   saveDocument,
@@ -152,7 +154,11 @@ export async function archiveDocumentAction(form: FormData): Promise<void> {
  * Everything lands as a first version attributed to whoever uploaded it, so an imported model has
  * the same history as one typed here — starting from the moment it arrived.
  */
-const MAX_UPLOAD = 12 * 1024 * 1024;
+// 32MB, not 12. A DRHP runs 300-500 pages with embedded images — the two this desk actually needs
+// are 7 and 11MB — and the largest annual report in the corpus is 21.4MB. Of 969 real attachments
+// only 6 exceed 12MB, so this is not a licence for junk; it is the difference between the import
+// path working for the documents it exists to accept and silently refusing them.
+const MAX_UPLOAD = 32 * 1024 * 1024;
 
 export async function importFileAction(form: FormData): Promise<void> {
   const user = await requireUser();
@@ -162,12 +168,16 @@ export async function importFileAction(form: FormData): Promise<void> {
 
   if (!(file instanceof File) || file.size === 0) return flash('No file was chosen.');
   if (file.size > MAX_UPLOAD) {
-    return flash(`${file.name} is ${(file.size / 1e6).toFixed(1)} MB; the limit is 12 MB.`);
+    return flash(
+      `${file.name} is ${(file.size / 1e6).toFixed(1)} MB; the limit is ${(MAX_UPLOAD / 1e6).toFixed(0)} MB.`,
+    );
   }
+
+  const bytes = Buffer.from(await file.arrayBuffer());
 
   let read: Imported;
   try {
-    read = await readUpload(file.name, Buffer.from(await file.arrayBuffer()));
+    read = await readUpload(file.name, bytes);
   } catch (err) {
     // Said in place. Every one of these carries a sentence naming what was wrong with the file.
     if (
@@ -179,6 +189,24 @@ export async function importFileAction(form: FormData): Promise<void> {
     }
     throw err;
   }
+
+  // The parsed content becomes a document below, same as ever — but until now the original bytes
+  // went nowhere the moment readUpload returned. Task 6's registration (lib/retrieval/register.ts)
+  // reaches `attachments` through a LEFT JOIN filings precisely so a file with no exchange filing
+  // behind it still reaches the index, and app/api/attachment/[sha]/route.ts is how a person gets
+  // the original back rather than this system's lossy reading of it. Kept under whichever kind
+  // fits without guessing: a workbook's own rows are already searchable as a sheet document, so
+  // 'excel' here just labels the original file; anything else is 'other' rather than a
+  // classification this path has no real basis for.
+  await writeTxn(user.userId, (c) =>
+    keepUploadAsAttachment(c, {
+      companyId,
+      kind: read.kind === 'sheet' ? 'excel' : 'other',
+      filename: file.name,
+      bytes,
+      actorId: user.userId,
+    }),
+  );
 
   const base = file.name.replace(/\.[^.]+$/, '') || file.name;
   const made: string[] = [];
