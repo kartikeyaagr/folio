@@ -13,7 +13,7 @@ import { migrate } from '../../db/migrate.ts';
 import { closePool, readTxn, serviceTxn } from '../db.ts';
 import { costUsd, scriptedModel, scriptedOk, type Answer } from './model.ts';
 import { assertInScope, drain, HANDLERS, registerHandler, ScopeViolation, type AgentRow } from './runner.ts';
-import { enqueue, failedRuns, MAX_ATTEMPTS, requeue } from './queue.ts';
+import { enqueue, failedRuns, MAX_ATTEMPTS, requeue, requeueErrored, RETRY_AFTER_HOURS } from './queue.ts';
 import { acceptDraft, diffFields, pendingDrafts, ReasonRequired, rejectDraft } from './review.ts';
 
 const DB = `trisula_agents_${process.pid}`;
@@ -140,6 +140,105 @@ test('a run gives up after MAX_ATTEMPTS and becomes visible as failed', async ()
 });
 
 // ---- the happy path -----------------------------------------------------------------------------
+
+/** Drive one run all the way to terminal `failed`, with a chosen kind, and hand back its id. */
+async function failTerminally(kind: 'error' | 'refusal'): Promise<string> {
+  registerHandler('test', async (ctx) => {
+    const a = await ctx.ask({ model: 'm', system: 's', task: 't', schema: {} });
+    if (!a.ok) {
+      const { raise } = await import('./runner.ts');
+      raise(a);
+    }
+    return { draft: { content: {}, situation: 'a test run', sources: [], model: 'm' } };
+  });
+  const runId = await enqueue({ agentKey: 'test', companyId: CO });
+  const model = scriptedModel([{ ok: false, kind, detail: `a ${kind} for the test` }]);
+
+  // One at a time, because `drain` claims whatever is eligible rather than what we mean — and a
+  // run that has reached `failed` is no longer eligible, which is what makes this sequencing safe.
+  for (let i = 0; i < MAX_ATTEMPTS; i++) {
+    await serviceTxn('system:agents', async (c) => {
+      await c.query('UPDATE agent_runs SET next_attempt_at = now() WHERE id = $1', [runId]);
+    });
+    await drain(1, model);
+  }
+  return runId;
+}
+
+const runRow = (id: string) =>
+  readTxn(async (c) => {
+    const { rows } = await c.query<{ status: string; failure_kind: string | null; attempts: number }>(
+      'SELECT status, failure_kind, attempts FROM agent_runs WHERE id = $1',
+      [id],
+    );
+    return rows[0]!;
+  });
+
+/** Push a failed run past the backoff, so the next pass is allowed to look at it. */
+const backdate = (id: string) =>
+  serviceTxn('system:agents', (c) =>
+    c.query(
+      `UPDATE agent_runs SET finished_at = now() - ($2 || ' hours')::interval WHERE id = $1`,
+      [id, String(RETRY_AFTER_HOURS + 1)],
+    ));
+
+test('a subject the box broke comes back; one the model declined does not', async () => {
+  // The three event sweeps test `NOT EXISTS (… agent_key, subject_ref)` with no predicate on
+  // status, so a terminal failure retires its subject for good. That is right for a refusal — it
+  // will refuse the same transcript the same way every time — and catastrophic for a box with no
+  // credential, where 129 subjects were eligible when this was written and an hour of running
+  // would have retired every one of them.
+  const broke = await failTerminally('error');
+  const declined = await failTerminally('refusal');
+  assert.equal((await runRow(broke)).status, 'failed');
+  assert.equal((await runRow(declined)).status, 'failed');
+
+  await backdate(broke);
+  await backdate(declined);
+  assert.equal(await requeueErrored(), 1, 'one of the two, not both and not neither');
+
+  const back = await runRow(broke);
+  assert.equal(back.status, 'queued');
+  assert.equal(back.failure_kind, null);
+  assert.equal(back.attempts, 0, 'and it gets its attempts back, or it fails again on the first try');
+
+  assert.equal((await runRow(declined)).status, 'failed', 'a refusal stays refused');
+});
+
+test('a box that broke a minute ago is not retried a minute later', async () => {
+  // The thing being waited for is a person — a credential, a token, a database somebody restarts.
+  // Retrying inside five minutes just burns the same failure again, and it is the job's alert that
+  // actually gets it fixed.
+  const broke = await failTerminally('error');
+  assert.equal(await requeueErrored(), 0);
+  assert.equal((await runRow(broke)).status, 'failed');
+
+  await backdate(broke);
+  assert.equal(await requeueErrored(), 1, 'and it is offered once the wait is over');
+});
+
+test('drain counts a broken box apart from a model having a bad day', async () => {
+  // `failed` alone cannot tell them apart, and the job stakes its exit code on the difference:
+  // one wakes somebody, the other is a row on /agents.
+  registerHandler('test', async (ctx) => {
+    const a = await ctx.ask({ model: 'm', system: 's', task: 't', schema: {} });
+    if (!a.ok) {
+      const { raise } = await import('./runner.ts');
+      raise(a);
+    }
+    return { draft: { content: {}, situation: 'a test run', sources: [], model: 'm' } };
+  });
+
+  await enqueue({ agentKey: 'test', companyId: CO });
+  const onTheBox = await drain(1, scriptedModel([{ ok: false, kind: 'error', detail: 'no credential' }]));
+  assert.equal(onTheBox.failed, 1);
+  assert.equal(onTheBox.errors, 1);
+
+  await enqueue({ agentKey: 'test', companyId: CO });
+  const onTheSubject = await drain(1, scriptedModel([{ ok: false, kind: 'refusal', detail: 'declined' }]));
+  assert.equal(onTheSubject.failed, 1);
+  assert.equal(onTheSubject.errors, 0, 'a refusal is the agent, not the box');
+});
 
 test('a successful run writes one draft carrying cost and provenance', async () => {
   registerHandler('test', async (ctx) => {

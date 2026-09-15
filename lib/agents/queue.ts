@@ -25,6 +25,19 @@ import { readTxn, serviceTxn } from '../db.ts';
 export const LEASE_MINUTES = 30;
 export const MAX_ATTEMPTS = 3;
 
+/**
+ * How long a run that failed on the *box* waits before it is offered again.
+ *
+ * Long, because the thing it is waiting for is a person: a missing credential, an expired token, a
+ * database that was down. Retrying that in five minutes just burns the same failure again, and the
+ * job's own alert is what actually gets it fixed. Six hours means a box repaired in the morning has
+ * its backlog moving by lunch without anybody typing anything.
+ */
+export const RETRY_AFTER_HOURS = 6;
+
+/** Per pass. A broken box should not enqueue its whole backlog on every tick of a five-minute timer. */
+export const RETRY_BATCH = 25;
+
 export const id = (): string => randomBytes(16).toString('hex');
 
 export interface EnqueueInput {
@@ -213,6 +226,44 @@ export async function failedRuns(limit = 50): Promise<
       [limit],
     );
     return rows;
+  });
+}
+
+/**
+ * Put back the runs the *box* broke, as opposed to the ones the model declined.
+ *
+ * **This is what stops an outage silently retiring work forever.** The three event sweeps ask
+ * `NOT EXISTS (… WHERE agent_key = $1 AND subject_ref = …)` with no predicate on status, so a run
+ * that reaches `failed` retires its subject permanently — `failedRuns`' own docstring above says
+ * as much. That is right for a subject the model refused, could not parse, or could not fit: those
+ * fail the same way every time, and re-offering them forever is a bill with no answer at the end
+ * of it. It is wrong for a box with no credential, where the work is fine and the machine was not.
+ * Measured on the dev database at the time this was written: 129 subjects were eligible across the
+ * three sweeps, and an hour of running without a credential would have retired every one of them.
+ *
+ * `failure_kind` already draws that line. `refusal`, `truncated`, `unparseable`, `schema_mismatch`
+ * and `too_large` are all *this content*; `error` is the catch-all for everything else. So only
+ * `error` comes back, and the sweeps keep their simple predicate — a requeued run is `queued`
+ * again, which the sweep already reads as "this subject has a run".
+ *
+ * Returns how many it put back, so the job can say so out loud.
+ */
+export async function requeueErrored(limit = RETRY_BATCH): Promise<number> {
+  return serviceTxn('system:agents', async (c) => {
+    const { rowCount } = await c.query(
+      `UPDATE agent_runs
+          SET status='queued', attempts=0, failure_kind=NULL, error=NULL,
+              finished_at=NULL, claimed_at=NULL, next_attempt_at=now()
+        WHERE id IN (
+          SELECT id FROM agent_runs
+           WHERE status = 'failed' AND failure_kind = 'error'
+             AND finished_at < now() - ($1 || ' hours')::interval
+           ORDER BY finished_at
+           LIMIT $2
+           FOR UPDATE SKIP LOCKED)`,
+      [String(RETRY_AFTER_HOURS), limit],
+    );
+    return rowCount ?? 0;
   });
 }
 

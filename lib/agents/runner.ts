@@ -124,6 +124,17 @@ export interface DrainResult {
   ran: number;
   drafted: number;
   failed: number;
+  /**
+   * Of those failures, the ones whose kind is `error` — the catch-all.
+   *
+   * The distinction is the whole difference between an agent having a bad day and a box that
+   * cannot work at all. A `refusal`, a `truncated`, an `unparseable`, a `schema_mismatch` or a
+   * `too_large` is *this subject*: the run recorded it, `/agents` shows it, and waking somebody at
+   * 6am would be wrong. An `error` is a missing credential, a network that is gone, a database
+   * that is not there — every run in the batch will fail the same way, and nobody will find out
+   * unless the job says so.
+   */
+  errors: number;
   reclaimed: number;
 }
 
@@ -135,15 +146,16 @@ export interface DrainResult {
  */
 export async function drain(limit = 10, model: Model = liveModel): Promise<DrainResult> {
   const reclaimed = await reclaim();
-  const out: DrainResult = { ran: 0, drafted: 0, failed: 0, reclaimed };
+  const out: DrainResult = { ran: 0, drafted: 0, failed: 0, errors: 0, reclaimed };
 
   for (let i = 0; i < limit; i++) {
     const run = await claimRun();
     if (!run) break;
     out.ran++;
-    const outcome = await executeRun(run, model);
+    const { outcome, kind } = await executeRun(run, model);
     if (outcome === 'drafted') out.drafted++;
     if (outcome === 'failed') out.failed++;
+    if (kind === 'error') out.errors++;
   }
   return out;
 }
@@ -157,17 +169,23 @@ export type RunOutcome = 'drafted' | 'done' | 'failed';
  * it. A second copy of this for chat is how the two would drift — and the thing that would drift
  * first is which failures get a named `failure_kind`.
  */
-async function executeRun(run: ClaimedRun, model: Model): Promise<RunOutcome> {
+async function executeRun(
+  run: ClaimedRun,
+  model: Model,
+  // The kind comes back beside the outcome so `drain` can tell a box that cannot work from an
+  // agent having a bad day. `runNow` drops it — chat has a person watching, and the person is the
+  // alert — which is why this is the inner shape and `RunOutcome` is still what callers see.
+): Promise<{ outcome: RunOutcome; kind?: FailureKind }> {
   const agent = await loadAgent(run.agentKey);
   if (!agent) {
     await failRun(run.id, 'error', `no enabled agent named ${run.agentKey}`);
-    return 'failed';
+    return { outcome: 'failed', kind: 'error' };
   }
 
   const handler = HANDLERS.get(run.agentKey);
   if (!handler) {
     await failRun(run.id, 'error', `no handler registered for ${run.agentKey}`);
-    return 'failed';
+    return { outcome: 'failed', kind: 'error' };
   }
 
   try {
@@ -178,14 +196,14 @@ async function executeRun(run: ClaimedRun, model: Model): Promise<RunOutcome> {
     });
     if ('done' in result) {
       await finishRun(run.id, null);
-      return 'done';
+      return { outcome: 'done' };
     }
     await recordDraft(run.id, agent, run.companyId, result.draft);
-    return 'drafted';
+    return { outcome: 'drafted' };
   } catch (err) {
-    const kind = err instanceof ModelFailure ? err.kind : 'error';
+    const kind: FailureKind = err instanceof ModelFailure ? err.kind : 'error';
     await failRun(run.id, kind, String(err instanceof Error ? err.message : err));
-    return 'failed';
+    return { outcome: 'failed', kind };
   }
 }
 
@@ -198,7 +216,7 @@ async function executeRun(run: ClaimedRun, model: Model): Promise<RunOutcome> {
  */
 export async function runNow(runId: string, model: Model = liveModel): Promise<RunOutcome | null> {
   const run = await claimThisRun(runId);
-  return run ? executeRun(run, model) : null;
+  return run ? (await executeRun(run, model)).outcome : null;
 }
 
 /** Thrown by an agent when the model gave nothing usable, so the run records the reason. */
