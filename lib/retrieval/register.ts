@@ -196,6 +196,14 @@ const NEWS = `
 // already true of today's data. DISTINCT ON picks the most recently announced filing that
 // references it, if any.
 //
+// **`f.id` breaks the tie, for the reason CURRENT_VERSION_ORDER_SQL breaks its own.** Two filings
+// referencing one PDF at the identical `announced_at` — the exchange republishing the same document
+// under two ids — leaves the winner to the plan, so `company_id`, `title` and `occurred_at` all flip
+// between runs. That used to cost one audit row per drain. Since the sweep is bounded by the ids the
+// upserts return, a flipping row is in `moved` on every run instead, and its chunks are rewritten
+// every ten minutes — 1,082 of them for one annual report, each re-inserting a 384-dim vector into
+// the HNSW index. Zero such ties in the corpus today; the cost of preventing one is four characters.
+//
 // The same fan-out shape makes `./reap.ts`'s retraction correct without special handling: a row is
 // retracted only once `extracted_text` is cleared or the `attachments` row itself is gone, exactly
 // mirroring the SELECT's own admission test.
@@ -209,7 +217,7 @@ const ATTACHMENTS_SELECT = `
     FROM attachments a
     LEFT JOIN filings f ON f.attachment_sha256 = a.sha256
    WHERE a.extracted_text IS NOT NULL AND length(a.extracted_text) > 0
-   ORDER BY a.sha256, f.announced_at DESC NULLS LAST`;
+   ORDER BY a.sha256, f.announced_at DESC NULLS LAST, f.id`;
 
 const ATTACHMENTS = `
   INSERT INTO sources (kind, ref_id, company_id, title, occurred_at, content_hash)
