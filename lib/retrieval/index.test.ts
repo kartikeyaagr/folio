@@ -7,7 +7,7 @@ import { migrate } from '../../db/migrate.ts';
 import { closePool, serviceTxn, type Client } from '../db.ts';
 import { indexOne, drain } from './index.ts';
 import { EMBED_MODEL, isLoaded } from './embed.ts';
-import { registerAll } from './register.ts';
+import { registerAll, contentHash } from './register.ts';
 
 const DB = `trisula_idx_${process.pid}`;
 
@@ -237,6 +237,58 @@ test('a spreadsheet document_version is chunked by row, chosen by content not by
     ]);
     // Row-packed (tab between cells, newline between rows), not the raw '{"cells":...}' JSON.
     assert.equal(rows[0]!.chunk_text, 'Revenue\t693.2\nPAT\t58.1');
+  });
+});
+
+test("a sheet's hash is not its body's hash, so the grid renderer can invalidate it", async () => {
+  // What gets chunked for a sheet is `sheetGridText(cells)`, not the body. If the hash were taken
+  // straight off `body::text`, a change to that renderer would leave `content_hash` unmoved and
+  // `indexed_at` set — so the sheet would never re-chunk, and its stored char_from/char_to would go
+  // on indexing a string `textFor` no longer returns. `chunk.ts`'s header records that divergence
+  // happening once already. The renderer tag in DOCUMENTS_SELECT is what makes it invalidatable.
+  await serviceTxn('system:index', async (c) => {
+    await c.query("INSERT INTO companies (id, symbol, name) VALUES ('co_grid','GRID','Grid Ltd')");
+    const body = { cells: { A1: 'Revenue', B1: '693.2' } };
+    await c.query(
+      `INSERT INTO documents (id, company_id, title, kind, created_by)
+       VALUES ('d_grid',$1,'Model','sheet','system:index')`,
+      ['co_grid'],
+    );
+    await c.query(`INSERT INTO document_versions (document_id, body, written_by) VALUES ($1,$2,'system:index')`, [
+      'd_grid',
+      JSON.stringify(body),
+    ]);
+    await registerAll(c);
+
+    const { rows } = await c.query<{ content_hash: string }>(
+      `SELECT content_hash FROM sources WHERE kind = 'document_version' AND ref_id = 'd_grid'`,
+    );
+    const { rows: raw } = await c.query<{ t: string }>(
+      `SELECT body::text AS t FROM document_versions WHERE document_id = 'd_grid'`,
+    );
+    assert.notEqual(
+      rows[0]!.content_hash,
+      contentHash(raw[0]!.t),
+      "a sheet hashed as its raw body cannot be re-chunked when the renderer changes",
+    );
+
+    // And the other half of the bargain: a prose document must be untouched by the tag, or every
+    // note in the corpus re-embeds the next time the grid renderer is bumped.
+    await c.query(
+      `INSERT INTO documents (id, company_id, title, kind, created_by)
+       VALUES ('d_prose_hash',$1,'Note','note','system:index')`,
+      ['co_grid'],
+    );
+    await saveNewVersion(c, 'd_prose_hash', { text: 'ordinary prose, no cells anywhere' });
+    await registerAll(c);
+    const prose = await c.query<{ content_hash: string }>(
+      `SELECT content_hash FROM sources WHERE kind = 'document_version' AND ref_id = 'd_prose_hash'`,
+    );
+    assert.equal(
+      prose.rows[0]!.content_hash,
+      contentHash('ordinary prose, no cells anywhere'),
+      'a prose document must hash its text exactly, with no renderer tag',
+    );
   });
 });
 

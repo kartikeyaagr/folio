@@ -138,9 +138,31 @@ const CURRENT_VERSION_ORDER_SQL = 'ORDER BY v.written_at DESC, v.id DESC LIMIT 1
 // cannot undo a registration already done. `./reap.ts` is the half that actually retracts one: a
 // document archived AFTER registration no longer appears in this SELECT at all, so its NOT EXISTS
 // finds nothing and the row (and its chunks, cascading from sources.id per 0041) is deleted.
+// A sheet's hash carries GRID_RENDERER, and it has to. What gets chunked for a sheet is
+// `sheetGridText(cells)`, not the body — so a change to that renderer changes the text the offsets
+// index into while `body::text` stays byte-identical, leaving `content_hash` still, `indexed_at`
+// still set, and every stored `char_from`/`char_to` pointing into a string `textFor` no longer
+// returns. That is exactly the divergence `chunk.ts`'s header records as already having happened
+// once (chunk 2069, verified live). SQL cannot run the renderer, so the tag stands in for it: bump
+// it in the same commit as any change to `sheetGridText`, and every sheet re-chunks once.
+//
+// v2: column ordering moved from `localeCompare` to `columnIndex`, so a sheet wider than 26 columns
+// renders in a different order than it did under v1.
+const GRID_RENDERER = 'grid-v2';
+
+// This constant is interpolated into SQL rather than bound, because DOCUMENTS_SELECT is a static
+// string. No request data reaches it — but a future value carrying an apostrophe would be a syntax
+// error raised inside `drain()`'s single transaction, taking a whole batch down for a typo. The
+// charset is asserted here so that mistake is a module-load failure instead.
+if (!/^[a-z0-9-]+$/.test(GRID_RENDERER)) {
+  throw new Error(`GRID_RENDERER must be [a-z0-9-]; got ${GRID_RENDERER}`);
+}
+
 const DOCUMENTS_SELECT = `
   SELECT 'document_version' AS kind, d.id AS ref_id, d.company_id, d.title, cur.written_at AS occurred_at,
-         encode(sha256(convert_to(coalesce(cur.body->>'text', cur.body::text), 'UTF8')), 'hex') AS content_hash
+         encode(sha256(convert_to(
+           CASE WHEN jsonb_exists(cur.body, 'cells') THEN '${GRID_RENDERER}:' || cur.body::text
+                ELSE coalesce(cur.body->>'text', cur.body::text) END, 'UTF8')), 'hex') AS content_hash
     FROM documents d
     JOIN LATERAL (
       SELECT * FROM document_versions v WHERE v.document_id = d.id ${CURRENT_VERSION_ORDER_SQL}
