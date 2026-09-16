@@ -69,7 +69,9 @@ export function contentHash(text: string): string {
  * Shared by all five inserts.
  *
  * `indexed_at`/`index_error` clear only when `content_hash` actually moved — the difference
- * between a memo costing one embed per afternoon and one per save.
+ * between a memo costing one embed per afternoon and one per save. A vector is a function of the
+ * text and of nothing else, so only the text can invalidate it; company and date moving is handled
+ * by `syncChunkMetadata` below, which corrects the copies without paying to re-embed.
  *
  * `company_id` is in the SET list, and load-bearing there — not just carried along. Found while
  * writing the negative test for the news reap below: NEWS_SELECT's `DISTINCT ON (i.id)` can pick a
@@ -101,7 +103,8 @@ const UPSERT = `
          index_error = CASE WHEN sources.content_hash IS DISTINCT FROM EXCLUDED.content_hash
                             THEN NULL ELSE sources.index_error END
    WHERE (sources.title, sources.occurred_at, sources.company_id, sources.content_hash)
-         IS DISTINCT FROM (EXCLUDED.title, EXCLUDED.occurred_at, EXCLUDED.company_id, EXCLUDED.content_hash)`;
+         IS DISTINCT FROM (EXCLUDED.title, EXCLUDED.occurred_at, EXCLUDED.company_id, EXCLUDED.content_hash)
+  RETURNING id`;
 
 // The "current version" tie-break: newest written_at, ties broken by id. Shared between DOCUMENTS
 // (which decides what gets hashed) and rawText's document_version branch (which must re-derive
@@ -325,7 +328,7 @@ function renderFundamentals(row: FundamentalsRow): { title: string; text: string
   return { title, text };
 }
 
-async function registerFundamentals(c: Client): Promise<number> {
+async function registerFundamentals(c: Client): Promise<string[]> {
   const { rows } = await c.query<{
     ref_id: string;
     company_id: string;
@@ -335,7 +338,7 @@ async function registerFundamentals(c: Client): Promise<number> {
     revenue: string | null;
     profit_after_tax: string | null;
   }>(FUNDAMENTALS_SELECT);
-  if (rows.length === 0) return 0;
+  if (rows.length === 0) return [];
 
   const refId: string[] = [];
   const companyId: string[] = [];
@@ -357,7 +360,7 @@ async function registerFundamentals(c: Client): Promise<number> {
     hash.push(contentHash(rendered.text));
   }
 
-  const { rowCount } = await c.query(
+  const { rows: changed } = await c.query<{ id: string }>(
     `INSERT INTO sources (kind, ref_id, company_id, title, occurred_at, content_hash)
      SELECT 'fundamentals_period', x.ref_id, x.company_id, x.title, x.occurred_at, x.content_hash
        FROM unnest($1::text[], $2::text[], $3::text[], $4::timestamptz[], $5::text[])
@@ -365,7 +368,78 @@ async function registerFundamentals(c: Client): Promise<number> {
      ${UPSERT}`,
     [refId, companyId, title, occurredAt, hash],
   );
-  return rowCount ?? 0;
+  return changed.map((r) => r.id);
+}
+
+/**
+ * Push a source's company down onto the chunks that copied it.
+ *
+ * `index.ts` writes `company_id` onto every `chunks` row and `search.ts`'s SHARED_FILTER matches
+ * the chunk's copy, not the source's. So when a story is re-attributed to the other followed name —
+ * NEWS_SELECT's `DISTINCT ON` does this on its own, see the UPSERT comment — the source moves and
+ * its chunks do not: unreachable under the new name, still answering under the old.
+ *
+ * An UPDATE rather than a re-index because **a vector is a function of the text and of nothing
+ * else**, and the text did not change. Re-embedding to correct a label would cost a model pass.
+ *
+ * **`occurred_at` is swept for every kind except `document_version`**, and both halves of that are
+ * load-bearing. It is "the date the content is about" (`0042`, `v4.md` §4.1).
+ *
+ * `document_version` is excluded because its date is the current version's `written_at` and every
+ * save mints a version — so an ordinary save of byte-identical text moves `sources.occurred_at` to
+ * now() while `content_hash` correctly suppresses the re-embed. Sweeping it would re-date every
+ * chunk to today and hand `search_corpus`'s `since` a 2022 concall as this week's news, which is
+ * the trap `0042` was written to undo.
+ *
+ * The other four are swept, because excluding them opens that same trap from the other side. An
+ * `attachment` is dated `coalesce(f.announced_at, a.added_at)`, so an annual report pulled from the
+ * exchange's own endpoint is dated *today* until the announcement feed supplies a filings row —
+ * then the source moves to the real date, the text never changed, `content_hash` keeps it out of
+ * the re-index queue, and an excluded chunk would go on claiming to be this week's material
+ * forever. Measured 15-Sep-2026 on `trisula_v3_dev`: 21 attachments hold no filings row yet, and
+ * 1,003 attachment↔filing pairs already disagree on the date. The remaining three cannot move at
+ * all — `ingest/filings.ts`'s upsert omits `announced_at`, `news_items` is `DO NOTHING`, and a
+ * restated `fundamentals_period` is a new row — so sweeping them costs nothing and keeps the rule
+ * one sentence instead of four.
+ *
+ * The comparison truncates to milliseconds because node-postgres returns a millisecond-resolution
+ * `Date` where Postgres stores microseconds. Measured the same day: 11,992 of 24,304 chunks differ
+ * from their source's `occurred_at` and **all 11,992** are explained by that truncation alone — not
+ * one is a real move. Comparing untruncated would call half the corpus drifted on every run.
+ *
+ * **Bounded twice**, both load-bearing:
+ *
+ *   * To the ids the upserts just changed. Unbounded it is a full sequential scan of `chunks` on
+ *     every call, and `drain()` calls `registerAll` once per BATCH — so `index-content --all` would
+ *     re-scan everything written so far on every batch of a backfill, against a table growing as it
+ *     goes. Measured on a synthetic 200,000-chunk / 20,000-source corpus: 210 ms and 17,645 buffer
+ *     reads per call in the steady state, to find nothing.
+ *   * To sources that are not about to be re-indexed anyway. A source whose `content_hash` moved is
+ *     in `moved` AND has `indexed_at IS NULL`, so `drain()` deletes and rewrites its chunks a few
+ *     lines later; sweeping first writes all of them twice. Measured on one 1,082-chunk annual
+ *     report: 1,727 ms, of which the join is 38 ms and the rest is index maintenance —
+ *     `company_id` is in `chunks_company_idx`, so the update can never be HOT and every row
+ *     re-inserts its 384-dim vector into the HNSW index.
+ *
+ * The cost of the first bound is that a chunk whose company drifted without its source moving is
+ * not self-healed. `index.test.ts` pins that so it stays a decision.
+ */
+async function syncChunkMetadata(c: Client, sourceIds: string[]): Promise<void> {
+  if (sourceIds.length === 0) return;
+  await c.query(
+    `UPDATE chunks ch
+        SET company_id = s.company_id,
+            occurred_at = CASE WHEN s.kind = 'document_version' THEN ch.occurred_at
+                               ELSE s.occurred_at END
+       FROM sources s
+      WHERE ch.source_id = s.id
+        AND s.id = ANY($1::bigint[])
+        AND s.indexed_at IS NOT NULL
+        AND (ch.company_id IS DISTINCT FROM s.company_id
+             OR (s.kind <> 'document_version'
+                 AND ch.occurred_at IS DISTINCT FROM date_trunc('milliseconds', s.occurred_at)))`,
+    [sourceIds],
+  );
 }
 
 /**
@@ -385,12 +459,19 @@ export async function registerAll(c: Client): Promise<number> {
     filing: FILINGS_SELECT,
     fundamentals_period: FUNDAMENTALS_SELECT,
   });
-  let total = 0;
+  // `RETURNING id` on each upsert: Postgres returns only the rows it actually inserted or updated,
+  // and the UPSERT's trailing WHERE already restricts DO UPDATE to genuinely-changed rows — so this
+  // is exactly the set whose chunks can have drifted, and in the steady state it is empty.
+  const moved: string[] = [];
   for (const sql of [DOCUMENTS, NEWS, ATTACHMENTS, FILINGS]) {
-    const { rowCount } = await c.query(sql);
-    total += rowCount ?? 0;
+    const { rows } = await c.query<{ id: string }>(sql);
+    for (const r of rows) moved.push(r.id);
   }
-  return total + (await registerFundamentals(c));
+  moved.push(...(await registerFundamentals(c)));
+  // After the upserts, so it sees this run's corrections. Not counted in the return value, for the
+  // same reason reaping is not: correcting a chunk's label is not registering a source.
+  await syncChunkMetadata(c, moved);
+  return moved.length;
 }
 
 /** A document_version's body is `{"cells": {...}}` for a sheet, detected by shape (see 0039). */
