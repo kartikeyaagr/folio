@@ -361,7 +361,7 @@ a.brief-item-title:hover {
 .news-acts {
   display: flex;
   gap: 6px;
-  align-items: start;
+  align-items: flex-start;
 }
 
 /*

@@ -637,7 +637,7 @@ details.chk-stage > .chk-stage-head:hover {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 240px;
   gap: 12px;
-  align-items: start;
+  align-items: flex-start;
 }
 .co-memo-doc {
   max-width: 72ch;

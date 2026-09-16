@@ -238,7 +238,7 @@
  */
 .item.has-act {
   grid-template-columns: 8px 1fr auto;
-  align-items: start;
+  align-items: flex-start;
 }
 .item.has-act form {
   padding-top: 2px;

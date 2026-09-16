@@ -373,7 +373,7 @@ a.cal-day-sym:active {
 .cal-fo {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  align-items: start;
+  align-items: flex-start;
   gap: 4px 14px;
   padding: 12px 18px;
   border-top: 1px solid var(--line);
