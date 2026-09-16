@@ -1953,10 +1953,77 @@ body.is-row-resizing * {
   min-height: 0;
   overflow: auto;
 }
+/* --- Rendered markdown ---------------------------------------------------------------------- */
+/*                                                                                               */
+/* What Read shows. The type is `.prose` already; these are the shapes markdown adds to it, and   */
+/* the spacing is the argument: a heading belongs to what follows it, so it carries more space    */
+/* above than below, and a reader can see the structure without reading a word.                   */
+
+.doc-rendered > :first-child {
+  margin-top: 0;
+}
+.doc-rendered p {
+  margin: 0 0 1em;
+  /* Line breaks inside a paragraph are kept — a memo written one line per thought reads that way,
+     which is what the raw reader's `pre-wrap` has always done. */
+  white-space: pre-wrap;
+}
+.doc-rendered h1,
+.doc-rendered h2,
+.doc-rendered h3 {
+  font-family: var(--font);
+  font-weight: 700;
+  line-height: 1.3;
+  margin: 1.6em 0 0.5em;
+  color: var(--ink);
+}
+.doc-rendered h1 { font-size: 21px; letter-spacing: -0.01em; }
+.doc-rendered h2 { font-size: 17px; }
+.doc-rendered h3 {
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+}
+.doc-rendered ul,
+.doc-rendered ol {
+  margin: 0 0 1em;
+  padding-left: 1.3em;
+}
+.doc-rendered li {
+  margin-bottom: 0.35em;
+}
+/* A quote is set off by a rule rather than by italics, which markdown readers get wrong as often
+   as not — italic prose at this measure is harder to read, and the point is to mark the boundary. */
+.doc-rendered blockquote {
+  margin: 0 0 1em;
+  padding-left: 14px;
+  border-left: 2px solid var(--line-2);
+  color: var(--ink-2);
+}
+.doc-rendered blockquote p:last-child {
+  margin-bottom: 0;
+}
+.doc-rendered code {
+  font-size: 0.88em;
+  padding: 1px 5px;
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+}
+.doc-rendered hr {
+  margin: 1.8em 0;
+  border: 0;
+  border-top: 1px solid var(--line);
+}
+.doc-rendered a {
+  color: var(--navy);
+}
+
 /* A measure, because full screen without one is 200 characters to a line and the eye loses its
    place on the return sweep. 68ch is what `.brief` already uses for the same reason — the news
    brief settled this once, and a memo is the same artefact. Centred, so the page reads as a page. */
 .doc-canvas .doc-edit > .doc-body,
+.doc-canvas .doc-edit > .doc-body-read,
 .doc-canvas .doc-read > .doc-body-read {
   flex: 1;
   min-height: 0;
