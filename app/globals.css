@@ -1953,18 +1953,28 @@ body.is-row-resizing * {
   min-height: 0;
   overflow: auto;
 }
-.doc-canvas .doc-edit > .doc-body {
-  flex: 1;
-  min-height: 0;
-  height: auto;
-  border: 0;
-  border-radius: 0;
-  resize: none;
-}
+/* A measure, because full screen without one is 200 characters to a line and the eye loses its
+   place on the return sweep. 68ch is what `.brief` already uses for the same reason — the news
+   brief settled this once, and a memo is the same artefact. Centred, so the page reads as a page. */
+.doc-canvas .doc-edit > .doc-body,
 .doc-canvas .doc-read > .doc-body-read {
   flex: 1;
   min-height: 0;
+  width: 100%;
+  max-width: 68ch;
+  margin: 0 auto;
+  padding: 28px 8px 48px;
+  border: 0;
+  border-radius: 0;
   max-height: none;
+  resize: none;
+}
+/* No focus ring on a document that fills the screen. The ring exists to say which field of several
+   has the keyboard; here there is one thing to type into and the caret already says so, and a 3px
+   ring around a centred column is exactly the form-field look this is trying not to have. */
+.doc-canvas .doc-edit > .doc-body:focus-visible {
+  outline: none;
+  box-shadow: none;
 }
 
 /* An icon in the ribbon: square, quiet, and the same box as the header's back button. */
@@ -1975,13 +1985,21 @@ body.is-row-resizing * {
   place-items: center;
 }
 
-/* Prose. Tall by default, because a note that starts in a two-line box gets written like one. */
+/* Prose. Tall by default, because a note that starts in a two-line box gets written like one.
+   The type comes from `.prose` — Lora, 15.5/1.65 — which this file has always said is for "memo
+   bodies, the document editor, long prose" and which the document editor was not using.
+
+   Not a `.field`. It carried that class for its border and background, and took `font-size: 13px`
+   with them — `.field` sits later in this file, so it won on order and the serif arrived at the
+   wrong size. A document body is not a form control; it is the page. */
 .doc-body {
   width: 100%;
   min-height: 420px;
   padding: 14px 16px;
-  line-height: 1.6;
-  font-size: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  color: var(--ink);
   resize: vertical;
 }
 
@@ -1993,8 +2011,6 @@ body.is-row-resizing * {
   overflow-y: auto;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  line-height: 1.65;
-  font-size: 13.5px;
   color: var(--ink-2);
 }
 .doc-read .sheet-bar .field {

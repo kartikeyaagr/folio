@@ -56,7 +56,7 @@ export function DocEditor({
       </div>
       {message && <p className="alert">{message}</p>}
       <textarea
-        className="field doc-body"
+        className="prose doc-body"
         value={text}
         onChange={(e) => { setText(e.target.value); setState('dirty'); }}
         placeholder="Write."
