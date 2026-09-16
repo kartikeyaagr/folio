@@ -1931,6 +1931,16 @@ body.is-row-resizing * {
   align-items: center;
 }
 
+/* Where a client editor's Save button lands. Takes no room at all while it is empty, which is what
+   a read-only document and a spreadsheet both leave it as. */
+.doc-ribbon-save {
+  display: inline-flex;
+  align-items: center;
+}
+.doc-ribbon-save:empty {
+  display: none;
+}
+
 .doc-canvas {
   flex: 1;
   min-height: 0;

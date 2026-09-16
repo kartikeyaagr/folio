@@ -6,6 +6,7 @@ import type { Mark } from '@/lib/prose/marks.ts';
 
 import { DocToolbar } from './DocToolbar.tsx';
 import { RichEditor } from './RichEditor.tsx';
+import { SaveSlot } from './SaveSlot.tsx';
 
 /**
  * Prose.
@@ -72,10 +73,11 @@ export function DocEditor({
         onMark={(mark) => apply.current?.(mark)}
       />
 
-      <div className="sheet-bar">
-        <span className="sheet-detail">
-          Write it as it will be read. Export gives you the same thing as a Word document.
-        </span>
+      {/* Up in the ribbon with the other things you do to a document, rather than in a bar of its
+          own between the toolbar and the page. The bar held a line of advice and this button; the
+          advice is in the toolbar's tooltips and the word count is in its first slot, so removing
+          it costs nothing and gives the document back thirty pixels of the screen. */}
+      <SaveSlot>
         <button
           type="button"
           className="btn btn-primary btn-sm"
@@ -84,7 +86,8 @@ export function DocEditor({
         >
           {state === 'saving' ? 'Saving…' : state === 'clean' ? 'Saved' : 'Save'}
         </button>
-      </div>
+      </SaveSlot>
+
       {message && <p className="alert">{message}</p>}
 
       <RichEditor text={initial} onChange={onChange} onReady={onReady} />

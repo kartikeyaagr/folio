@@ -11,6 +11,7 @@ import {
 } from '@/lib/sheet/format.ts';
 import { renameSheetIn } from '@/lib/sheet/parse.ts';
 
+import { SaveSlot } from './SaveSlot.tsx';
 import { SheetTabs } from './SheetTabs.tsx';
 import { SheetToolbar } from './SheetToolbar.tsx';
 
@@ -495,7 +496,13 @@ export function SheetEditor({
                 ? 'Start with = for a formula, and name a tab to reach it: =Inputs!B4.'
                 : 'Start with = for a formula.'))}
         </span>
-        {!readOnly && (
+      </div>
+
+      {/* Up in the ribbon, beside the other things you do to a document. What is left here is the
+          address and the formula, which is what a formula bar is in every spreadsheet — Excel and
+          Sheets both put a name box and a formula in it and nothing else. */}
+      {!readOnly && (
+        <SaveSlot>
           <button
             type="button"
             className="btn btn-primary btn-sm"
@@ -504,8 +511,8 @@ export function SheetEditor({
           >
             {saved === 'saving' ? 'Saving…' : saved === 'clean' ? 'Saved' : 'Save'}
           </button>
-        )}
-      </div>
+        </SaveSlot>
+      )}
       {message && <p className="alert">{message}</p>}
 
       {/* Focusable, because the arrow keys have to land somewhere. `tabIndex={-1}` rather than 0:

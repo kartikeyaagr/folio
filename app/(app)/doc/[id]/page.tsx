@@ -8,6 +8,7 @@ import { DeleteDocument } from '@/components/DeleteDocument.tsx';
 import { DialogButton } from '@/components/DialogButton.tsx';
 import { DocEditor } from '@/components/DocEditor.tsx';
 import { DocumentText } from '@/components/DocumentText.tsx';
+import { SAVE_SLOT } from '@/components/SaveSlot.tsx';
 import { SheetEditor } from '@/components/SheetEditor.tsx';
 
 import { requireUser } from '../../../_lib/session.ts';
@@ -146,6 +147,13 @@ export default async function DocumentPage({ params }: { params: Promise<{ id: s
           )}
 
           <span className="doc-ribbon-gap" />
+
+          {/* The editors own the save state, and this page is a server component that must stay
+              one — `CLAUDE.md`: state lives in the URL, pages stay server components. So the
+              button is portalled in here rather than the whole ribbon being hoisted into a client
+              component, which would drag the history table and the provenance dialog with it.
+              Empty and 0px wide until a client editor fills it. */}
+          <span id={SAVE_SLOT} className="doc-ribbon-save" />
 
           {/* Not a DialogButton: this is a download, and a download is a link. An anchor gets the
               browser's own save behaviour, works on a middle-click, and needs no client component
