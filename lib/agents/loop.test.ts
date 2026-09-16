@@ -211,6 +211,63 @@ test('the closing call tells the model why it cannot call anything else', async 
   assert.match(String(tail.content), /not able to find out/i, 'and told to say what it could not learn');
 });
 
+test('the SDK leaves a balanced history behind when max_iterations stops it', async () => {
+  // Every test above this one drives a hand-written `scripted` fake, and the fake reimplements the
+  // very SDK ordering that `askWithTools` depends on — so a change in `@anthropic-ai/sdk` would
+  // break production and leave the suite green. That is the same trap the capped-turn bug was:
+  // *"this read as correct against a fake whose params never grew."* Writing a more faithful fake
+  // cannot fix it, because the fake is the thing under suspicion.
+  //
+  // So this one drives the REAL `BetaToolRunner` with only `messages.create` stubbed, and asserts
+  // the single property the closing call rests on: when `max_iterations` ends the loop, the history
+  // the runner hands back is already balanced — every `tool_use` answered — so appending anything
+  // that re-answers those ids is a duplicate. No network and no key.
+  const anthropic = (await import('@anthropic-ai/sdk')).default;
+  const client = new anthropic({ apiKey: 'not-used' });
+
+  let calls = 0;
+  const stub = async (): Promise<unknown> =>
+    message({ calls: [`t${++calls}`], stop: 'tool_use', input: 1, output: 1 });
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (client.beta.messages as any).create = stub;
+
+  const runner = client.beta.messages.toolRunner({
+    model: 'claude-opus-5',
+    max_tokens: 64,
+    max_iterations: 2,
+    messages: [{ role: 'user', content: 'go' }],
+    tools: [
+      {
+        name: 'search_corpus',
+        description: 'stand-in',
+        input_schema: { type: 'object', properties: {} },
+        run: async () => 'ran',
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } as any,
+    ],
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  } as any);
+
+  for await (const m of runner) void m; // drain to the cap
+
+  const sent = runner.params.messages;
+  const ids = (blocks: unknown, type: string): string[] =>
+    (Array.isArray(blocks) ? blocks : [])
+      .filter((b) => (b as { type: string }).type === type)
+      .map((b) => (b as { id?: string; tool_use_id?: string }).id ?? (b as { tool_use_id: string }).tool_use_id);
+
+  const asked = sent.flatMap((m) => ids(m.content, 'tool_use'));
+  const answered = sent.flatMap((m) => ids(m.content, 'tool_result'));
+  assert.ok(asked.length > 0, 'the runner must have recorded the tool calls it made');
+  assert.deepEqual(
+    answered,
+    asked,
+    'params.messages must already answer every tool_use when the cap stops the loop — if this ' +
+      'fails, loop.ts must synthesise results for the unanswered ids instead of re-sending as-is',
+  );
+  assert.equal(sent[sent.length - 1]!.role, 'user', 'and it must end on the tool results');
+});
+
 test('a final message that is not JSON is unparseable, and keeps what it said', async () => {
   const { client } = scripted([{ text: 'I had a look and found nothing.' }]);
   const a = await ask(client);
