@@ -11,6 +11,7 @@ import {
   UnsupportedFile,
   type Imported,
 } from '@/lib/import/index.ts';
+import { typographyBody, type Typography } from '@/lib/prose/typography.ts';
 import { bodyOf, type Tab } from '@/lib/sheet/book.ts';
 import { lookupsFor } from '@/lib/sheet/data.ts';
 import type { Lookups } from '@/lib/sheet/evaluate.ts';
@@ -68,10 +69,18 @@ export async function createDocumentAction(form: FormData): Promise<void> {
  * Every save is a new version — `saveDocument` never updates one — which is what makes a model's
  * history readable.
  */
-export async function saveTextAction(id: string, text: string): Promise<void> {
+export async function saveTextAction(
+  id: string,
+  text: string,
+  type: Typography,
+): Promise<void> {
   const user = await requireUser();
   try {
-    await saveDocument(id, { text }, user.userId);
+    // `{text, face, size}` — the typography is a sibling of the text, not inside it. Markdown has
+    // nowhere to put a typeface, and `lib/retrieval/`'s chunker reads `.text` and would have to
+    // learn to skip it if it were. Defaults are left out, so an untouched document stores `{text}`
+    // exactly as it did before any of this.
+    await saveDocument(id, typographyBody(text, type), user.userId);
   } catch (err) {
     if (err instanceof NoSuchDocument) return flash(err.message);
     throw err;
@@ -107,6 +116,26 @@ export async function saveSheetAction(id: string, sheets: Tab[]): Promise<Lookup
   }
   revalidatePath(`/doc/${id}`);
   return lookupsFor(book.sheets);
+}
+
+/**
+ * Rename, called from the title itself rather than from a form.
+ *
+ * The same `renameDocument` behind both: a dialog posts a FormData, the title in the header calls
+ * this. Two entry points, one rule — `TitleRequired` is raised in `lib/workspace.ts` and neither
+ * caller is trusted to have checked.
+ */
+export async function renameTitleAction(id: string, title: string): Promise<void> {
+  const user = await requireUser();
+  try {
+    await renameDocument(id, title, user.userId);
+  } catch (err) {
+    if (err instanceof TitleRequired || err instanceof NoSuchDocument) return flash(err.message);
+    throw err;
+  }
+  revalidatePath(`/doc/${id}`);
+  revalidatePath('/documents');
+  revalidatePath('/company/[symbol]', 'page');
 }
 
 export async function renameDocumentAction(form: FormData): Promise<void> {

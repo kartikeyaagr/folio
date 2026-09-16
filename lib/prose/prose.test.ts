@@ -11,6 +11,7 @@ import assert from 'node:assert/strict';
 
 import { blocks, inlines, safeHref } from './parse.ts';
 import { applyMark } from './marks.ts';
+import { DEFAULT_FACE, DEFAULT_SIZE, typographyBody, typographyOf } from './typography.ts';
 
 /** The text of an inline tree, so a test can say what it reads as without walking the shape. */
 const flat = (src: string): string =>
@@ -171,4 +172,29 @@ test('a rule gets its own line, whatever it was pressed next to', () => {
   assert.equal(applyMark('above\n', 6, 6, 'rule').text, 'above\n\n---\n\n');
   assert.equal(applyMark('above\n\n', 7, 7, 'rule').text, 'above\n\n---\n\n');
   assert.equal(applyMark('', 0, 0, 'rule').text, '---\n\n');
+});
+
+// ---- a document's typeface ----------------------------------------------------------------------
+
+test("a document's typeface is stored beside its text, never inside it", () => {
+  // Markdown has nowhere to put a typeface, and `lib/retrieval/`'s chunker reads `.text` — so the
+  // text has to come back exactly as it went in whatever the face is.
+  const body = typographyBody('# Title\n\nwords', { face: 'mono', size: 14 });
+  assert.equal(body['text'], '# Title\n\nwords');
+  assert.deepEqual(typographyOf(body), { face: 'mono', size: 14 });
+});
+
+test('a document nobody has restyled stores exactly what it stored before any of this', () => {
+  assert.deepEqual(
+    typographyBody('words', { face: DEFAULT_FACE, size: DEFAULT_SIZE }),
+    { text: 'words' },
+  );
+});
+
+test('a body from before typography existed reads as the default', () => {
+  assert.deepEqual(typographyOf({ text: 'words' }), { face: DEFAULT_FACE, size: DEFAULT_SIZE });
+  assert.deepEqual(typographyOf({ text: 'w', face: 'wingdings', size: 99 }), {
+    face: DEFAULT_FACE,
+    size: DEFAULT_SIZE,
+  });
 });

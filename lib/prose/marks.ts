@@ -16,7 +16,10 @@ export type Mark =
   | 'bold' | 'italic' | 'strike' | 'code'
   | 'h1' | 'h2' | 'h3'
   | 'bullet' | 'number' | 'quote'
-  | 'link' | 'rule';
+  | 'link' | 'rule'
+  // Not marks on the text but actions on the editor, handled by `RichEditor` rather than here.
+  // They are in this union so the toolbar has one vocabulary instead of two.
+  | 'undo' | 'redo' | 'clear';
 
 export interface Edit {
   text: string;
@@ -44,6 +47,8 @@ const ANY_PREFIX = /^(\s*)(#{1,6}\s+|[-*]\s+|\d+[.)]\s+|>\s?)/;
  * and a patch would need the caller to do the same arithmetic this already did.
  */
 export function applyMark(text: string, start: number, end: number, mark: Mark): Edit {
+  // Editor actions, not text transforms — a caller working on a plain string has nothing to do.
+  if (mark === 'undo' || mark === 'redo' || mark === 'clear') return { text, start, end };
   if (mark === 'rule') return insertRule(text, start, end);
   if (mark === 'link') return insertLink(text, start, end);
   const wrap = WRAP[mark];

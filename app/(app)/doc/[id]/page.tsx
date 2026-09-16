@@ -1,6 +1,7 @@
 import { notFound } from 'next/navigation';
 
 import { getDocument, isEditable, KIND_LABEL, provenanceOf, revisionsOf } from '@/lib/workspace.ts';
+import { typographyOf } from '@/lib/prose/typography.ts';
 import { sheetsOf } from '@/lib/sheet/book.ts';
 import { lookupsFor } from '@/lib/sheet/data.ts';
 import { AppHeader, Blank, Empty, Fact, Facts } from '@/components/ui.tsx';
@@ -9,12 +10,14 @@ import { DialogButton } from '@/components/DialogButton.tsx';
 import { DocEditor } from '@/components/DocEditor.tsx';
 import { DocumentText } from '@/components/DocumentText.tsx';
 import { SAVE_SLOT } from '@/components/SaveSlot.tsx';
+import { TitleEdit } from '@/components/TitleEdit.tsx';
 import { SheetEditor } from '@/components/SheetEditor.tsx';
 
 import { requireUser } from '../../../_lib/session.ts';
 import {
   archiveDocumentAction,
   renameDocumentAction,
+  renameTitleAction,
   saveSheetAction,
   saveTextAction,
 } from '../../../_lib/actions/workspace.ts';
@@ -115,7 +118,7 @@ export default async function DocumentPage({ params }: { params: Promise<{ id: s
   return (
     <>
       <AppHeader
-        title={doc.title}
+        title={<TitleEdit id={doc.id} title={doc.title} onRename={renameTitleAction} />}
         subtitle={
           `${KIND_LABEL[doc.kind] ?? doc.kind}` +
           (doc.symbol ? ` · ${doc.symbol}` : '') +
@@ -263,7 +266,12 @@ export default async function DocumentPage({ params }: { params: Promise<{ id: s
             // an event handler, which cannot cross into a client component.
             <SheetEditor id={doc.id} sheets={sheets} lookups={lookups} onSave={saveSheetAction} />
           ) : editable ? (
-            <DocEditor id={doc.id} text={text} onSave={saveTextAction} />
+            <DocEditor
+              id={doc.id}
+              text={text}
+              type={typographyOf(doc.body)}
+              onSave={saveTextAction}
+            />
           ) : (
             <DocumentText text={text} />
           )}

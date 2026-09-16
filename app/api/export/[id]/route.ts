@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 
 import { toDocx, docxFilename } from '@/lib/export/docx.ts';
+import { typographyOf } from '@/lib/prose/typography.ts';
 import { getDocument } from '@/lib/workspace.ts';
 
 import { currentUser } from '../../../_lib/session.ts';
@@ -44,7 +45,8 @@ export async function GET(
   }
 
   const text = typeof doc.body['text'] === 'string' ? doc.body['text'] : '';
-  const bytes = toDocx(doc.title, text);
+  // The face and size the document is set in on screen, so the file arrives set the same way.
+  const bytes = toDocx(doc.title, text, typographyOf(doc.body));
   const filename = docxFilename(doc.title);
 
   return new NextResponse(new Uint8Array(bytes), {

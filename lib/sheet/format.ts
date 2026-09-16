@@ -24,6 +24,23 @@ export type Align = 'left' | 'center' | 'right';
 export type Tone = 'navy' | 'teal' | 'red' | 'amber' | 'muted';
 /** `auto` is what a cell does with no format: a number reads as a number, text as text. */
 export type NumberStyle = 'auto' | 'text' | 'number' | 'inr' | 'percent' | 'date';
+/** Where the text sits in a row taller than itself. Sheets' three, and the same default. */
+export type VAlign = 'top' | 'middle' | 'bottom';
+
+/**
+ * The typefaces, and why there are three rather than twenty.
+ *
+ * Google Sheets offers every font the machine has, and a model built in fourteen of them is a model
+ * nobody can read. This system already owns exactly two faces as design tokens — the sans the UI is
+ * set in, the serif a document is set in — and a monospace, which is the one a grid genuinely needs
+ * that neither covers: a column of figures in a proportional face does not line up, and lining up
+ * is what a column of figures is for.
+ *
+ * Each carries a Word equivalent as well as a CSS stack, because `lib/export/docx.ts` has to name a
+ * font the recipient's machine has. A memo exported in a face Word cannot find is a memo that
+ * arrives in Calibri.
+ */
+export type Face = 'sans' | 'serif' | 'mono';
 
 export interface Format {
   bold?: true;
@@ -31,6 +48,10 @@ export interface Format {
   underline?: true;
   strike?: true;
   align?: Align;
+  valign?: VAlign;
+  face?: Face;
+  /** Point size from `SIZES`. Absent is the grid's own 12.5px. */
+  size?: number;
   style?: NumberStyle;
   /** Decimal places, 0–6. Only meaningful for the numeric styles. */
   dp?: number;
@@ -46,6 +67,23 @@ export const FLAGS = ['bold', 'italic', 'underline', 'strike'] as const;
 export type Flag = (typeof FLAGS)[number];
 
 export const ALIGNS: Align[] = ['left', 'center', 'right'];
+export const VALIGNS: VAlign[] = ['top', 'middle', 'bottom'];
+
+export const FACES: { value: Face; label: string; word: string }[] = [
+  { value: 'sans', label: 'Sans', word: 'Calibri' },
+  { value: 'serif', label: 'Serif', word: 'Georgia' },
+  { value: 'mono', label: 'Mono', word: 'Consolas' },
+];
+
+/**
+ * The sizes offered, in points.
+ *
+ * A fixed ladder rather than a free number, for the same reason the widths in `SheetEditor` are
+ * buckets: these are classes in `app/globals.css`, and a class is what can carry a hover, a dark
+ * mode value and a print rule. It is also the set somebody actually reaches for — Sheets' own
+ * dropdown is these plus sizes nobody uses in a model.
+ */
+export const SIZES = [8, 9, 10, 11, 12, 14, 18, 24] as const;
 export const TONES: Tone[] = ['navy', 'teal', 'red', 'amber', 'muted'];
 export const STYLES: { value: NumberStyle; label: string }[] = [
   { value: 'auto', label: 'Automatic' },
@@ -62,6 +100,9 @@ const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
 
 const isTone = (v: unknown): v is Tone => TONES.includes(v as Tone);
 const isAlign = (v: unknown): v is Align => ALIGNS.includes(v as Align);
+const isVAlign = (v: unknown): v is VAlign => VALIGNS.includes(v as VAlign);
+const isFace = (v: unknown): v is Face => FACES.some((f) => f.value === v);
+const isSize = (v: unknown): v is number => (SIZES as readonly number[]).includes(v as number);
 const isStyle = (v: unknown): v is NumberStyle => STYLES.some((s) => s.value === v);
 
 /** A format with nothing in it is not stored — `clear` and "never formatted" are the same state. */
@@ -108,6 +149,9 @@ export function classesFor(f: Format | undefined): string {
   const out: string[] = [];
   for (const flag of FLAGS) if (f![flag]) out.push(`cf-${flag}`);
   if (f!.align) out.push(`cf-${f!.align}`);
+  if (f!.valign) out.push(`cf-v-${f!.valign}`);
+  if (f!.face) out.push(`cf-face-${f!.face}`);
+  if (f!.size) out.push(`cf-size-${f!.size}`);
   if (f!.ink) out.push(`cf-ink-${f!.ink}`);
   if (f!.fill) out.push(`cf-fill-${f!.fill}`);
   if (f!.clip) out.push('cf-clip');
@@ -179,6 +223,9 @@ export function readFormats(raw: unknown): Formats {
     const f: Format = {};
     for (const flag of FLAGS) if (v[flag] === true) f[flag] = true;
     if (isAlign(v['align'])) f.align = v['align'];
+    if (isVAlign(v['valign'])) f.valign = v['valign'];
+    if (isFace(v['face'])) f.face = v['face'];
+    if (isSize(v['size'])) f.size = v['size'];
     if (isStyle(v['style']) && v['style'] !== 'auto') f.style = v['style'];
     if (typeof v['dp'] === 'number' && Number.isInteger(v['dp'])) {
       f.dp = Math.max(0, Math.min(MAX_DP, v['dp']));

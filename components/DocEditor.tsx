@@ -3,6 +3,7 @@
 import { useCallback, useRef, useState } from 'react';
 
 import type { Mark } from '@/lib/prose/marks.ts';
+import { typographyClasses, type Typography } from '@/lib/prose/typography.ts';
 
 import { DocToolbar } from './DocToolbar.tsx';
 import { RichEditor } from './RichEditor.tsx';
@@ -28,14 +29,17 @@ import { SaveSlot } from './SaveSlot.tsx';
 export function DocEditor({
   id,
   text: initial,
+  type: initialType,
   onSave,
 }: {
   id: string;
   text: string;
+  type: Typography;
   /** The server action itself; an arrow closing over the id cannot cross into a client component. */
-  onSave: (id: string, text: string) => Promise<void>;
+  onSave: (id: string, text: string, type: Typography) => Promise<void>;
 }) {
   const [text, setText] = useState(initial);
+  const [type, setType] = useState<Typography>(initialType);
   const [state, setState] = useState<'clean' | 'dirty' | 'saving' | 'error'>('clean');
   const [message, setMessage] = useState<string | null>(null);
   // The editor hands its apply function up rather than the toolbar reaching into the DOM: the
@@ -54,7 +58,7 @@ export function DocEditor({
   const save = async (): Promise<void> => {
     setState('saving');
     try {
-      await onSave(id, text);
+      await onSave(id, text, type);
       setState('clean');
       setMessage(null);
     } catch (err) {
@@ -70,7 +74,9 @@ export function DocEditor({
       <DocToolbar
         words={words}
         disabled={state === 'saving'}
+        type={type}
         onMark={(mark) => apply.current?.(mark)}
+        onType={(next) => { setType((t) => ({ ...t, ...next })); setState('dirty'); }}
       />
 
       {/* Up in the ribbon with the other things you do to a document, rather than in a bar of its
@@ -90,7 +96,14 @@ export function DocEditor({
 
       {message && <p className="alert">{message}</p>}
 
-      <RichEditor text={initial} onChange={onChange} onReady={onReady} />
+      {/* The typography is a class on the writing surface, so what you type into is set the way the
+          document is set — and the same `cf-face-*` / `cf-size-*` rules a spreadsheet cell uses. */}
+      <RichEditor
+        text={initial}
+        className={typographyClasses(type)}
+        onChange={onChange}
+        onReady={onReady}
+      />
     </div>
   );
 }

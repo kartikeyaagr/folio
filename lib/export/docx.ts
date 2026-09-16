@@ -12,6 +12,7 @@
  */
 
 import { blocks, type Block, type Inline } from '../prose/parse.ts';
+import { DEFAULT_FACE, DEFAULT_SIZE, FACES, type Typography } from '../prose/typography.ts';
 import { zip, type Entry } from './zip.ts';
 
 /** The five characters XML cannot carry raw. A memo is full of `&` and `<`. */
@@ -93,15 +94,27 @@ function paragraphs(block: Block): string {
   }
 }
 
+/**
+ * The document's own face and size, as Word states them.
+ *
+ * `w:sz` is in half-points, so an 11pt document is `22`. The face is a name from `FACES` rather
+ * than the CSS stack the screen uses: a memo exported in a family Word cannot find arrives in
+ * Calibri, and the reader never learns that it was meant to be anything else.
+ */
+const defaults = (t: Typography): string => {
+  const word = FACES.find((f) => f.value === t.face)?.word ?? 'Georgia';
+  return `<w:docDefaults><w:rPrDefault><w:rPr>`
+    + `<w:rFonts w:ascii="${word}" w:hAnsi="${word}"/><w:sz w:val="${t.size * 2}"/>`
+    + `</w:rPr></w:rPrDefault></w:docDefaults>`;
+};
+
 const STYLE = (id: string, name: string, rPr: string, spacing = ''): string =>
   `<w:style w:type="paragraph" w:styleId="${id}"><w:name w:val="${name}"/>`
   + `<w:pPr>${spacing}</w:pPr><w:rPr>${rPr}</w:rPr></w:style>`;
 
-const STYLES = `${DECL}
+const styles = (t: Typography): string => `${DECL}
 <w:styles xmlns:w="${W}">
-<w:docDefaults><w:rPrDefault><w:rPr>
-<w:rFonts w:ascii="Georgia" w:hAnsi="Georgia"/><w:sz w:val="22"/>
-</w:rPr></w:rPrDefault></w:docDefaults>
+${defaults(t)}
 ${STYLE('Heading1', 'heading 1', '<w:b/><w:sz w:val="34"/>', '<w:spacing w:before="320" w:after="140"/>')}
 ${STYLE('Heading2', 'heading 2', '<w:b/><w:sz w:val="28"/>', '<w:spacing w:before="280" w:after="120"/>')}
 ${STYLE('Heading3', 'heading 3', '<w:b/><w:sz w:val="24"/>', '<w:spacing w:before="240" w:after="100"/>')}
@@ -158,7 +171,11 @@ const DOC_RELS = `${DECL}
  * outside this system arrives as a file, and a file whose first line is "The question is not
  * whether the product works" has lost the one line saying what it is about.
  */
-export function toDocx(title: string, text: string): Buffer {
+export function toDocx(
+  title: string,
+  text: string,
+  type: Typography = { face: DEFAULT_FACE, size: DEFAULT_SIZE },
+): Buffer {
   const body = [
     para(runs([{ t: 'text', v: title }]), 'Heading1'),
     ...blocks(text).map(paragraphs),
@@ -175,7 +192,7 @@ export function toDocx(title: string, text: string): Buffer {
     { name: '_rels/.rels', body: Buffer.from(ROOT_RELS, 'utf8') },
     { name: 'word/document.xml', body: Buffer.from(document, 'utf8') },
     { name: 'word/_rels/document.xml.rels', body: Buffer.from(DOC_RELS, 'utf8') },
-    { name: 'word/styles.xml', body: Buffer.from(STYLES, 'utf8') },
+    { name: 'word/styles.xml', body: Buffer.from(styles(type), 'utf8') },
     { name: 'word/numbering.xml', body: Buffer.from(NUMBERING, 'utf8') },
   ];
   return zip(entries);

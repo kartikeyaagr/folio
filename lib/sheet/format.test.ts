@@ -13,7 +13,7 @@ import assert from 'node:assert/strict';
 import { evaluateSheet, NA } from './evaluate.ts';
 import {
   classesFor, clampCol, clampRow, display, isEmpty, readFormats, readSizes, stepDp, toggleFlag,
-  withPatch, MAX_COL, MAX_ROW, MIN_COL, MIN_ROW, type Format,
+  withPatch, FACES, MAX_COL, MAX_ROW, MIN_COL, MIN_ROW, SIZES, type Format,
 } from './format.ts';
 
 // ---- what a cell shows -----------------------------------------------------------------------
@@ -139,4 +139,36 @@ test('stored sizes are validated the same way stored formats are', () => {
   assert.deepEqual(read, { '0': 240, '3': MAX_COL, '4': MIN_COL });
   assert.deepEqual(readSizes(undefined, clampCol), {});
   assert.deepEqual(readSizes([1, 2, 3], clampCol), {}, 'an array is not a map of index to width');
+});
+
+// ---- typeface and size --------------------------------------------------------------------------
+
+test('a typeface and a size are classes, so one rule serves a cell and a memo', () => {
+  const classes = classesFor({ face: 'mono', size: 14, valign: 'middle' }).split(' ');
+  for (const c of ['cf-face-mono', 'cf-size-14', 'cf-v-middle']) {
+    assert.ok(classes.includes(c), `expected ${c}`);
+  }
+});
+
+test('a face or size from outside the ladder is refused, not rendered as a broken class', () => {
+  // `cf-face-comic` and `cf-size-13` are classes that do not exist, so the cell would quietly
+  // ignore its own formatting — which reads as nobody having set it.
+  const read = readFormats({
+    A1: { face: 'mono', size: 14, valign: 'bottom' },
+    A2: { face: 'comic-sans', size: 13, valign: 'sideways' },
+  });
+  assert.deepEqual(read['A1'], { face: 'mono', size: 14, valign: 'bottom' });
+  assert.equal(read['A2'], undefined);
+});
+
+test('every size has a rule behind it', () => {
+  // The ladder and the stylesheet have to agree; a size with no `.cf-size-N` renders at the
+  // grid default and looks like the control did nothing.
+  for (const n of SIZES) assert.ok(classesFor({ size: n }).includes(`cf-size-${n}`));
+});
+
+test('each typeface names a font Word has', () => {
+  // A memo exported in a family Word cannot find arrives in Calibri, and the reader never learns
+  // it was meant to be anything else.
+  for (const f of FACES) assert.match(f.word, /^[A-Za-z ]+$/);
 });

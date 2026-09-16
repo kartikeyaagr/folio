@@ -45,6 +45,11 @@ const COMMANDS: Record<Mark, { cmd: string; value?: string } | null> = {
   quote: { cmd: 'formatBlock', value: 'blockquote' },
   link: null, // needs a URL, so it is prompted for below
   rule: { cmd: 'insertHorizontalRule' },
+  undo: { cmd: 'undo' },
+  redo: { cmd: 'redo' },
+  // Strips the marks and leaves the words. `execCommand` handles the selection arithmetic; the
+  // serialiser then drops whatever it left behind, which is the whole arrangement in one line.
+  clear: { cmd: 'removeFormat' },
 };
 
 // ---- markdown into a document -----------------------------------------------------------------
@@ -184,10 +189,13 @@ export function toMarkdown(root: HTMLElement): string {
 
 export function RichEditor({
   text,
+  className = '',
   onChange,
   onReady,
 }: {
   text: string;
+  /** The document's typography, as classes. See `lib/prose/typography.ts`. */
+  className?: string;
   /** The markdown the document currently serialises to. */
   onChange: (markdown: string) => void;
   /** Handed the apply function, so the toolbar above can drive this without owning the DOM. */
@@ -241,7 +249,7 @@ export function RichEditor({
   return (
     <div
       ref={root}
-      className="prose doc-body doc-rendered doc-write"
+      className={`prose doc-body doc-rendered doc-write ${className}`.trim()}
       contentEditable
       suppressContentEditableWarning
       spellCheck

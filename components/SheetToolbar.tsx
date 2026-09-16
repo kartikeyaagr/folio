@@ -1,8 +1,8 @@
 'use client';
 
 import {
-  ALIGNS, STYLES, TONES,
-  type Align, type Format, type NumberStyle, type Tone,
+  ALIGNS, FACES, SIZES, STYLES, TONES, VALIGNS,
+  type Align, type Face, type Format, type NumberStyle, type Tone, type VAlign,
 } from '@/lib/sheet/format.ts';
 
 /**
@@ -19,9 +19,10 @@ import {
  * the whole range instead would need a third "mixed" state on every button to be honest, which is
  * a lot of chrome to explain a case nobody is confused by.
  *
- * What is deliberately not here: merged cells, borders, frozen panes, font family and size. Each
- * needs a model of its own — a merge is a span, a border belongs to the edge between two cells, not
- * to either — and none of them is what a model of numbers is short of.
+ * What is deliberately not here: merged cells, borders and frozen panes. Each needs a model of its
+ * own that a per-cell format cannot carry — a merge is a span over neighbours, a border belongs to
+ * the edge *between* two cells rather than to either of them, and a freeze is a property of the
+ * view rather than of any cell. They are the next three, not things this declines.
  */
 
 const icon = (path: React.ReactNode) => (
@@ -43,6 +44,12 @@ const ALIGN_ICON: Record<Align, React.ReactNode> = {
   left: icon(<><path d="M4 6h16" /><path d="M4 12h10" /><path d="M4 18h13" /></>),
   center: icon(<><path d="M4 6h16" /><path d="M7 12h10" /><path d="M6 18h12" /></>),
   right: icon(<><path d="M4 6h16" /><path d="M10 12h10" /><path d="M7 18h13" /></>),
+};
+
+const VALIGN_ICON: Record<VAlign, React.ReactNode> = {
+  top: icon(<><path d="M4 5h16" /><path d="M12 9v10" /><path d="m8 13 4-4 4 4" /></>),
+  middle: icon(<><path d="M4 12h16" /><path d="M12 4v4M12 16v4" /></>),
+  bottom: icon(<><path d="M4 19h16" /><path d="M12 5v10" /><path d="m8 11 4 4 4-4" /></>),
 };
 
 const WRAP_ICON = icon(<><path d="M4 6h16" /><path d="M4 12h12a3 3 0 0 1 0 6h-3" /><path d="M14 15l-3 3 3 3" /><path d="M4 18h4" /></>);
@@ -102,12 +109,44 @@ export function SheetToolbar({
       </span>
 
       <span className="sheet-tools-group">
+        <label className="sheet-tools-label">
+          <span className="sr-only">Typeface</span>
+          <select
+            className="field sheet-tool-select sheet-tool-face"
+            disabled={disabled}
+            value={f?.face ?? 'sans'}
+            onChange={(e) => onPatch({ face: e.target.value as Face })}
+          >
+            {FACES.map((x) => <option key={x.value} value={x.value}>{x.label}</option>)}
+          </select>
+        </label>
+        <label className="sheet-tools-label">
+          <span className="sr-only">Size</span>
+          <select
+            className="field sheet-tool-select sheet-tool-size"
+            disabled={disabled}
+            value={f?.size ?? 10}
+            onChange={(e) => onPatch({ size: Number(e.target.value) })}
+          >
+            {SIZES.map((n) => <option key={n} value={n}>{n}</option>)}
+          </select>
+        </label>
+      </span>
+
+      <span className="sheet-tools-group">
         {ALIGNS.map((a) => (
           <button
             key={a} type="button" className="sheet-tool" disabled={disabled}
             aria-pressed={f?.align === a} title={`Align ${a}`}
             onClick={() => toggle('align', a)}
           >{ALIGN_ICON[a]}</button>
+        ))}
+        {VALIGNS.map((v) => (
+          <button
+            key={v} type="button" className="sheet-tool" disabled={disabled}
+            aria-pressed={f?.valign === v} title={`Align ${v}`}
+            onClick={() => toggle('valign', v)}
+          >{VALIGN_ICON[v]}</button>
         ))}
       </span>
 

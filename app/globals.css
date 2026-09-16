@@ -1430,6 +1430,15 @@ dialog.dlg[open] {
   max-width: 190px;
   font-size: 12px;
 }
+/* The face select shows its own faces, so the choice is legible before it is made. */
+.sheet-tool-face {
+  width: 78px;
+}
+.sheet-tool-face option[value='serif'] { font-family: var(--serif); }
+.sheet-tool-face option[value='mono'] { font-family: ui-monospace, Consolas, monospace; }
+.sheet-tool-size {
+  width: 58px;
+}
 
 /* A colour is chosen by seeing it, so the swatch is the colour. */
 .sheet-swatch {
@@ -1477,6 +1486,30 @@ dialog.dlg[open] {
 .sheet-grid td.sheet-cell.cf-left { text-align: left; }
 .sheet-grid td.sheet-cell.cf-center { text-align: center; }
 .sheet-grid td.sheet-cell.cf-right { text-align: right; }
+
+/* Typefaces. Three, because this system owns two as tokens and a grid needs a third: a column of
+   figures in a proportional face does not line up, and lining up is what a column of figures is
+   for. `lib/sheet/format.ts` carries each one's Word equivalent for the export. */
+.cf-face-sans { font-family: var(--font); }
+.cf-face-serif { font-family: var(--serif); }
+.cf-face-mono { font-family: ui-monospace, SFMono-Regular, 'SF Mono', Consolas, monospace; }
+
+/* Sizes, as classes rather than a number, so the ladder is fixed and each rung can carry a
+   line-height that suits it. A 24pt heading at 1.65 is a heading with a hole under it. */
+.cf-size-8 { font-size: 10px; line-height: 1.5; }
+.cf-size-9 { font-size: 11.5px; line-height: 1.5; }
+.cf-size-10 { font-size: 13px; line-height: 1.55; }
+.cf-size-11 { font-size: 15.5px; line-height: 1.65; }
+.cf-size-12 { font-size: 17px; line-height: 1.6; }
+.cf-size-14 { font-size: 19.5px; line-height: 1.5; }
+.cf-size-18 { font-size: 25px; line-height: 1.4; }
+.cf-size-24 { font-size: 33px; line-height: 1.3; }
+
+/* Where the text sits in a row taller than itself. The grid's own default is top — see the note
+   beside `.sheet-cell` — and these are the other two Sheets offers. */
+.sheet-grid td.sheet-cell.cf-v-top { vertical-align: top; }
+.sheet-grid td.sheet-cell.cf-v-middle { vertical-align: middle; }
+.sheet-grid td.sheet-cell.cf-v-bottom { vertical-align: bottom; }
 
 .cf-ink-navy { color: var(--navy); }
 .cf-ink-teal { color: var(--teal); }
