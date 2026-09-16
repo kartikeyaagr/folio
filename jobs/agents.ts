@@ -14,8 +14,8 @@
  * already read as "this subject has a run". Without it, one badly-configured hour would have
  * permanently retired the 129 subjects that were eligible when this was written.
  *
- * **Finding nothing is a quiet day; failing on the box is not.** This is the fourth documented
- * exemption to the zero-items rule and it is narrow: `queued 0 ran 0` is the ordinary state of a
+ * **Finding nothing is a quiet day; failing on the box is not.** This is one of the documented
+ * exemptions to the zero-items rule and it is narrow: `queued 0 ran 0` is the ordinary state of a
  * desk where nothing new was filed, and says so. What is never a quiet day is a run that failed
  * with `failure_kind = 'error'` — a missing credential, a network that is gone, a database that is
  * not there. Every run in the batch fails the same way and the exit code is the only thing that

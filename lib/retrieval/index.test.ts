@@ -56,8 +56,7 @@ after(async () => {
 // really does mean nothing, rather than "haven't gotten to it yet" because an earlier test already
 // left something in the queue.
 test('an empty queue is not a failure', async () => {
-  // The third documented exemption to the zero-items rule (jobs/news-gate.ts, jobs/ingest-eod.ts's
-  // bhavcopy case). Most of the 144 daily runs of this job find nothing, because indexing follows
+  // One of the documented exemptions to the zero-items rule; CLAUDE.md carries the roster. Most of the 144 daily runs of this job find nothing, because indexing follows
   // people saving and jobs ingesting rather than a schedule of its own.
   const out = await drain();
   assert.deepEqual(out, { registered: 0, indexed: 0, failed: 0 });

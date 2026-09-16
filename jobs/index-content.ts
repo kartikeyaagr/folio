@@ -8,9 +8,9 @@
  * module scope, so one process doing both work items loads the model once — being one process is
  * the whole mechanism.
  *
- * **An empty queue is not a failure.** This is the third documented exemption to the
- * zero-items-is-a-failure rule, alongside the bhavcopy on a non-trading day and the news gate's
- * empty queue, and it now covers both queues for the same reason. It runs every ten minutes and
+ * **An empty queue is not a failure.** This is one of the documented exemptions to the
+ * zero-items-is-a-failure rule — CLAUDE.md carries the roster — and it covers both queues for the
+ * same reason. It runs every ten minutes and
  * most runs find nothing, because indexing follows people saving documents, jobs ingesting filings
  * and analysts accepting drafts rather than a schedule of its own. A dead indexer is caught by the
  * lag figure on /admin, not by this exit code.

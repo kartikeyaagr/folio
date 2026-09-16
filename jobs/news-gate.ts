@@ -3,8 +3,8 @@
  *
  * **The one job in this system permitted to do nothing and call it success.** Everywhere else a
  * zero is a failure, because a dead feed must never look like a quiet day. Here zero means the net
- * caught nothing worth asking about, which on a book this size is most runs. The exemption is
- * documented in the design and is the only one.
+ * caught nothing worth asking about, which on a book this size is most runs. This is one of the
+ * documented exemptions to that rule; CLAUDE.md carries the roster.
  *
  *   pnpm exec tsx jobs/news-gate.ts
  */

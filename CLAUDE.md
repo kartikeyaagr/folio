@@ -72,8 +72,11 @@ Tests create and drop their own databases; they need `createdb`/`dropdb` on PATH
   for a job. Postgres RAISES on an unattributed write and on an unknown actor — service principals
   are seeded in migrations, and `ServicePrincipal` in `lib/db.ts` is the same closed set.
 - **A feed or job that returns zero items is a failure, not a quiet day.** A dead feed must never
-  look like a quiet one. Two documented exemptions: no bhavcopy on a non-trading day, and the news
-  gate's empty queue. Both say so in their own file.
+  look like a quiet one. Five documented exemptions, each stated in its own file and listed here so
+  the count stays in one place: no bhavcopy on a non-trading day (`ingest-eod`), the news gate's
+  empty queue, the content indexer's two empty queues, a distillation run that raised no rule, and
+  an agent sweep that queued nothing. The files describe their own case and do not number it —
+  ordinals in five headers drifted, and two of them both claimed to be the fourth.
 - **Ask "what has no run yet", never "what is new since I last looked."** Sweeps and evaluators use
   `NOT EXISTS`, not a watermark or a rolling window. A window can only lose things — it already
   cost this system two real alerts.

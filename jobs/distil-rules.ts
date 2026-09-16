@@ -4,9 +4,9 @@
  * `v4.md §7` part 3. All the reasoning is in `lib/agents/distil.ts`; this is the schedule and the
  * `ingestion_runs` row.
  *
- * **Raising nothing is the correct outcome, and this is a fourth exemption to the
- * zero-items-is-a-failure rule that is not shaped like the other three.** Those — the bhavcopy on a
- * non-trading day, the news gate's empty queue, the indexer's — are all "the queue was empty".
+ * **Raising nothing is the correct outcome, and this exemption to the zero-items-is-a-failure rule
+ * is not shaped like the others.** The bhavcopy on a non-trading day, the news gate's empty queue,
+ * the indexer's — those are all "the queue was empty".
  * Here the queue is rarely empty and the answer is still usually nothing, because a field corrected
  * twice must not raise a rule and a correction worth less than `MIN_DISTANCE` must not count as
  * one. A run that looked at eleven corrections and raised no candidate did its job exactly right.
