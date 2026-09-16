@@ -9,10 +9,10 @@ import type { Mark } from '@/lib/prose/marks.ts';
  * by what the control does. What it writes is markdown, so the thing being formatted stays the
  * thing that was stored: the argument in `lib/prose/parse.ts`.
  *
- * **Read is a control, not a mode you can get lost in.** Markdown's honest cost is that `**bold**`
- * reads as asterisks while you type it, so there has to be somewhere the formatting is actually
- * visible. A toggle is the version of that which does not need a second pane, a scroll-sync, or an
- * answer to "which half has the keyboard".
+ * There is no preview toggle, because there is nothing to preview: `components/RichEditor.tsx`
+ * shows the document itself, and these buttons act on the selection in it. What they are named
+ * after is still markdown — that is what gets stored — but the names are in the tooltips and the
+ * asterisks are nowhere on the screen.
  */
 
 const icon = (path: React.ReactNode) => (
@@ -37,8 +37,6 @@ const QUOTE = icon(<><path d="M7 7v10" /><path d="M11 9h8M11 13h6" /></>);
 const LINK = icon(<><path d="M10 13a5 5 0 0 0 7 0l2-2a5 5 0 0 0-7-7l-1 1" /><path d="M14 11a5 5 0 0 0-7 0l-2 2a5 5 0 0 0 7 7l1-1" /></>);
 const RULE = icon(<path d="M4 12h16" />);
 const CODE = icon(<><path d="m9 17-5-5 5-5" /><path d="m15 7 5 5-5 5" /></>);
-const READ = icon(<><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" /><circle cx="12" cy="12" r="3" /></>);
-
 /** Grouped the way they are pressed: how the words read, then how the lines are shaped, then what is inserted. */
 const GROUPS: { mark: Mark; label: React.ReactNode; title: string }[][] = [
   [
@@ -65,16 +63,12 @@ const GROUPS: { mark: Mark; label: React.ReactNode; title: string }[][] = [
 
 export function DocToolbar({
   words,
-  reading,
   disabled,
   onMark,
-  onToggleRead,
 }: {
   words: number;
-  reading: boolean;
   disabled: boolean;
   onMark: (mark: Mark) => void;
-  onToggleRead: () => void;
 }) {
   return (
     <div className="sheet-tools" role="toolbar" aria-label="Formatting">
@@ -87,8 +81,7 @@ export function DocToolbar({
               key={b.mark}
               type="button"
               className="sheet-tool"
-              // Marks act on the text, and in Read there is no text to act on.
-              disabled={disabled || reading}
+              disabled={disabled}
               title={b.title}
               onClick={() => onMark(b.mark)}
             >
@@ -97,18 +90,6 @@ export function DocToolbar({
           ))}
         </span>
       ))}
-
-      <span className="sheet-tools-group">
-        <button
-          type="button"
-          className="sheet-tool"
-          aria-pressed={reading}
-          title={reading ? 'Back to writing' : 'Read it as it will be read'}
-          onClick={onToggleRead}
-        >
-          {READ}
-        </button>
-      </span>
     </div>
   );
 }

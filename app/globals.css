@@ -2019,6 +2019,24 @@ body.is-row-resizing * {
   color: var(--navy);
 }
 
+/* The writing surface is the rendered document — `.doc-rendered` above gives it its shapes, and
+   these are the few things that only matter while a caret is in it. */
+.doc-write {
+  outline: none;
+  caret-color: var(--navy);
+}
+/* An empty paragraph has no height of its own, so a document you have not typed into yet has
+   nowhere visible to put the caret. */
+.doc-write p:empty::before {
+  content: '';
+  display: inline-block;
+}
+.doc-write:focus,
+.doc-write:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+
 /* A measure, because full screen without one is 200 characters to a line and the eye loses its
    place on the return sweep. 68ch is what `.brief` already uses for the same reason — the news
    brief settled this once, and a memo is the same artefact. Centred, so the page reads as a page. */

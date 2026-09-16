@@ -76,6 +76,14 @@ const HISTORY = icon(
   </>,
 );
 
+const EXPORT = icon(
+  <>
+    <path d="M12 3v12" />
+    <path d="m8 11 4 4 4-4" />
+    <path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" />
+  </>,
+);
+
 const SOURCE = icon(
   <>
     <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
@@ -138,6 +146,20 @@ export default async function DocumentPage({ params }: { params: Promise<{ id: s
           )}
 
           <span className="doc-ribbon-gap" />
+
+          {/* Not a DialogButton: this is a download, and a download is a link. An anchor gets the
+              browser's own save behaviour, works on a middle-click, and needs no client component
+              to fetch bytes it would then have to hand back to the browser anyway. */}
+          {!isSheet && (
+            <a
+              className="btn btn-icon"
+              href={`/api/export/${doc.id}`}
+              title={`Export ${doc.title} as a Word document`}
+              aria-label="Export as a Word document"
+            >
+              {EXPORT}
+            </a>
+          )}
 
           <DialogButton
             label={HISTORY}
