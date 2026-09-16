@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { chunkText, chunkCells, TARGET_CHARS, MIN_CHARS } from './chunk.ts';
+import { chunkText, chunkCells, sheetGridText, TARGET_CHARS, MIN_CHARS } from './chunk.ts';
 
 const para = (n: number, word = 'revenue'): string => Array(n).fill(word).join(' ');
 
@@ -95,6 +95,15 @@ test('a sheet chunks by row, never mid-row', () => {
   assert.equal(out.length, 1);
   assert.match(out[0]!.text, /Revenue\s+693\.2/);
   assert.match(out[0]!.text, /PAT\s+58\.1/);
+});
+
+test('a sheet wider than 26 columns orders cells by column, not by letter', () => {
+  // `AA` is the 27th column, but 'AA'.localeCompare('B') puts it second — so a wide sheet renders
+  // with the far right of the grid interleaved into the far left, and char_from/char_to then index
+  // that scrambled row. `lib/sheet/cells.ts` warns about exactly this case in its own header
+  // ("shows up only at the 27th column") and exports `columnIndex`, which is the ordering to use.
+  const cells = { A1: 'first', B1: 'second', Z1: 'twenty-sixth', AA1: 'twenty-seventh' };
+  assert.equal(sheetGridText(cells), 'first\tsecond\ttwenty-sixth\ttwenty-seventh');
 });
 
 test('an empty sheet produces no chunks', () => {

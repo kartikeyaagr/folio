@@ -17,6 +17,8 @@
  * provisional until a real corpus says otherwise, and change them here rather than at a call site.
  */
 
+import { columnIndex } from '../sheet/cells.ts';
+
 export interface Piece {
   text: string;
   charFrom: number;
@@ -103,10 +105,25 @@ export function chunkText(text: string): Piece[] {
   return pieces;
 }
 
-/** A1 -> { col: 'A', row: 1 }. Anything that is not an address is skipped. */
-function address(key: string): { col: string; row: number } | null {
-  const m = /^([A-Z]+)([0-9]+)$/.exec(key);
-  return m ? { col: m[1]!, row: Number(m[2]) } : null;
+/**
+ * A1 -> { col: 0, row: 1 }. Anything that is not an address is skipped.
+ *
+ * The row pattern is `[1-9][0-9]*`, matching `lib/sheet/cells.ts`'s own `REF` rather than a
+ * looser `[0-9]+`. Accepting `A01` would land it on the same (col, row) as `A1`, and their
+ * order within the row would then fall to `Array.prototype.sort` over `Object.entries` order
+ * rather than to anything meaningful.
+ *
+ * The column is resolved to its **index** here rather than kept as letters, because the only thing
+ * this is used for is ordering and letters do not order: `'AA'.localeCompare('B')` is negative, so
+ * a lexicographic sort files column 27 between columns 1 and 2. `lib/sheet/cells.ts` says so in its
+ * own header — *"getting that wrong shows up only at the 27th column"* — and `columnIndex` is the
+ * function it exports to get it right.
+ */
+function address(key: string): { col: number; row: number } | null {
+  const m = /^([A-Z]+)([1-9][0-9]*)$/.exec(key);
+  if (!m) return null;
+  const col = columnIndex(m[1]!);
+  return col === null ? null : { col, row: Number(m[2]) };
 }
 
 /**
@@ -116,7 +133,7 @@ function address(key: string): { col: string; row: number } | null {
  * text" would silently diverge.
  */
 function sheetLines(cells: Record<string, string>): string[] {
-  const rows = new Map<number, { col: string; value: string }[]>();
+  const rows = new Map<number, { col: number; value: string }[]>();
   for (const [key, value] of Object.entries(cells)) {
     const a = address(key);
     if (!a) continue;
@@ -127,7 +144,7 @@ function sheetLines(cells: Record<string, string>): string[] {
   }
   return [...rows.entries()]
     .sort((x, y) => x[0] - y[0])
-    .map(([, cs]) => cs.sort((x, y) => x.col.localeCompare(y.col)).map((c) => c.value).join('\t'));
+    .map(([, cs]) => cs.sort((x, y) => x.col - y.col).map((c) => c.value).join('\t'));
 }
 
 /**
