@@ -239,6 +239,57 @@ test('a spreadsheet document_version is chunked by row, chosen by content not by
   });
 });
 
+test('a multi-tab spreadsheet indexes as its rows, with each tab named', async () => {
+  // The body shape written since 0052. This is the one that fails SILENTLY if anything forgets it:
+  // a `{sheets}` body that DOCUMENTS_SELECT does not recognise as a spreadsheet falls to the prose
+  // branch, gets hashed with no renderer tag, and is chunked by chunkText — so the corpus ends up
+  // holding `{"sheets":[{"name":"Inputs"...` as though it were a passage somebody wrote. It looks
+  // exactly like a working index right up until a search should have found a figure that is in it.
+  await serviceTxn('system:index', async (c) => {
+    await newDocument(c, 'd_tabs', 'sheet', {
+      sheets: [
+        { name: 'Inputs', cells: { A1: 'Growth', B1: '0.12' } },
+        { name: 'Model', cells: { A1: 'Revenue', B1: '693.2', A2: 'PAT', B2: '58.1' } },
+      ],
+    });
+    await registerAll(c);
+    const sourceId = await sourceIdFor(c, 'd_tabs');
+    await indexOne(c, sourceId);
+
+    const { rows } = await c.query<{ chunk_text: string }>(
+      `SELECT text AS chunk_text FROM chunks WHERE source_id = $1 ORDER BY char_from`,
+      [sourceId],
+    );
+    assert.equal(rows.length, 2, 'one chunk per tab — a chunk spanning two is a passage nobody wrote');
+    assert.equal(rows[0]!.chunk_text, 'Inputs\nGrowth\t0.12');
+    assert.equal(rows[1]!.chunk_text, 'Model\nRevenue\t693.2\nPAT\t58.1');
+    for (const r of rows) {
+      assert.doesNotMatch(r.chunk_text, /[{}"]/, 'indexed as rows, never as the body JSON');
+    }
+  });
+});
+
+test('a multi-tab body is hashed as a spreadsheet, not as prose', async () => {
+  // The other half: SHEET_BODY_SQL and lib/sheet/book.ts's isSheetBody ask the same question on
+  // two sides of the wire and must agree. If the SQL missed `{sheets}`, the hash would be the raw
+  // body with no renderer tag — which is exactly `contentHash(body::text)`.
+  await serviceTxn('system:index', async (c) => {
+    await newDocument(c, 'd_tabs_hash', 'sheet', { sheets: [{ name: 'Model', cells: { A1: 'Revenue' } }] });
+    await registerAll(c);
+    const { rows } = await c.query<{ content_hash: string }>(
+      `SELECT content_hash FROM sources WHERE kind = 'document_version' AND ref_id = 'd_tabs_hash'`,
+    );
+    const { rows: raw } = await c.query<{ t: string }>(
+      `SELECT body::text AS t FROM document_versions WHERE document_id = 'd_tabs_hash'`,
+    );
+    assert.notEqual(
+      rows[0]!.content_hash,
+      contentHash(raw[0]!.t),
+      'a {sheets} body hashed as prose cannot be re-chunked when the grid renderer changes',
+    );
+  });
+});
+
 test("a sheet's hash is not its body's hash, so the grid renderer can invalidate it", async () => {
   // What gets chunked for a sheet is `sheetGridText(cells)`, not the body. If the hash were taken
   // straight off `body::text`, a change to that renderer would leave `content_hash` unmoved and

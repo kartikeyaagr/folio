@@ -1353,7 +1353,153 @@ dialog.dlg[open] {
 /* is that an error is findable at a glance and that the row and column headers stay put — a model */
 /* wide enough to scroll is one where you lose which line you are on.                              */
 
+/* --- The formatting toolbar -------------------------------------------------------------------- */
+/*                                                                                                 */
+/* Sheets' one-row toolbar rather than Excel's tabbed ribbon: this is a web page, and 120px of      */
+/* vertical chrome is 120px of model you cannot see. Groups are separated by a rule rather than by  */
+/* space, so the row stays short enough to hold everything on a laptop.                             */
+
+.sheet-tools {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 10px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.sheet-tools::-webkit-scrollbar {
+  display: none;
+}
+/* Which cells a press is about to change. Never a guess. */
+.sheet-tools-ref {
+  flex: none;
+  min-width: 58px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--muted);
+}
+.sheet-tools-group {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding-left: 6px;
+  margin-left: 2px;
+  border-left: 1px solid var(--line);
+}
+.sheet-tools-label {
+  display: inline-flex;
+  align-items: center;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.sheet-tool {
+  min-width: 26px;
+  height: 26px;
+  padding: 0 5px;
+  display: inline-grid;
+  place-items: center;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--ink-2);
+  font-size: 12.5px;
+  cursor: pointer;
+  transition: background-color 120ms var(--ease), color 120ms var(--ease);
+}
+.sheet-tool:hover:not(:disabled) {
+  background: var(--surface-2);
+  color: var(--ink);
+}
+.sheet-tool:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+/* Lit from the anchor cell, which is the convention: with a range selected the toolbar reports the
+   cell you started from, and pressing a lit control clears it across the whole range. */
+.sheet-tool[aria-pressed='true'] {
+  background: var(--navy-soft);
+  color: var(--navy);
+}
+.sheet-tool-select {
+  height: 26px;
+  max-width: 190px;
+  font-size: 12px;
+}
+
+/* A colour is chosen by seeing it, so the swatch is the colour. */
+.sheet-swatch {
+  width: 22px;
+  height: 22px;
+  display: inline-grid;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: transparent;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: box-shadow 120ms var(--ease);
+}
+.sheet-swatch.is-fill {
+  border-color: var(--line-2);
+}
+.sheet-swatch:hover:not(:disabled),
+.sheet-swatch[aria-pressed='true'] {
+  box-shadow: 0 0 0 2px var(--ring);
+}
+.sheet-swatch[aria-pressed='true'] {
+  border-color: var(--ink-2);
+}
+.sheet-swatch:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* --- What a format does to a cell --------------------------------------------------------------- */
+/*                                                                                                  */
+/* Classes, never inline styles — `lib/sheet/format.ts` builds the list. That is what lets a fill    */
+/* carry a dark-mode value and a selected state instead of being one fixed hex.                      */
+
+.cf-bold { font-weight: 700; }
+.cf-italic { font-style: italic; }
+.cf-underline { text-decoration: underline; }
+.cf-strike { text-decoration: line-through; }
+.cf-underline.cf-strike { text-decoration: underline line-through; }
+
+/* The alignment has to beat `.num`'s right-alignment, which the grid applies whenever a cell holds
+   a number. Written as a more specific selector rather than with `!important`, which is available
+   where specificity cannot reach — see the drag cursor above — and not wanted where it can. */
+.sheet-grid td.sheet-cell.cf-left { text-align: left; }
+.sheet-grid td.sheet-cell.cf-center { text-align: center; }
+.sheet-grid td.sheet-cell.cf-right { text-align: right; }
+
+.cf-ink-navy { color: var(--navy); }
+.cf-ink-teal { color: var(--teal); }
+.cf-ink-red { color: var(--red); }
+.cf-ink-amber { color: var(--amber); }
+.cf-ink-muted { color: var(--muted); }
+
+.cf-fill-navy { background: var(--navy-soft); }
+.cf-fill-teal { background: var(--teal-soft); }
+.cf-fill-red { background: var(--red-soft); }
+.cf-fill-amber { background: var(--amber-soft); }
+.cf-fill-muted { background: var(--surface-2); }
+
+/* Sheets' "Clip": one line, cut off, for a column of codes where wrapping would make every row
+   two lines tall for no gain. */
+.sheet-grid td.sheet-cell.cf-clip {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .sheet-bar {
+  flex: none;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -1377,9 +1523,125 @@ dialog.dlg[open] {
   color: var(--muted);
 }
 
+/* `fixed`, so the colgroup below decides the widths and one long value in row 30 cannot widen the
+   column above it. `width: max-content` rather than the `.tbl` default of 100%: a grid that
+   stretches to fill the window makes every column a fraction of the window rather than a size, so
+   the same model is laid out differently on a laptop and on a monitor. */
 .sheet-grid {
+  table-layout: fixed;
+  width: max-content;
   min-width: max-content;
   font-size: 12.5px;
+}
+
+/* --- Resizing by hand ---------------------------------------------------------------------------- */
+/*                                                                                                    */
+/* The automatic widths below are the default; these are the exception, and the exception wins. The    */
+/* measurement arrives as a custom property set on the element by `components/SheetEditor.tsx` — the   */
+/* `width` and `height` declarations themselves live here, because there is no class that can say      */
+/* "237px, because somebody dragged it there" and the stylesheet should still own what the property    */
+/* is and what it is clamped to.                                                                       */
+
+.sheet-grid colgroup col.is-sized {
+  width: var(--w);
+}
+.sheet-grid tbody tr.is-sized {
+  height: var(--h);
+}
+/* The cell gives up its vertical padding to the box inside it, and takes the row's height rather
+   than the 26px floor every other cell has — otherwise a row dragged below 26px silently stops
+   there, and the minimum the drag reports is not the minimum it honours. */
+.sheet-grid tbody tr.is-sized td.sheet-cell,
+.sheet-grid tbody tr.is-sized th.sheet-rownum {
+  height: var(--h);
+  padding-top: 0;
+  padding-bottom: 0;
+}
+.sheet-cell-fit {
+  display: block;
+  height: var(--h);
+  padding: 4px 0;
+  overflow: hidden;
+}
+
+/* The strip you grab. Two pixels wide with eight pixels of forgiveness around it — a handle you
+   have to hit exactly is a handle people stop using. */
+.sheet-grip {
+  position: absolute;
+  z-index: 4;
+  opacity: 0;
+  background: var(--navy);
+  transition: opacity 120ms var(--ease);
+}
+.sheet-grip-col {
+  top: 0;
+  right: -3px;
+  width: 6px;
+  height: 100%;
+  cursor: col-resize;
+}
+.sheet-grip-row {
+  left: 0;
+  bottom: -3px;
+  height: 6px;
+  width: 100%;
+  cursor: row-resize;
+}
+.sheet-grid th:hover > .sheet-grip,
+.sheet-grip:hover {
+  opacity: 0.55;
+}
+/* A column somebody has sized keeps a faint mark, so "why is this one different" has an answer. */
+.sheet-grip.is-set {
+  opacity: 0.22;
+}
+/* Held on the body for the length of the drag, so the cursor does not flicker back to `cell` the
+   moment the pointer leaves the handle — which, during a drag, it immediately does.
+
+   `!important` here for the same reason the other three in this file use it — reduced-motion, the
+   focus border — which is that the rule has to beat declarations it cannot name. This one has to
+   win over every cursor set anywhere under it (`.sheet-grid td.sheet-cell`'s `cell`, the grips'
+   own, a button's `pointer`) for the length of a drag and then stop; doing that on specificity
+   would mean listing each of them, and each new one anybody ever adds. */
+body.is-col-resizing,
+body.is-col-resizing * {
+  cursor: col-resize !important;
+  user-select: none;
+}
+body.is-row-resizing,
+body.is-row-resizing * {
+  cursor: row-resize !important;
+  user-select: none;
+}
+
+/* Default column widths, by what the column holds — so a date column is a date wide and a column
+   of line-item names is not. Four buckets rather than a measured fit: a width computed from the
+   longest string re-flows the grid as you type into it, and these only move when the column
+   changes kind. `components/SheetEditor.tsx`'s `columnKind` decides which one applies.
+
+   The numbers are the content plus the cell's 16px of padding: `1,234,567.89` and `#DIV/0!` both
+   sit inside 96, `2026-03-31` needs 112, and 200 takes a two- or three-word label on one line. */
+.sheet-col-head {
+  width: 38px;
+}
+.sheet-col-num {
+  width: 96px;
+}
+/* A figure that is drawn long — rupees with Indian grouping runs to `₹2,58,59,40,000`. */
+.sheet-col-num-wide {
+  width: 152px;
+}
+.sheet-col-date {
+  width: 112px;
+}
+.sheet-col-short {
+  width: 120px;
+}
+.sheet-col-text {
+  width: 200px;
+}
+.sheet-col-long {
+  width: 280px;
 }
 .sheet-grid th.sheet-corner,
 .sheet-grid th.sheet-rownum {
@@ -1396,22 +1658,70 @@ dialog.dlg[open] {
 .sheet-grid th.sheet-corner {
   z-index: 3;
 }
+/* Cells wrap, and the row grows to hold them.
+   
+   The grid used to clip to one line and end in an ellipsis. That is the right call in a report
+   table, where a truncated string is still recognisable and the full value is a hover away — and
+   the wrong call here, because a model's first column is line-item names ("Revenue from contracts
+   with customers") and the ellipsis landed before the word that distinguished one row from the
+   next. `height` on a `td` is a floor rather than a ceiling, so dropping `nowrap` is all it takes
+   for the row to size itself to its tallest cell; `overflow-wrap` handles the one thing wrapping
+   cannot, an unbroken string longer than the column. */
+/* Numbers right, everything else left — the convention every spreadsheet keeps, and the reason
+   is arithmetic: a column of right-aligned figures lines its decimal points up, so 1,240.5 sitting
+   under 998.75 is visibly the larger number. Scoped to the grid on purpose. Elsewhere in this app
+   `.num` means tabular figures and nothing about alignment (`.tbl .r` is what right-aligns a
+   report column), and a spreadsheet is the one place where the convention differs. */
+.sheet-grid td.sheet-cell.num {
+  text-align: right;
+}
+/* Over the column, as every spreadsheet puts it — not hard against its left edge. */
+.sheet-grid thead th.num {
+  text-align: center;
+}
+
+/* No width here any more — the colgroup owns it. A `min-width`/`max-width` left on the cell would
+   be a second opinion about the same number, and under `table-layout: fixed` a silently losing one. */
 .sheet-grid td.sheet-cell {
-  min-width: 96px;
-  max-width: 200px;
   height: 26px;
-  padding: 0 8px;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
+  padding: 4px 8px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  vertical-align: top;
   cursor: cell;
+}
+/* Top too, so the number beside a cell that wrapped to four lines is against its first line and
+   not floating in the middle of them.
+
+   `top: auto` is the load-bearing line. A row number is a `<th>`, so it inherits `.tbl th`'s
+   `position: sticky; top: 0` — which did nothing while `.tbl-scroll` only scrolled sideways, and
+   the moment the grid gained a vertical scroll would have pinned all forty row numbers to the top
+   of the viewport in a heap. Sticking left is wanted; sticking up is not. */
+.sheet-grid th.sheet-rownum {
+  top: auto;
+  vertical-align: top;
+  padding-top: 5px;
 }
 .sheet-grid td.sheet-cell:hover {
   background: var(--surface-2);
 }
+/* The selection. A range is tinted; the anchor — the cell the toolbar reports and the keyboard
+   moves from — carries the ring, so it is always findable inside a block of forty tinted cells. */
+.sheet-grid td.is-picked {
+  background: var(--navy-soft);
+}
+.sheet-grid td.is-anchor {
+  box-shadow: inset 0 0 0 2px var(--navy);
+}
 .sheet-grid td.is-editing {
   padding: 0;
   box-shadow: inset 0 0 0 2px var(--teal);
+}
+/* The grid takes focus so the arrow keys have somewhere to land; it should not then draw a focus
+   ring around the whole table. The anchor cell is the visible focus, and it is more precise. */
+.doc-canvas .sheet > .tbl-scroll:focus,
+.doc-canvas .sheet > .tbl-scroll:focus-visible {
+  outline: none;
 }
 /* An error is a value, and it has to be findable in a grid of four hundred cells. */
 .sheet-grid td.is-err {
@@ -1419,15 +1729,250 @@ dialog.dlg[open] {
   background: var(--red-soft);
   cursor: help;
 }
+/* The editor fills whatever height the row has settled at, so a wrapped row does not open a
+   26px slot inside an 80px cell. A textarea, not an input: a cell that shows four wrapped lines
+   should be editable as four wrapped lines. Enter still commits — `SheetEditor` handles that —
+   which is why this can wrap without becoming a box you have to click out of. */
 .sheet-input {
+  display: block;
   width: 100%;
-  height: 26px;
+  height: 100%;
+  min-height: 26px;
+  padding: 4px 8px;
+  border: 0;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  line-height: inherit;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  overflow: hidden;
+  resize: none;
+  outline: none;
+}
+
+/* The tabs, along the bottom, because that is where every spreadsheet anybody here has used puts
+   them. A control whose position was fixed by thirty years of convention is not the place to have
+   an opinion, so this borrows the page tab-strip's weights and reverses its border. */
+.sheet-tabs {
+  flex: none;
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  padding: 0 8px;
+  border-top: 1px solid var(--line);
+  background: var(--surface-2);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.sheet-tabs::-webkit-scrollbar {
+  display: none;
+}
+.sheet-tab {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  border-top: 2px solid transparent;
+  margin-top: -1px;
+}
+.sheet-tab button {
+  height: 30px;
+  padding: 0 10px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12.5px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color 140ms var(--ease);
+}
+.sheet-tab button:hover {
+  color: var(--ink);
+}
+.sheet-tab.is-active {
+  border-top-color: var(--navy);
+  background: var(--surface);
+}
+.sheet-tab.is-active button {
+  color: var(--ink);
+  font-weight: 700;
+}
+/* Only ever on the tab you are on, so a mis-aimed click cannot take a tab you were not looking at.
+   Written at the same specificity as the rule above rather than with !important. */
+.sheet-tab button.sheet-tab-x {
+  padding: 0 8px 0 0;
+  font-size: 14px;
+  line-height: 1;
+}
+.sheet-tab button.sheet-tab-x:hover {
+  color: var(--red);
+}
+.sheet-tab-add {
+  flex: none;
+  height: 30px;
+  padding: 0 12px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 15px;
+  cursor: pointer;
+  transition: color 140ms var(--ease);
+}
+.sheet-tab-add:hover {
+  color: var(--ink);
+}
+.sheet-tab-input {
+  width: 110px;
+  height: 30px;
   padding: 0 8px;
   border: 0;
   background: var(--surface);
   color: var(--ink);
   font: inherit;
-  outline: none;
+  font-size: 12.5px;
+  font-weight: 700;
+  outline: 2px solid var(--teal);
+  outline-offset: -2px;
+}
+
+/* --- Paper ------------------------------------------------------------------------------------ */
+/*                                                                                                */
+/* A document is paper, and paper is white in both themes.                                        */
+/*                                                                                                */
+/* Every other screen here is a reading of data the system holds, and follows the theme. A         */
+/* document is not that — it is the thing somebody wrote, and it is written to be read as a page.  */
+/* The desk drafts a memo here and sends the same words to an investment committee on white.       */
+/*                                                                                                */
+/* Done by pinning the light tokens rather than by hard-coding colours on each element, because    */
+/* the elements inside are the ordinary ones: `.tbl`, `.field`, `.chip`, the grid's own            */
+/* `--teal` editing ring and `--red-soft` error fill. Set `background: #fff` alone and dark mode   */
+/* leaves a near-white `--navy` link and a dark `--surface-2` formula bar on a white grid. One     */
+/* island of light palette keeps every one of them consistent, including the ones added later.     */
+/* `color-scheme` is part of it: without it the caret and the scrollbars stay dark-mode native.    */
+
+.paper {
+  --bg: #f4f6f9;
+  --surface: #ffffff;
+  --surface-2: #f0f3f7;
+  --line: #e2e7ee;
+  --line-2: #cbd3de;
+  --ink: #15223a;
+  --ink-2: #3b475c;
+  --muted: #6b7689;
+  --ghost: #98a2b3;
+  --navy: #0f2440;
+  --navy-2: #1a3559;
+  --navy-soft: #e7edf6;
+  --on-navy: #ffffff;
+  --teal: #1f7a63;
+  --teal-soft: #e3f2ec;
+  --red: #b4413a;
+  --red-soft: #f9e9e7;
+  --amber: #a86f1a;
+  --amber-soft: #f9f0dd;
+  --ring: rgba(15, 36, 64, 0.14);
+  --shadow-sm: 0 1px 2px rgba(15, 36, 64, 0.06), 0 1px 1px rgba(15, 36, 64, 0.04);
+  --shadow-lg: 0 12px 32px rgba(15, 36, 64, 0.14), 0 2px 6px rgba(15, 36, 64, 0.08);
+
+  background: var(--surface);
+  color: var(--ink);
+  color-scheme: light;
+}
+
+/* --- A document, full height ------------------------------------------------------------------ */
+/*                                                                                                */
+/* The one screen that does not scroll. `.app-shell` is `min-height: 100vh` and every other page   */
+/* grows past it; this one is pinned to exactly the height left under the header, and the work      */
+/* scrolls inside itself instead. Two things come from that and both matter more than the tidiness: */
+/* the grid's column letters and row numbers can stay pinned while you scroll, which a page-level   */
+/* scroll can never do, and the ribbon stays reachable without scrolling back up to it.             */
+/*                                                                                                  */
+/* `min-height: 0` on each flex child is load-bearing, not defensive. A flex item defaults to        */
+/* `min-height: auto`, which refuses to shrink below its content — so without it the grid pushes     */
+/* the container past the viewport and the whole page scrolls again, which is the thing this is.     */
+
+.doc-screen {
+  height: calc(100vh - var(--head-h));
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Said across the top, where it cannot be scrolled away from. */
+.doc-flag {
+  flex: none;
+  margin: 0;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--line);
+  background: var(--amber-soft);
+  color: var(--ink-2);
+  font-size: 12.5px;
+}
+
+.doc-ribbon {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+}
+/* Pushes everything after it to the right, so the ribbon reads left-to-right as status then acts. */
+.doc-ribbon-gap {
+  flex: 1 1 auto;
+}
+/* The archive control is a form wrapping a button, and its siblings are bare buttons. Left as a
+   block the form keeps a text baseline's descender under its button, so `Archive` sat two pixels
+   below `Rename` and `Delete` — the kind of thing nobody can name and everybody can see. */
+.doc-ribbon form {
+  display: flex;
+  align-items: center;
+}
+
+.doc-canvas {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+/* Each of the three bodies — grid, prose editor, reader — is a toolbar and a surface. Both fill. */
+.doc-canvas > .sheet,
+.doc-canvas > .doc-edit,
+.doc-canvas > .doc-read {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+/* The grid scrolls in both directions here rather than only across, which is what lets `.tbl th`'s
+   existing `position: sticky` finally do something: the column letters hold while you scroll down. */
+.doc-canvas .sheet > .tbl-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+.doc-canvas .doc-edit > .doc-body {
+  flex: 1;
+  min-height: 0;
+  height: auto;
+  border: 0;
+  border-radius: 0;
+  resize: none;
+}
+.doc-canvas .doc-read > .doc-body-read {
+  flex: 1;
+  min-height: 0;
+  max-height: none;
+}
+
+/* An icon in the ribbon: square, quiet, and the same box as the header's back button. */
+.btn-icon {
+  width: 32px;
+  padding: 0;
+  display: inline-grid;
+  place-items: center;
 }
 
 /* Prose. Tall by default, because a note that starts in a two-line box gets written like one. */

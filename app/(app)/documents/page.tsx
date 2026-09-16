@@ -2,8 +2,10 @@ import Link from 'next/link';
 
 import { allDocuments, INGESTED, KIND_LABEL } from '@/lib/workspace.ts';
 import { AppHeader, Blank, Card, Chip, Empty, Seg } from '@/components/ui.tsx';
+import { DeleteDocument } from '@/components/DeleteDocument.tsx';
 
 import { requireUser } from '../../_lib/session.ts';
+import { archiveDocumentAction } from '../../_lib/actions/workspace.ts';
 
 /**
  * Everything written or ingested, in one list.
@@ -12,6 +14,11 @@ import { requireUser } from '../../_lib/session.ts';
  * agent 4's news brief is about the whole book, so it carries no company and appeared on no page
  * at all — written, versioned, attributed, and reachable from nowhere. Anything this system can
  * create has to be findable.
+ *
+ * Which is also why archive and delete are offered here and not only on a company page. This list
+ * showed an Archived tab while carrying nothing that could archive or restore anything, and for a
+ * document belonging to no company it is the only screen there is: a news brief could be written
+ * and then never put away by anybody.
  */
 
 export const dynamic = 'force-dynamic';
@@ -70,7 +77,7 @@ export default async function DocumentsPage({
                 <thead>
                   <tr>
                     <th>Title</th><th>Company</th><th>Kind</th>
-                    <th className="num">Versions</th><th>Last saved</th><th>By</th>
+                    <th className="num">Versions</th><th>Last saved</th><th>By</th><th />
                   </tr>
                 </thead>
                 <tbody>
@@ -98,6 +105,20 @@ export default async function DocumentsPage({
                       <td className="num">{d.versions}</td>
                       <td className="num">{when(d.updatedAt)}</td>
                       <td>{d.updatedByName ?? <Blank why="Written before saves were attributed" />}</td>
+                      <td className="cell-note">
+                        <div className="form-actions">
+                          <form action={archiveDocumentAction}>
+                            <input type="hidden" name="id" value={d.id} />
+                            {d.archivedAt && <input type="hidden" name="restore" value="1" />}
+                            <button type="submit" className="btn btn-link">
+                              {d.archivedAt ? 'Restore' : 'Archive'}
+                            </button>
+                          </form>
+                          {/* No symbol passed on purpose — a document with no company has no company
+                              page to land on, so this action falls back to this list. */}
+                          <DeleteDocument id={d.id} title={d.title} versions={d.versions} symbol={d.symbol} />
+                        </div>
+                      </td>
                     </tr>
                   ))}
                 </tbody>

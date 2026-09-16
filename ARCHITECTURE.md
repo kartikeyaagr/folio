@@ -1,8 +1,8 @@
 # Architecture
 
 How Trisula is put together, and why it is put together that way. Accurate against the tree at the
-time of writing: **51 migrations, 50 tables, 7 agents, 24 job entry points, 19 systemd timers, 18
-routes, 619 tests.** Every number here was counted, not remembered; if you change the shape, count
+time of writing: **52 migrations, 50 tables, 7 agents, 24 job entry points, 19 systemd timers, 18
+routes, 672 tests.** Every number here was counted, not remembered; if you change the shape, count
 again rather than editing around it.
 
 For the product argument — what was built, what was deliberately cut, and on whose authority — see
@@ -145,10 +145,12 @@ them returns plausible numbers with meaningless neighbours, which is the worst a
 because it has no symptom.
 
 **Chunking** is 1000 characters target, 150 overlap, 100 minimum, breaking at paragraph → sentence →
-whitespace → hard cut. A spreadsheet chunks by **row block**, never mid-row: a grid cut mid-row
-retrieves as noise — a number with no idea which line it belonged to. The invariant that makes a
-citation work is `source.slice(char_from, char_to) === chunk.text`, where `source` means exactly what
-`textFor` returns.
+whitespace → hard cut. A spreadsheet chunks by **row block**, never mid-row and never across two
+tabs: a grid cut mid-row retrieves as noise — a number with no idea which line it belonged to — and
+a block ending in one tab and opening in the next is a passage nobody wrote. A workbook of more than
+one tab names each tab on a line of its own, so a retrieved block says what it is a block of. The
+invariant that makes a citation work is `source.slice(char_from, char_to) === chunk.text`, where
+`source` means exactly what `textFor` returns.
 
 **Search is hybrid** — vector and full-text, merged by reciprocal rank fusion at k=60, then collapsed
 to at most three chunks per source. Full-text terms are OR-ed, not AND-ed: *"what has management said
@@ -291,7 +293,7 @@ export DATABASE_URL=postgres:///trisula_v3_dev
 pnpm install
 pnpm fetch-model                 # ~130 MB, bge-small-en-v1.5, validated on download
 pnpm exec tsx db/migrate.ts      # one transaction each, checksummed
-pnpm check                       # lint + typecheck + 619 tests
+pnpm check                       # lint + typecheck + 672 tests
 pnpm dev                         # port 3100
 ```
 

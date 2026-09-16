@@ -10,6 +10,7 @@ import {
   AppHeader, Blank, Card, Chip, Empty, Fact, Facts, Seg, crore, inr, type Tone,
 } from '@/components/ui.tsx';
 import { PriceChart } from '@/components/PriceChart.tsx';
+import { DeleteDocument } from '@/components/DeleteDocument.tsx';
 import { DialogButton } from '@/components/DialogButton.tsx';
 
 import { requireUser } from '../../../_lib/session.ts';
@@ -277,17 +278,16 @@ export default async function CompanyPage({
               <DialogButton label="Import" title={`Import into ${co.symbol}`} className="btn btn-sm">
                 <form action={importFileAction} className="form-grid">
                   <input type="hidden" name="companyId" value={co.id} />
-                  <input type="hidden" name="symbol" value={co.symbol} />
                   <label className="lbl">
                     File
                     <input className="field" type="file" name="file" accept={ACCEPTED} required />
                   </label>
-                  {/* Said before it happens. A workbook with four tabs becoming four documents is
-                      surprising if you are not told, and importing one of the four in silence is
-                      worse. */}
+                  {/* Said before it happens, because what survives an import is the question
+                      somebody uploading a model actually has. */}
                   <p className="picker-none">
-                    Excel, Word, PDF, CSV and plain text. Each sheet of a workbook becomes its own
-                    grid, and a formula is kept live where this system can evaluate it — where it
+                    Excel, Word, PDF, CSV and plain text. A workbook arrives whole — every tab on
+                    one spreadsheet, still reading each other, so <code>=Inputs!B4</code> goes on
+                    working. A formula is kept live where this system can evaluate it; where it
                     cannot, the cell holds the value Excel last showed rather than a broken formula.
                   </p>
                   <div className="form-actions">
@@ -350,14 +350,22 @@ export default async function CompanyPage({
                       <td className="num">{when(d.updatedAt)}</td>
                       <td>{d.updatedByName ?? <Blank why="Written before saves were attributed" />}</td>
                       <td className="cell-note">
-                        <form action={archiveDocumentAction}>
-                          <input type="hidden" name="id" value={d.id} />
-                          <input type="hidden" name="symbol" value={co.symbol} />
-                          {d.archivedAt && <input type="hidden" name="restore" value="1" />}
-                          <button type="submit" className="btn btn-link">
-                            {d.archivedAt ? 'Restore' : 'Archive'}
-                          </button>
-                        </form>
+                        <div className="form-actions">
+                          <form action={archiveDocumentAction}>
+                            <input type="hidden" name="id" value={d.id} />
+                            <input type="hidden" name="symbol" value={co.symbol} />
+                            {d.archivedAt && <input type="hidden" name="restore" value="1" />}
+                            <button type="submit" className="btn btn-link">
+                              {d.archivedAt ? 'Restore' : 'Archive'}
+                            </button>
+                          </form>
+                          <DeleteDocument
+                            id={d.id}
+                            title={d.title}
+                            versions={d.versions}
+                            symbol={co.symbol}
+                          />
+                        </div>
                       </td>
                     </tr>
                   ))}

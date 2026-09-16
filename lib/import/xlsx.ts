@@ -12,8 +12,11 @@
  * sheet, so its last computed value is taken instead and the cell becomes a number — true when it
  * was saved, and honestly inert rather than loudly broken.
  *
- * **Every sheet becomes its own document.** One grid per document is the model here, and quietly
- * importing tab one of four is the kind of silent loss this system is built to avoid.
+ * **The workbook arrives whole, and is checked whole.** Every tab is read first and the arithmetic
+ * is only then re-run, once, across all of them together — because `=Inputs!B4` cannot agree with
+ * the number Excel cached for it while `Inputs` is still a separate grid nobody can see. Checking
+ * tab by tab, which is what this did until a document could hold tabs, marked every cross-sheet
+ * formula as disagreeing and replaced it with a constant: the model came in already dead.
  */
 
 import { XMLParser } from 'fast-xml-parser';
@@ -25,7 +28,8 @@ import { XMLParser } from 'fast-xml-parser';
 type Xml = Record<string, unknown>;
 const node = (v: unknown): Xml => (typeof v === 'object' && v !== null ? (v as Xml) : {});
 
-import { evaluateSheet } from '../sheet/evaluate.ts';
+import { cleanName, uniqueName } from '../sheet/book.ts';
+import { evaluateWorkbook } from '../sheet/evaluate.ts';
 import { parseFormula } from '../sheet/parse.ts';
 import { unzip, UnreadableZip } from './zip.ts';
 
@@ -113,10 +117,17 @@ function sharedStrings(xml: string | null): string[] {
   return list(node(doc['sst'])['si'] as unknown[]).map(textOf);
 }
 
-function readSheet(xml: string, shared: string[], dates: Set<number>): Omit<ImportedSheet, 'name'> {
+/** A tab as it comes off the XML, before its arithmetic has been checked against Excel's. */
+interface ParsedSheet {
+  cells: Record<string, string>;
+  /** What Excel last computed for each formula cell, to check our own arithmetic against. */
+  cached: Record<string, number>;
+  formulasFlattened: number;
+}
+
+function readSheet(xml: string, shared: string[], dates: Set<number>): ParsedSheet {
   const doc = parser.parse(xml) as Xml;
   const cells: Record<string, string> = {};
-  /** What Excel last computed for each formula cell, to check our own arithmetic against. */
   const cached: Record<string, number> = {};
   let formulasFlattened = 0;
 
@@ -163,35 +174,84 @@ function readSheet(xml: string, shared: string[], dates: Set<number>): Omit<Impo
     }
   }
 
-  // **Check our arithmetic against Excel's own.**
-  //
-  // A formula is only worth keeping if re-evaluating it here reproduces the number the workbook was
-  // showing. Where it does not, the import has quietly changed a figure somebody has been looking
-  // at — a reference to a sheet that came in separately, a function this engine reads but reads
-  // differently, an argument order that is not what it looked like. The cached value is what the
-  // author last saw, so that is what is kept, and the formula is dropped rather than left to
-  // disagree in silence.
-  const values = evaluateSheet({ cells });
-  let formulasKept = 0;
-  for (const [ref, was] of Object.entries(cached)) {
-    const now = values[ref];
-    const agrees =
-      typeof now === 'number' &&
-      (Math.abs(now - was) <= Math.max(1e-6, Math.abs(was) * 1e-9));
-    if (agrees) {
-      formulasKept++;
-    } else {
-      cells[ref] = String(was);
-      formulasFlattened++;
+  return { cells, cached, formulasFlattened };
+}
+
+/**
+ * **Check our arithmetic against Excel's own**, across the whole workbook.
+ *
+ * A formula is only worth keeping if re-evaluating it here reproduces the number the workbook was
+ * showing. Where it does not, the import has quietly changed a figure somebody has been looking
+ * at — a function this engine reads but reads differently, an argument order that is not what it
+ * looked like. The cached value is what the author last saw, so that is what is kept, and the
+ * formula is dropped rather than left to disagree in silence.
+ *
+ * Mutates the parsed grids in place, which is why it is one function and not a fold: a formula
+ * that disagrees becomes a constant, and the tab that reads *that* cell must see the constant.
+ */
+function checkAgainstExcel(named: { name: string; parsed: ParsedSheet }[]): ImportedSheet[] {
+  const values = evaluateWorkbook({
+    sheets: named.map((s) => ({ name: s.name, cells: s.parsed.cells })),
+  });
+
+  return named.map(({ name, parsed }, i) => {
+    const { cells, cached } = parsed;
+    let { formulasFlattened } = parsed;
+    let formulasKept = 0;
+
+    for (const [ref, was] of Object.entries(cached)) {
+      const now = values[i]![ref];
+      const agrees =
+        typeof now === 'number' &&
+        (Math.abs(now - was) <= Math.max(1e-6, Math.abs(was) * 1e-9));
+      if (agrees) {
+        formulasKept++;
+      } else {
+        cells[ref] = String(was);
+        formulasFlattened++;
+      }
+    }
+    // A formula with no cached value at all — openpyxl writes these — cannot be checked, so it is
+    // kept and counted. Nothing was displayed for it to disagree with.
+    for (const ref of Object.keys(cells)) {
+      if (cells[ref]!.startsWith('=') && !(ref in cached)) formulasKept++;
+    }
+    return { name, cells, formulasKept, formulasFlattened };
+  });
+}
+
+/**
+ * Which file in the zip holds which tab.
+ *
+ * `xl/workbook.xml` lists the tabs in the order they appear, and points at each one by relationship
+ * id; `xl/_rels/workbook.xml.rels` turns that id into a path. The file numbers are assigned
+ * independently, so a workbook whose tabs were ever reordered has `sheet2.xml` first — and taking
+ * them positionally attaches the wrong name to the wrong grid. That was survivable while a name
+ * was only a title. It is not survivable now that `=Inputs!B4` resolves *by* name: every
+ * cross-sheet formula in the workbook would quietly read the wrong tab's numbers.
+ *
+ * Falls back to position where there is no rels part at all, which is how a hand-written or
+ * minimal workbook arrives.
+ */
+function sheetPaths(zip: Map<string, Buffer>, sheets: Xml[]): (string | null)[] {
+  const rels = new Map<string, string>();
+  const relsXml = zip.get('xl/_rels/workbook.xml.rels')?.toString('utf8');
+  if (relsXml) {
+    const doc = parser.parse(relsXml) as Xml;
+    for (const r of list(node(doc['Relationships'])['Relationship'] as Xml[])) {
+      const id = String(r['@Id'] ?? '');
+      // Absolute (`/xl/worksheets/…`) and relative (`worksheets/…`) are both written in the wild.
+      const target = String(r['@Target'] ?? '').replace(/^\//, '');
+      if (id) rels.set(id, target.startsWith('xl/') ? target : `xl/${target}`);
     }
   }
-  // A formula with no cached value at all — openpyxl writes these — cannot be checked, so it is
-  // kept and counted. Nothing was displayed for it to disagree with.
-  for (const ref of Object.keys(cells)) {
-    if (cells[ref]!.startsWith('=') && !(ref in cached)) formulasKept++;
-  }
 
-  return { cells, formulasKept, formulasFlattened };
+  return sheets.map((s, i) => {
+    const byRel = rels.get(String(s['@r:id'] ?? ''));
+    if (byRel && zip.has(byRel)) return byRel;
+    const byPosition = `xl/worksheets/sheet${i + 1}.xml`;
+    return zip.has(byPosition) ? byPosition : null;
+  });
 }
 
 /** Every sheet in a workbook, in the order the workbook lists them. */
@@ -211,19 +271,23 @@ export function readWorkbook(buf: Buffer): ImportedSheet[] {
   const shared = sharedStrings(zip.get('xl/sharedStrings.xml')?.toString('utf8') ?? null);
   const dates = dateStyles(zip.get('xl/styles.xml')?.toString('utf8') ?? null);
 
-  // The workbook names the sheets and their order; the files are numbered separately, so a
-  // workbook whose tabs were reordered would otherwise import under the wrong names.
+  // The workbook names the tabs and fixes their order; `sheetPaths` says which file each one is.
   const doc = parser.parse(workbookXml) as Xml;
   const named = list(node(node(doc['workbook'])['sheets'])['sheet'] as Xml[]);
+  const paths = sheetPaths(zip, named);
 
-  const out: ImportedSheet[] = [];
+  const parsed: { name: string; parsed: ParsedSheet }[] = [];
   named.forEach((s, i) => {
-    const xml = zip.get(`xl/worksheets/sheet${i + 1}.xml`)?.toString('utf8');
+    const path = paths[i];
+    const xml = path === null || path === undefined ? undefined : zip.get(path)?.toString('utf8');
     if (!xml) return;
-    const name = String(s['@name'] ?? `Sheet${i + 1}`);
-    out.push({ name, ...readSheet(xml, shared, dates) });
+    // Named exactly as the workbook names it, within what a reference can address, and never twice:
+    // `evaluateWorkbook` resolves a tab by name, so two tabs called the same thing would make
+    // `=Model!B4` mean whichever came first.
+    const name = uniqueName(cleanName(String(s['@name'] ?? `Sheet${i + 1}`)), parsed.map((p) => p.name));
+    parsed.push({ name, parsed: readSheet(xml, shared, dates) });
   });
 
-  if (out.length === 0) throw new UnreadableWorkbook('This workbook has no sheets in it.');
-  return out;
+  if (parsed.length === 0) throw new UnreadableWorkbook('This workbook has no sheets in it.');
+  return checkAgainstExcel(parsed);
 }

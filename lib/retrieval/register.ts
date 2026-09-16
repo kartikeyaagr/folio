@@ -37,6 +37,8 @@
 import { createHash } from 'node:crypto';
 import type { Client } from '../db.ts';
 import { reapAll } from './reap.ts';
+import { isSheetBody, sheetsOf, SHEET_BODY_SQL } from '../sheet/book.ts';
+import type { Grid } from '../sheet/evaluate.ts';
 import { sheetGridText } from './chunk.ts';
 
 export type SourceKind =
@@ -53,12 +55,12 @@ export interface Indexable {
   title: string;
   occurredAt: string | null;
   text: string;
-  // Non-null only for a document_version whose body is a sheet — see rawText's document_version
-  // branch. Carried through explicitly so lib/retrieval/index.ts's piecesFor can pick chunkCells
-  // without re-sniffing `text`'s shape: `text` is now sheetGridText(cells), the same string
-  // chunkCells itself computes offsets into, and a re-sniff would only risk the two falling out of
-  // step again.
-  cells: Record<string, string> | null;
+  // Non-null only for a document_version whose body is a spreadsheet — see rawText's
+  // document_version branch. Every tab, because that is what the renderer takes. Carried through
+  // explicitly so lib/retrieval/index.ts's piecesFor can pick chunkCells without re-sniffing
+  // `text`'s shape: `text` is now sheetGridText(sheets), the same string chunkCells itself computes
+  // offsets into, and a re-sniff would only risk the two falling out of step again.
+  sheets: Grid[] | null;
 }
 
 export function contentHash(text: string): string {
@@ -164,7 +166,7 @@ if (!/^[a-z0-9-]+$/.test(GRID_RENDERER)) {
 const DOCUMENTS_SELECT = `
   SELECT 'document_version' AS kind, d.id AS ref_id, d.company_id, d.title, cur.written_at AS occurred_at,
          encode(sha256(convert_to(
-           CASE WHEN jsonb_exists(cur.body, 'cells') THEN '${GRID_RENDERER}:' || cur.body::text
+           CASE WHEN ${SHEET_BODY_SQL('cur.body')} THEN '${GRID_RENDERER}:' || cur.body::text
                 ELSE coalesce(cur.body->>'text', cur.body::text) END, 'UTF8')), 'hex') AS content_hash
     FROM documents d
     JOIN LATERAL (
@@ -474,20 +476,25 @@ export async function registerAll(c: Client): Promise<number> {
   return moved.length;
 }
 
-/** A document_version's body is `{"cells": {...}}` for a sheet, detected by shape (see 0039). */
-function cellsIn(body: unknown): Record<string, string> | null {
-  if (body === null || typeof body !== 'object' || !('cells' in body)) return null;
-  const cells = (body as { cells: unknown }).cells;
-  return cells !== null && typeof cells === 'object' ? (cells as Record<string, string>) : null;
+/**
+ * A document_version's body read as tabs, or null when it is not a spreadsheet at all.
+ *
+ * The shape test and the reader both live in `lib/sheet/book.ts`, beside `SHEET_BODY_SQL` — the
+ * same question asked in SQL by DOCUMENTS_SELECT, which cannot deserialise a body. The two must
+ * agree: a body the SQL fails to recognise is hashed as prose and indexed as raw JSON, and that
+ * looks exactly like a working index until somebody searches for a figure that is in it.
+ */
+function sheetsIn(body: unknown): Grid[] | null {
+  return isSheetBody(body) ? sheetsOf(body) : null;
 }
 
 interface RawText {
   text: string;
-  cells: Record<string, string> | null;
+  sheets: Grid[] | null;
 }
 
 const asRawText = (text: string | null | undefined): RawText | null =>
-  text == null ? null : { text, cells: null };
+  text == null ? null : { text, sheets: null };
 
 /**
  * The text a source's content_hash was computed FROM, reconstructed for the chunker. Every branch
@@ -517,12 +524,12 @@ async function rawText(c: Client, kind: SourceKind, refId: string): Promise<RawT
       );
       if (rows.length === 0) return null;
       const body = rows[0]!.body;
-      const cells = cellsIn(body);
-      if (cells) return { text: sheetGridText(cells), cells };
+      const sheets = sheetsIn(body);
+      if (sheets) return { text: sheetGridText(sheets), sheets };
 
       const asObj = body !== null && typeof body === 'object' ? (body as Record<string, unknown>) : null;
       const text = asObj && typeof asObj['text'] === 'string' ? asObj['text'] : JSON.stringify(body);
-      return { text, cells: null };
+      return { text, sheets: null };
     }
     case 'attachment': {
       const { rows } = await c.query<{ text: string | null }>(
@@ -596,6 +603,6 @@ export async function textFor(c: Client, sourceId: string): Promise<Indexable | 
     title: s.title,
     occurredAt: s.occurred_at ? s.occurred_at.toISOString() : null,
     text: raw.text,
-    cells: raw.cells,
+    sheets: raw.sheets,
   };
 }
