@@ -11,7 +11,13 @@ v3 system as its own foundation. The system before both lives at `../trisula` an
 extended. Read nothing from it as evidence about this one: several of its subsystems were
 deliberately not carried forward.
 
-## The design documents
+## The documents
+
+**`ARCHITECTURE.md` is tracked in git and describes the system as built** — layout and the enforced
+boundaries, the data model, ingestion, the content store, the agents, chat, the learning loop, and
+the jobs. It is the fastest way to orient, and its numbers are counted rather than remembered. The
+files below are the private record of *why* each of those decisions was made, and they stay
+authoritative for intent.
 
 `docs/specs/` and `docs/plans/` (gitignored, private):
 
@@ -48,7 +54,7 @@ C8 declines a news vendor. The investor-letter agent was cut and its number not 
 ```bash
 export DATABASE_URL=postgres:///trisula_v3_dev
 pnpm exec tsx db/migrate.ts      # migrations are one transaction each, checksummed
-pnpm check                       # lint + typecheck + 222 tests
+pnpm check                       # lint + typecheck + 619 tests
 pnpm dev                         # port 3100
 ```
 

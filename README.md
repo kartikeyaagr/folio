@@ -32,16 +32,19 @@ being added.
 ```
 app/            Next.js App Router — the UI
 components/     the design system
-lib/            db · auth · agents · ingest adapters · domain logic  (server-only)
-jobs/           the seven scheduled entry points
+lib/            db · auth · agents · retrieval · ingest adapters · domain logic  (server-only)
+jobs/           24 entry points, 19 of them on a systemd timer
 db/             migrations/*.sql from 0001, and the runner
-ops/            provision · backup · systemd units
+ops/            provision · backup · systemd units · measurement scripts
 ```
 
 One package, no workspace. The jobs are `tsx` scripts importing the same `lib/` the app imports,
 so `lib/` must never import from `next/*` — the lint rule in `eslint.config.js` enforces it.
 
-Read `.interface-design/system.md` before adding any screen.
+**`ARCHITECTURE.md` describes how the system is put together** — the data model, ingestion,
+retrieval, the agents, chat, and the learning loop, with the constants and invariants that matter.
+Read it before changing anything structural, and `.interface-design/system.md` before adding any
+screen.
 
 ## A constraint worth knowing
 
@@ -53,9 +56,21 @@ enum. There is no build step and that is the trade.
 
 ## Getting started
 
-Requires Node 22+, pnpm 9, and Postgres 18.
+Requires Node 22+, pnpm 9, and Postgres 18 with the `vector` extension available.
 
 ```bash
+export DATABASE_URL=postgres:///trisula_v3_dev
 pnpm install
-pnpm check      # lint + typecheck + test
+pnpm fetch-model                 # ~130 MB embedding model, validated on download
+pnpm exec tsx db/migrate.ts      # migrations are one transaction each, checksummed
+pnpm check                       # lint + typecheck + 619 tests
+pnpm dev                         # port 3100
 ```
+
+Tests create and drop their own databases, so they need `createdb`/`dropdb` on PATH. The retrieval
+tests need the embedding model present — `pnpm fetch-model` is idempotent and leaves a good copy
+alone. Jobs run as `pnpm exec tsx jobs/<name>.ts`; deployment lives in `ops/SETUP.md`.
+
+**Stop `pnpm dev` before `pnpm check`.** Both load the ONNX embedding session, the test runner loads
+several at once, and onnxruntime aborts the process rather than queueing — three model-loading files
+fail with no assertion error to explain them. See `ARCHITECTURE.md` §10.

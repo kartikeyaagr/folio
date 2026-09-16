@@ -1,6 +1,6 @@
 # Setting up the VM
 
-Everything Trisula needs on one box: Postgres, the web app, seven scheduled jobs, and encrypted
+Everything Trisula needs on one box: Postgres, the web app, 19 scheduled jobs, and encrypted
 backups going off-site. Written to be followed top to bottom in one sitting; expect about an hour,
 most of it waiting for installs.
 
