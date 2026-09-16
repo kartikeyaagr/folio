@@ -49,23 +49,48 @@ function message(t: Turn): Anthropic.Beta.BetaMessage {
   } as never;
 }
 
-/** A runner that yields the turns it was given, and records any closing call made after it. */
+/**
+ * A runner that yields the turns it was given, and records any closing call made after it.
+ *
+ * **`params.messages` accumulates, because the real runner's does.** `BetaToolRunner` pushes the
+ * assistant message onto `state.params.messages` and then, when the model asked for tools, pushes
+ * the tool results too — and its `max_iterations` check sits at the *top* of the next pass, so
+ * both are already there by the time the loop breaks. A fake that leaves `params` as it was handed
+ * in reports a shorter history than the SDK would, and anything `askWithTools` appends to it looks
+ * correct against the fake while duplicating against the real thing. That is §15 finding 16's
+ * shape, and the reason this fake mutates rather than holding `body`.
+ */
 function scripted(turns: Turn[], closing?: Turn) {
   const creates: Anthropic.Beta.Messages.MessageCreateParamsNonStreaming[] = [];
   let yielded = 0;
   const client: ToolLoopClient = {
     beta: {
       messages: {
-        toolRunner: (body) =>
-          ({
-            params: body,
+        toolRunner: (body) => {
+          const params = { ...body, messages: [...(body.messages ?? [])] };
+          return {
+            params,
             async *[Symbol.asyncIterator]() {
               for (const t of turns) {
                 yielded++;
-                yield message(t);
+                const m = message(t) as Anthropic.Beta.BetaMessage;
+                yield m;
+                params.messages.push({ role: 'assistant', content: m.content });
+                const calls = m.content.filter((b) => b.type === 'tool_use');
+                if (calls.length > 0) {
+                  params.messages.push({
+                    role: 'user',
+                    content: calls.map((b) => ({
+                      type: 'tool_result' as const,
+                      tool_use_id: (b as Anthropic.Beta.BetaToolUseBlock).id,
+                      content: 'ran',
+                    })),
+                  });
+                }
               }
             },
-          }) as never,
+          } as never;
+        },
         create: async (params) => {
           creates.push(params);
           return message(closing ?? { text: '{"answer":"closed"}' });
@@ -135,21 +160,55 @@ test('a turn that hits the cap still ends in an answer', async () => {
   assert.equal(a.inputTokens, 110, "the closing call's usage counts too");
 });
 
-test('the closing call refuses the outstanding calls rather than running them', async () => {
+test('the closing call answers every outstanding call, and cannot ask for more', async () => {
   // An assistant tool_use block with no tool_result after it is rejected by the API, so the turn
-  // has to be closed somehow. Closing it by *running* the tools would make the cap a suggestion.
+  // has to close on a balanced history. The runner's own history already is one — it ran those
+  // tools before the cap broke it — so the close re-sends that, and `tool_choice: none` is what
+  // stops the cap being a suggestion.
   const { client, creates } = scripted(
     [{ calls: ['t9', 't10'], stop: 'tool_use' }],
     { text: '{"answer":"ok"}' },
   );
   await ask(client);
   const sent = creates[0]!;
-  const lastMessage = sent.messages[sent.messages.length - 1]!;
-  assert.equal(lastMessage.role, 'user');
-  const results = lastMessage.content as { type: string; tool_use_id: string; is_error: boolean }[];
+  // Found by shape, not by position: BUDGET_SPENT is appended after this one.
+  const results = sent.messages
+    .flatMap((m) => (Array.isArray(m.content) ? m.content : []))
+    .filter((b) => (b as { type: string }).type === 'tool_result') as { tool_use_id: string }[];
   assert.deepEqual(results.map((r) => r.tool_use_id), ['t9', 't10'], 'every one is answered');
-  assert.ok(results.every((r) => r.type === 'tool_result' && r.is_error));
   assert.deepEqual(sent.tool_choice, { type: 'none' }, 'and it cannot ask for more');
+});
+
+test('the closing call sends each outstanding tool call once, not twice', async () => {
+  // The runner has already pushed the capped assistant turn and its tool results onto
+  // params.messages by the time it breaks. Appending that same turn again puts two copies of every
+  // tool_use id in the request, each answered twice, and the API rejects a duplicate id — so the
+  // one path §6.2 promises ends in an answer would instead end in `error`, after paying for the
+  // whole loop. The bug is invisible to a fake whose params never grow, which is why `scripted`
+  // mutates its own.
+  const { client, creates } = scripted([{ calls: ['t9'], stop: 'tool_use' }], { text: '{"answer":"ok"}' });
+  await ask(client);
+  const ids = creates[0]!.messages.flatMap((m) =>
+    (Array.isArray(m.content) ? m.content : [])
+      .filter((b) => (b as { type: string }).type === 'tool_use')
+      .map((b) => (b as Anthropic.Beta.BetaToolUseBlock).id),
+  );
+  assert.deepEqual(ids, ['t9'], 'the outstanding call appears exactly once');
+});
+
+test('the closing call tells the model why it cannot call anything else', async () => {
+  // `tool_choice: none` stops the model asking for another tool; it does not tell it why, and a
+  // model that does not know the budget is gone writes "let me now check X" — a promise the turn
+  // cannot keep. The instruction rides as a trailing user text message rather than as synthetic
+  // tool_results, which is what duplicated ids before; consecutive same-role messages are combined
+  // into one turn by the API, so this is a legal thing to append to a history already balanced.
+  const { client, creates } = scripted([{ calls: ['t9'], stop: 'tool_use' }], { text: '{"answer":"ok"}' });
+  await ask(client);
+  const sent = creates[0]!;
+  const tail = sent.messages[sent.messages.length - 1]!;
+  assert.equal(tail.role, 'user');
+  assert.match(String(tail.content), /budget/i, 'the model is told the budget is spent');
+  assert.match(String(tail.content), /not able to find out/i, 'and told to say what it could not learn');
 });
 
 test('a final message that is not JSON is unparseable, and keeps what it said', async () => {

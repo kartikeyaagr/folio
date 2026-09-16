@@ -20,8 +20,9 @@
  *     same bug is recorded as already-fixed once in `model.ts` for the single-call retry; a loop
  *     makes it much more expensive, because the discarded turns are most of the spend.
  *   * **Hitting the cap still produces an answer.** `v4.md §6.2`: *"then the model answers with
- *     what it has or says it could not find out."* Closing the turn is done with synthetic tool
- *     results rather than by running more tools, so the cap is a real ceiling and not a suggestion.
+ *     what it has or says it could not find out."* Closing the turn is done by re-sending the
+ *     history the runner already holds with `tool_choice: none` — no further round trip is allowed,
+ *     so the cap is a real ceiling and not a suggestion.
  */
 
 import type Anthropic from '@anthropic-ai/sdk';
@@ -43,6 +44,22 @@ import { costUsd, sealObjects, type Answer, type Effort } from './model.ts';
  * An uncapped agentic loop inside a 30-minute lease is a double-billed run waiting to happen.
  */
 export const MAX_ITERATIONS = 8;
+
+/**
+ * What the model is told when the cap closes the turn.
+ *
+ * `tool_choice: none` stops it asking for another tool; it does not tell it why, and a model that
+ * does not know the budget is gone writes "let me now check X" — a promise the turn cannot keep.
+ * This rides as a trailing `user` text message rather than as the synthetic tool_results an earlier
+ * version used: the history the runner hands over is already balanced, every `tool_use` answered,
+ * and re-answering those ids is exactly the duplication that made this call fail. Consecutive
+ * same-role messages are combined into one turn by the API, so a second `user` message is legal
+ * here — and unlike a mid-conversation `system` message it is accepted on every model, which
+ * matters because the model on this path comes from the agent row rather than from this file.
+ */
+const BUDGET_SPENT =
+  'The tool budget for this turn is spent, so no further tool calls will run. Answer with what ' +
+  'you already have, and say plainly what you were not able to find out.';
 
 /**
  * As generous as a non-streaming request is allowed to be.
@@ -154,31 +171,6 @@ function failureFor(message: Anthropic.Beta.BetaMessage): Extract<Answer, { ok: 
   return null;
 }
 
-/**
- * Close out a turn that hit the cap, without running another tool.
- *
- * The trailing assistant message asks for tools the budget will not pay for, and an assistant
- * `tool_use` block with no `tool_result` after it is rejected by the API — so each one is answered
- * with the reason it went unserved. `is_error` rather than a bare string: the model is being told
- * the call did not happen, and a plain result reads as one that did and returned nothing.
- */
-function budgetSpent(last: Anthropic.Beta.BetaMessage): Anthropic.Beta.BetaMessageParam {
-  const calls = last.content.filter(
-    (b): b is Anthropic.Beta.BetaToolUseBlock => b.type === 'tool_use',
-  );
-  return {
-    role: 'user',
-    content: calls.map((b) => ({
-      type: 'tool_result' as const,
-      tool_use_id: b.id,
-      is_error: true,
-      content:
-        'The tool budget for this turn is spent, so this call was not run. Answer with what you ' +
-        'already have, and say plainly what you were not able to find out.',
-    })),
-  };
-}
-
 export async function askWithTools(client: ToolLoopClient, input: ToolLoopInput): Promise<Answer> {
   const schema = sealObjects(input.schema) as Record<string, unknown>;
   const base = {
@@ -221,13 +213,23 @@ export async function askWithTools(client: ToolLoopClient, input: ToolLoopInput)
 
   if (!last) return { ok: false, kind: 'error', detail: 'the runner yielded no message' };
 
-  // The cap was reached with the model still asking for tools. One more call, with the outstanding
-  // calls refused and `tool_choice: none`, so the turn ends in an answer rather than in silence.
+  // The cap was reached with the model still asking for tools. One more call over the history the
+  // runner has already accumulated, with `tool_choice: none`, so the turn ends in an answer rather
+  // than in silence.
+  //
+  // That history is taken as it stands and only `BUDGET_SPENT` is appended, which is worth stating
+  // because the obvious code is wrong. `BetaToolRunner` pushes the assistant message onto
+  // `params.messages` and then pushes the tool results, and only *then* does the next pass hit
+  // `max_iterations` and break — so by the time control arrives here the last turn is already
+  // recorded, tools already run, every `tool_use` already answered. Re-appending it sends each
+  // `tool_use` id twice, answered twice, which the API rejects: the one path §6.2 promises ends in
+  // an answer would end in `error` instead, after paying for the whole loop. This read as correct
+  // against a fake whose `params` never grew; `loop.test.ts`'s `scripted` now mutates its own.
   if (last.stop_reason === 'tool_use') {
     try {
       const closing = await client.beta.messages.create({
         ...base,
-        messages: [...runner.params.messages, { role: 'assistant', content: last.content }, budgetSpent(last)],
+        messages: [...runner.params.messages, { role: 'user', content: BUDGET_SPENT }],
         // Still declared: the history references these tools by name, and a request whose history
         // names a tool the request does not is rejected.
         tools: input.tools as unknown as Anthropic.Beta.BetaToolUnion[],
