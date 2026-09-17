@@ -1,8 +1,8 @@
 # Architecture
 
 How Trisula is put together, and why it is put together that way. Accurate against the tree at the
-time of writing: **54 migrations, 51 tables, 7 agents, 24 job entry points, 19 systemd timers, one
-long-running watcher, 18 routes, 664 tests.** Every number here was counted, not remembered; if you
+time of writing: **55 migrations, 52 tables, 7 agents, 24 job entry points, 19 systemd timers, one
+long-running watcher, 18 routes, 676 tests.** Every number here was counted, not remembered; if you
 change the shape, count again rather than editing around it.
 
 For the product argument — what was built, what was deliberately cut, and on whose authority — see
@@ -93,8 +93,16 @@ saying who did it, which is why `audit_log` can be trusted rather than hoped at.
 Fourteen sources behind nine ingest jobs, all writing through `lib/ingest/*`:
 
 securities master · exchange filings and announcements · attachments and their extracted PDF text ·
-bhavcopy EOD prices · XBRL fundamentals · shareholding patterns and holders · insider transactions ·
-corporate actions · the calendar · annual reports.
+bhavcopy EOD prices · **index closes** · XBRL fundamentals · shareholding patterns and holders ·
+insider transactions · corporate actions · the calendar · annual reports.
+
+**Index closes ride with the bhavcopy**, in the same loop of the same job from the same archive
+host. NSE's per-index history endpoint answers 503 — measured 17-Sep-2026, the same answer every
+per-symbol historical endpoint gives — but `ind_close_all_DDMMYYYY.csv` carries all 166 indices for
+one trading day, so the walk that fetches a day's prices fetches its index levels in one more
+request. Four are kept (`lib/ingest/indices.ts`): Smallcap 250, Midcap 150, Nifty 500, Nifty 50.
+`index_levels` is its own table because an index is not a security — no ISIN, no symbol, and not
+filtered against `companies` — and carries no audit trigger for the reason `prices` carries none.
 
 Two rules govern all of them.
 

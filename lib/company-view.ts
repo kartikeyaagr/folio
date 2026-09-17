@@ -8,6 +8,7 @@
 
 import { readTxn } from './db.ts';
 import type { Company } from './companies.ts';
+import { INDICES } from './ingest/indices.ts';
 import type { History } from './prices.ts';
 
 export interface CompanyListRow extends Company {
@@ -184,12 +185,29 @@ export async function priceHistory(companyId: string): Promise<History> {
       "SELECT (current_date AT TIME ZONE 'Asia/Kolkata')::date::text AS d",
     );
 
+    // Every benchmark, whole, in one read — for the same reason the prices are: the chart switches
+    // between them, and a round trip per switch is what this page just stopped doing. Four indices
+    // over a five-year walk is ~5,000 rows, which is the same order as the prices beside them.
+    const { rows: levels } = await c.query<{ name: string; on: string; close: string }>(
+      `SELECT name, on_date::text AS on, close::text AS close
+         FROM index_levels WHERE name = ANY($1::text[]) ORDER BY name, on_date`,
+      [INDICES.map((i) => i.name)],
+    );
+
     return {
       points: rows.map((r) => ({ on: r.on, close: Number(r.close) })),
       heldFrom: span[0]?.from ?? null,
       heldTo: span[0]?.to ?? null,
       heldCount: Number(span[0]?.n ?? 0),
       asOf: today[0]!.d,
+      // INDICES' order is the order the picker offers, benchmark first.
+      indices: INDICES.map((i) => ({
+        name: i.name,
+        label: i.label,
+        points: levels
+          .filter((l) => l.name === i.name)
+          .map((l) => ({ on: l.on, close: Number(l.close) })),
+      })).filter((i) => i.points.length > 0),
     };
   });
 }

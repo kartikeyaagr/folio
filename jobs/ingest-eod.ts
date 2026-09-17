@@ -10,6 +10,7 @@
  */
 import { closePool, readTxn, serviceTxn } from '../lib/db.ts';
 import { fetchBhavcopy, NoBhavcopy, storePrices } from '../lib/ingest/bhavcopy.ts';
+import { ingestIndexDay, NoIndexFile } from '../lib/ingest/indices.ts';
 
 /**
  * Every day from the last one we hold a close for, up to yesterday.
@@ -71,6 +72,8 @@ async function main(): Promise<void> {
   try {
     let stored = 0;
     let traded = 0;
+    let levels = 0;
+    const renamed = new Set<string>();
     const quiet: string[] = [];
 
     for (const day of days) {
@@ -80,12 +83,21 @@ async function main(): Promise<void> {
         const out = await storePrices(on, rows);
         stored += out.stored;
         traded++;
-        console.log(`${day}  ${rows.length} rows  ${out.stored} stored`);
+
+        // The same trading day from the same archive host, so it belongs in the same loop rather
+        // than in a job of its own with a timer of its own that can drift out of step. A day with
+        // a bhavcopy and no index close is the archive being incomplete, not a holiday — it falls
+        // through to the outer catch and fails the run, exactly as a missing bhavcopy would.
+        const idx = await ingestIndexDay(on);
+        levels += idx.stored;
+        for (const m of idx.missing) renamed.add(m);
+
+        console.log(`${day}  ${rows.length} rows  ${out.stored} stored  ${idx.stored} index closes`);
       } catch (err) {
         // The one exemption, and it is now narrow: only a 404 from the archive reaches here, so a
         // weekend and a dead host are no longer the same answer. Everything else falls through to
         // the outer catch and fails the run.
-        if (!(err instanceof NoBhavcopy)) throw err;
+        if (!(err instanceof NoBhavcopy) && !(err instanceof NoIndexFile)) throw err;
         quiet.push(day);
         console.log(`${day}  no bhavcopy (weekend, holiday, or not yet published)`);
       }
@@ -94,8 +106,13 @@ async function main(): Promise<void> {
     // Every requested day being quiet is ordinary over a weekend and suspicious over a fortnight.
     // The count is recorded either way so the run says which it was rather than leaving a reader
     // to infer it from a zero.
+    // An index in INDICES that the file stopped carrying is a rename, not an absence — NSE renamed
+    // Nifty Smallcap to Nifty Smallcap 250 once already. Named here so it reads as a thing to fix
+    // rather than as a chart that quietly flattens.
     const detail =
-      `${days[0]}..${days[days.length - 1]}: ${traded} trading day(s), ${stored} closes stored` +
+      `${days[0]}..${days[days.length - 1]}: ${traded} trading day(s), ${stored} closes stored, ` +
+      `${levels} index closes` +
+      (renamed.size > 0 ? `; NOT IN THE FILE: ${[...renamed].join(', ')}` : '') +
       (quiet.length > 0 ? `, ${quiet.length} with no bhavcopy (${quiet.join(', ')})` : '');
     await finish('ok', stored, detail);
   } catch (err) {

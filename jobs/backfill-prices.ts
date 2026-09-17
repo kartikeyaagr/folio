@@ -19,6 +19,7 @@
  */
 import { closePool, readTxn, serviceTxn } from '../lib/db.ts';
 import { fetchBhavcopy, NoBhavcopy, storePrices } from '../lib/ingest/bhavcopy.ts';
+import { ingestIndexDay } from '../lib/ingest/indices.ts';
 import { NseSession } from '../lib/ingest/nse.ts';
 
 function arg(flag: string): string | undefined {
@@ -51,6 +52,16 @@ async function main(): Promise<void> {
     return new Set(rows.map((r) => r.day));
   });
 
+  // Its own held set. Sharing the price one would skip the index file on every day a price already
+  // exists for — which, on a book whose prices were backfilled before indices existed, is all of
+  // them, and the chart would have a benchmark line starting the day this shipped.
+  const heldIndex = await readTxn(async (c) => {
+    const { rows } = await c.query<{ day: string }>(
+      "SELECT DISTINCT to_char(on_date, 'YYYY-MM-DD') AS day FROM index_levels",
+    );
+    return new Set(rows.map((r) => r.day));
+  });
+
   const runId = await serviceTxn('system:ingest', async (c) => {
     const { rows } = await c.query<{ id: string }>(
       "INSERT INTO ingestion_runs (source) VALUES ('nse_bhavcopy_backfill') RETURNING id",
@@ -76,11 +87,14 @@ async function main(): Promise<void> {
     let quiet = 0;
     let skipped = 0;
     let stored = 0;
+    let levels = 0;
 
     for (let back = 1; back <= days; back++) {
       const on = new Date(today.getTime() - back * 86_400_000);
       const day = on.toISOString().slice(0, 10);
-      if (held.has(day)) {
+      // Only when BOTH are held. A day whose prices are in and whose index close is not still
+      // costs one request, and the alternative is a benchmark that begins the day this shipped.
+      if (held.has(day) && heldIndex.has(day)) {
         skipped++;
         continue;
       }
@@ -93,11 +107,18 @@ async function main(): Promise<void> {
       }
 
       try {
-        const rows = await fetchBhavcopy(on, session);
-        const out = await storePrices(on, rows);
-        stored += out.stored;
+        if (!held.has(day)) {
+          const rows = await fetchBhavcopy(on, session);
+          const out = await storePrices(on, rows);
+          stored += out.stored;
+        }
+        if (!heldIndex.has(day)) {
+          levels += (await ingestIndexDay(on, session)).stored;
+        }
         traded++;
-        if (traded % 25 === 0) console.log(`  ${day}  ${traded} trading days so far, ${stored} closes`);
+        if (traded % 25 === 0) {
+          console.log(`  ${day}  ${traded} trading days so far, ${stored} closes, ${levels} index closes`);
+        }
       } catch (err) {
         // A 404 is a non-trading day and is not retried: the file will not appear on a second ask.
         if (err instanceof NoBhavcopy) {
@@ -110,9 +131,14 @@ async function main(): Promise<void> {
         await sleep(3000);
         session = await NseSession.open();
         try {
-          const rows = await fetchBhavcopy(on, session);
-          const out = await storePrices(on, rows);
-          stored += out.stored;
+          if (!held.has(day)) {
+            const rows = await fetchBhavcopy(on, session);
+            const out = await storePrices(on, rows);
+            stored += out.stored;
+          }
+          if (!heldIndex.has(day)) {
+            levels += (await ingestIndexDay(on, session)).stored;
+          }
           traded++;
         } catch (again) {
           if (again instanceof NoBhavcopy) {
@@ -127,7 +153,7 @@ async function main(): Promise<void> {
       await sleep(400);
     }
 
-    const detail = `${only ?? 'all names'}, ${days} days back: ${traded} trading days fetched, ${stored} closes stored, ${skipped} already held, ${quiet} non-trading`;
+    const detail = `${only ?? 'all names'}, ${days} days back: ${traded} trading days fetched, ${stored} closes stored, ${levels} index closes, ${skipped} already held, ${quiet} non-trading`;
     // Every day answering 404 over a long window means the archive moved, not that the exchange
     // shut for a quarter.
     if (traded === 0 && skipped === 0 && quiet > 20) {
