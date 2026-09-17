@@ -229,7 +229,7 @@ async function backfill(t: Target, priceDays: number): Promise<Step[]> {
     const r = await ingestFundamentals(index);
     const line =
       `${index.length} instances, ${r.parsed} parsed, ${r.stored} periods stored` +
-      (r.unreadable > 0 ? `, ${r.unreadable} the parser cannot read` : '') +
+      (r.unreadable > 0 ? `, ${r.unreadable} the archive cannot serve or the parser cannot read` : '') +
       `, ${r.failed} failed`;
     // `unreadable` is excluded: a malformed instance will be malformed tomorrow, and holding the
     // company in the queue over one would never release it. `failed` is a fetch that did not

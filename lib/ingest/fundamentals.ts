@@ -13,7 +13,7 @@
 
 import { createHash } from 'node:crypto';
 import { serviceTxn } from '../db.ts';
-import { NseSession } from './nse.ts';
+import { NseError, NseSession } from './nse.ts';
 import { fetchIntegratedFilings, type Board } from './integrated-filing.ts';
 import { parse, UnparseableXbrl, type Report } from './xbrl.ts';
 
@@ -304,12 +304,14 @@ export interface IngestResult {
   parsed: number;
   stored: number;
   /**
-   * An instance the exchange served and this parser could not read.
+   * An instance the index promised and no reading of it can produce: the archive answers 4xx, or
+   * the bytes arrive and this parser refuses them.
    *
    * Apart from `failed` because the two want opposite responses and were one number until
-   * 17-Sep-2026. A malformed XBRL is the document, permanently: it will not parse tomorrow either,
-   * and an on-add backfill that held a company in its queue over one would never release it —
-   * PRAJIND has two. A fetch that did not answer is this run, and is worth another go.
+   * 17-Sep-2026. Both halves of this are the document, permanently — a 404 is the archive's answer
+   * and a malformed XBRL will be malformed tomorrow — so an on-add backfill that held a company in
+   * its queue over either would never release it. PRAJIND has two of the first and TCL two of the
+   * second. `failed` is a fetch that did not answer at all, which is this run and worth another go.
    */
   unreadable: number;
   failed: number;
@@ -356,8 +358,11 @@ export async function ingestFundamentals(
     let raw: Buffer;
     try {
       raw = await s.bytes(r.xbrlUrl);
-    } catch {
-      failed++;
+    } catch (err) {
+      // 4xx is the archive saying it does not have this instance, whatever the index claims.
+      // Anything else — a refused connection, a timeout, a truncated body — is this run.
+      if (err instanceof NseError && (err.status ?? 0) >= 400 && (err.status ?? 0) < 500) unreadable++;
+      else failed++;
       continue;
     }
 
