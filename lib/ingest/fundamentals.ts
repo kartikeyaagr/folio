@@ -303,6 +303,15 @@ export interface IngestResult {
   candidates: number;
   parsed: number;
   stored: number;
+  /**
+   * An instance the exchange served and this parser could not read.
+   *
+   * Apart from `failed` because the two want opposite responses and were one number until
+   * 17-Sep-2026. A malformed XBRL is the document, permanently: it will not parse tomorrow either,
+   * and an on-add backfill that held a company in its queue over one would never release it —
+   * PRAJIND has two. A fetch that did not answer is this run, and is worth another go.
+   */
+  unreadable: number;
   failed: number;
   disagreed: number;
 }
@@ -336,6 +345,7 @@ export async function ingestFundamentals(
 
   let parsed = 0;
   let stored = 0;
+  let unreadable = 0;
   let failed = 0;
   let disagreed = 0;
 
@@ -357,7 +367,7 @@ export async function ingestFundamentals(
       parsed++;
     } catch (err) {
       if (!(err instanceof UnparseableXbrl)) throw err;
-      failed++;
+      unreadable++;
       continue;
     }
 
@@ -412,5 +422,5 @@ export async function ingestFundamentals(
     }
   }
 
-  return { indexRows: all.length, candidates: mine.length, parsed, stored, failed, disagreed };
+  return { indexRows: all.length, candidates: mine.length, parsed, stored, unreadable, failed, disagreed };
 }

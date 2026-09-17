@@ -9,7 +9,7 @@
  */
 
 import { randomBytes } from 'node:crypto';
-import { readFile } from 'node:fs/promises';
+import { access, readFile } from 'node:fs/promises';
 
 import { extractText, getDocumentProxy } from 'unpdf';
 
@@ -58,6 +58,16 @@ export interface ExtractResult {
   extracted: number;
   documents: number;
   scanned: number;
+  /**
+   * Rows that claim bytes the store does not have.
+   *
+   * Counted apart from `failed` because re-running changes nothing: there is no text to extract
+   * from a file that is not there, and the repair lives in `clearMissingBytes`, which re-fetches
+   * whatever a filing still points at. What reaches here is what even that could not get back — an
+   * attachment whose archive URL has since died, or one that never had a filing behind it.
+   * Treating these as failures made PRAJIND's backfill unable to finish over six documents.
+   */
+  missing: number;
   failed: number;
 }
 
@@ -201,9 +211,21 @@ export async function extractPending(
   let extracted = 0;
   let documents = 0;
   let scanned = 0;
+  let missing = 0;
   let failed = 0;
 
   for (const row of pending) {
+    // Asked of the disk before the parser. `pdfText` would raise ENOENT and be counted as a fault,
+    // which is what it looks like from inside — but a row with no file is a fact about the store,
+    // not about this run, and it is offered again on every pass because `extracted_text` stays
+    // null. Six of PRAJIND's did exactly that until this existed.
+    try {
+      await access(pathFor(row.sha256));
+    } catch {
+      missing++;
+      continue;
+    }
+
     let text: string;
     try {
       text = await pdfText(row.sha256);
@@ -231,5 +253,5 @@ export async function extractPending(
     if (made) documents++;
   }
 
-  return { pending: pending.length, extracted, documents, scanned, failed };
+  return { pending: pending.length, extracted, documents, scanned, missing, failed };
 }

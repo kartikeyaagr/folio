@@ -19,6 +19,7 @@ import { dirname, join } from 'node:path';
 import { migrate } from '../../db/migrate.ts';
 import { closePool, readTxn, serviceTxn } from '../db.ts';
 import { clearMissingBytes, fetchAttachments, pathFor } from './attachments.ts';
+import { extractPending } from './extract.ts';
 
 const DB = `trisula_store_${process.pid}`;
 
@@ -160,4 +161,26 @@ test('a refused connection counts as a failure, not as gone', async () => {
   await filing('f1', 'c1', DEAD);
   const r = await fetchAttachments(10, 'c1');
   assert.deepEqual({ gone: r.gone, failed: r.failed }, { gone: 0, failed: 1 });
+});
+
+/**
+ * `extractPending` reads `attachments`, not `filings`, so a row whose bytes are gone is offered on
+ * every pass — `extracted_text` stays null, which is the signal for "unread". `pdfText` then raises
+ * ENOENT, which from inside looks exactly like a fault. Six of PRAJIND's did that until this
+ * existed, and a backfill that counted them as failures could never finish.
+ */
+test('an attachment with no bytes is counted as missing, not extracted and not failed', async () => {
+  await serviceTxn('system:ingest', async (c) => {
+    await c.query(
+      `INSERT INTO attachments (sha256, company_id, filename, media_type, bytes, kind, added_by)
+       VALUES ('nobytes','c1','vanished.pdf','application/pdf',100,'filing','system:ingest')`,
+    );
+  });
+
+  const r = await extractPending(10, 'c1');
+  assert.deepEqual(
+    { pending: r.pending, missing: r.missing, failed: r.failed, extracted: r.extracted },
+    { pending: 1, missing: 1, failed: 0, extracted: 0 },
+    'the row is still offered — it is genuinely unread — but not blamed on this run',
+  );
 });

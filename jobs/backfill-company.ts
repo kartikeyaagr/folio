@@ -122,7 +122,10 @@ async function documents(companyId: string): Promise<StepResult> {
   for (let round = 0; round < DOC_ROUNDS; round++) {
     const got = await fetchAttachments(DOC_BATCH, companyId);
     const out = await extractPending(DOC_BATCH, companyId);
-    fetched += got.fetched; held += got.skipped; gone += got.gone;
+    fetched += got.fetched; held += got.skipped;
+    // Both `gone` counts are the same statement — the bytes are not obtainable, and asking again
+    // tomorrow gets the same answer — so they are added rather than reported apart.
+    gone += got.gone + out.missing;
     failed += got.failed + out.failed;
     read += out.extracted; made += out.documents; scans += out.scanned;
     if (got.fetched + got.skipped + out.extracted === 0) break;
@@ -131,7 +134,7 @@ async function documents(companyId: string): Promise<StepResult> {
     (relost > 0 ? `${relost} re-fetched after their bytes went missing, ` : '') +
     `${fetched} fetched, ${held} already held, ${read} read, ` +
     `${made} transcripts, ${scans} scans` +
-    (gone > 0 ? `, ${gone} no longer in the archive` : '') +
+    (gone > 0 ? `, ${gone} the archive no longer serves` : '') +
     `, ${failed} failed`;
   // Every one of 93 attachments failing on an unwritable store used to read as a success here.
   //
@@ -224,7 +227,14 @@ async function backfill(t: Target, priceDays: number): Promise<Step[]> {
     // A name on the exchange has filed results. Zero is the feed, not the company.
     if (index.length === 0) return broke('the results feed returned nothing for this symbol');
     const r = await ingestFundamentals(index);
-    return did(`${index.length} instances, ${r.parsed} parsed, ${r.stored} periods stored, ${r.failed} failed`);
+    const line =
+      `${index.length} instances, ${r.parsed} parsed, ${r.stored} periods stored` +
+      (r.unreadable > 0 ? `, ${r.unreadable} the parser cannot read` : '') +
+      `, ${r.failed} failed`;
+    // `unreadable` is excluded: a malformed instance will be malformed tomorrow, and holding the
+    // company in the queue over one would never release it. `failed` is a fetch that did not
+    // answer, which is worth another attempt. The step used to branch on neither.
+    return r.failed > 0 ? broke(line) : did(line);
   }));
 
   // Asked for by symbol, which makes the endpoint serve the name's whole history rather than the
