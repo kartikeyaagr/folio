@@ -108,3 +108,51 @@ export async function closePool(): Promise<void> {
   await pool?.end();
   pool = undefined;
 }
+
+/**
+ * Wait on a `NOTIFY` channel, on a connection of its own.
+ *
+ * **Deliberately not from the pool.** `LISTEN` binds to a session and holds it for the life of the
+ * process, so taking one of ten pooled connections for it would leave nine — and the one thing a
+ * watcher does when it wakes is open transactions. That is the shape that produced seven stuck
+ * connections in this database on 17-Sep-2026, and it is cheap to not repeat.
+ *
+ * No actor is set: `LISTEN` writes nothing, so there is nothing to attribute, and the handler does
+ * its own attributed work in its own transactions.
+ *
+ * Reconnects rather than exits. A watcher is a long-lived process and Postgres restarting under it
+ * is an ordinary night, not a fault — but a watcher that has quietly stopped listening is
+ * indistinguishable from a quiet desk, which is the failure this system keeps paying for.
+ */
+export async function listen(
+  channel: string,
+  onNotify: (payload: string) => Promise<void>,
+  onError: (err: unknown) => void = (e) => console.error(String(e)),
+): Promise<void> {
+  for (;;) {
+    const c = new pg.Client({ connectionString: process.env.DATABASE_URL });
+    try {
+      await c.connect();
+      // Serialised: the handler is a backfill, which takes minutes, and two of them racing on one
+      // notification storm is what the lease exists to stop — better to never start the second.
+      let working = Promise.resolve();
+      c.on('notification', (n) => {
+        working = working.then(() => onNotify(n.payload ?? '')).catch(onError);
+      });
+      // `LISTEN` cannot be parameterised, and a channel name is not user input — it is a constant
+      // in this tree. Quoted anyway, so the statement is well-formed whatever is handed to it.
+      await c.query(`LISTEN "${channel.replace(/"/g, '""')}"`);
+      await new Promise<void>((_, reject) => {
+        c.on('error', reject);
+        c.on('end', () => reject(new Error(`the ${channel} connection ended`)));
+      });
+    } catch (err) {
+      onError(err);
+    } finally {
+      await c.end().catch(() => {
+        /* already gone; the reconnect below is the recovery */
+      });
+    }
+    await new Promise((r) => setTimeout(r, 5_000));
+  }
+}

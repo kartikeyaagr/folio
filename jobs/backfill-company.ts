@@ -3,10 +3,20 @@
  *
  * Adding a company attaches the filings already stored for its symbol — whatever the fourteen-day
  * window happened to catch — and nothing else. This is the rest: its whole announcement history,
- * the documents those announcements point at, the text inside them, its results, its shareholding,
- * and its price series.
+ * the documents those announcements point at (transcripts, investor decks, everything a filing
+ * links), the text inside them, its annual reports, its results, its corporate actions, its
+ * shareholding, its insider and pledge disclosures back to 2015, and its price series.
  *
- * **Not inside the request.** It is minutes of network calls against four endpoints, and a server
+ * **What is deliberately not here.** The offer document (RHP/DRHP) is not served by any endpoint on
+ * either exchange — probed again 17-Sep-2026 across fifteen NSE shapes and SEBI's public-issues
+ * index, reproducing the finding `docs/plans/2026-09-10-v4-retrieval.md` already recorded: SME
+ * issues file their draft with the exchange rather than SEBI, SEBI's draft index holds 2.3% of NSE
+ * Emerge names, and this book's total need is two PDFs that never change. They come through the
+ * import dialog, which accepts 32MB PDFs and keeps the bytes. The event calendar is a global
+ * forward-looking feed with no symbol parameter and no history, so there is nothing for a backfill
+ * to fetch that its timer does not already hold.
+ *
+ * **Not inside the request.** It is minutes of network calls against six endpoints, and a server
  * action that took four minutes would time out having done part of it with no record of which
  * part. So it is a queue, drained on a ten-minute timer, asked as "what has no backfill yet" rather
  * than "what changed since I last looked" — a crash halfway leaves the name unclaimed and the next
@@ -15,6 +25,7 @@
  *   pnpm exec tsx jobs/backfill-company.ts                  # everything owed
  *   pnpm exec tsx jobs/backfill-company.ts --symbol TCL     # one, even if already done
  *   pnpm exec tsx jobs/backfill-company.ts --price-days 400
+ *   pnpm exec tsx jobs/backfill-company.ts --watch          # stay up, start the moment Follow is clicked
  *
  * Every step is idempotent on its own, so a re-run costs the fetches and changes nothing else. A
  * step that fails does not stop the others: a company with no shareholding filed yet should still
@@ -23,7 +34,7 @@
  * **What a step returns is the whole design, and `lib/ingest/backfill.ts` holds it.** A step ends
  * `ok`, `nothingFiled` (the exchange has nothing for this name) or `broke` (we could not do it),
  * and only the last keeps the name in the queue. Until 17-Sep-2026 this file had two outcomes and
- * decided between them by whether the step threw — which three of the seven steps never do, because
+ * decided between them by whether the step threw — which three of the steps never do, because
  * they count their own failures and return a sentence. `5 offered, 0 stored, 5 failed` was a
  * success and the name was then marked done forever. Each step below says which of the three it is
  * returning and why.
@@ -31,9 +42,10 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 
-import { closePool, readTxn, serviceTxn } from '../lib/db.ts';
+import { closePool, listen, readTxn, serviceTxn } from '../lib/db.ts';
 import {
   broke,
+  CHANNEL,
   claim,
   did,
   followed,
@@ -52,10 +64,11 @@ import {
   type Board,
 } from '../lib/ingest/filings.ts';
 import { fetchAnnualReports, storeAnnualReport } from '../lib/ingest/annual-reports.ts';
-import { fetchAttachments } from '../lib/ingest/attachments.ts';
+import { clearMissingBytes, fetchAttachments } from '../lib/ingest/attachments.ts';
 import { fetchAnnouncements, storeAnnouncements, type Board as CaBoard } from '../lib/ingest/corporate-actions.ts';
 import { extractPending } from '../lib/ingest/extract.ts';
 import { fetchResultsForSymbol, ingestFundamentals } from '../lib/ingest/fundamentals.ts';
+import { fetchInsider, storeInsider } from '../lib/ingest/insider.ts';
 import { NseSession } from '../lib/ingest/nse.ts';
 import { ingestShareholding } from '../lib/ingest/shareholding.ts';
 
@@ -99,18 +112,31 @@ const DOC_BATCH = 200;
 const DOC_ROUNDS = 25;
 
 async function documents(companyId: string): Promise<StepResult> {
-  let fetched = 0, held = 0, read = 0, made = 0, scans = 0, failed = 0;
+  // Before anything is fetched: a sha whose bytes are not in the store is a claim to hold a
+  // document this system cannot produce, and the fetch below skips exactly those rows. See
+  // `clearMissingBytes` — `ops/backup.sh` is pg_dump only, so every restore lands here.
+  const relost = await clearMissingBytes(companyId);
+
+  let fetched = 0, held = 0, read = 0, made = 0, scans = 0, gone = 0, failed = 0;
   for (let round = 0; round < DOC_ROUNDS; round++) {
     const got = await fetchAttachments(DOC_BATCH, companyId);
     const out = await extractPending(DOC_BATCH, companyId);
-    fetched += got.fetched; held += got.skipped; failed += got.failed + out.failed;
+    fetched += got.fetched; held += got.skipped; gone += got.gone;
+    failed += got.failed + out.failed;
     read += out.extracted; made += out.documents; scans += out.scanned;
     if (got.fetched + got.skipped + out.extracted === 0) break;
   }
   const line =
+    (relost > 0 ? `${relost} re-fetched after their bytes went missing, ` : '') +
     `${fetched} fetched, ${held} already held, ${read} read, ` +
-    `${made} transcripts, ${scans} scans, ${failed} failed`;
+    `${made} transcripts, ${scans} scans` +
+    (gone > 0 ? `, ${gone} no longer in the archive` : '') +
+    `, ${failed} failed`;
   // Every one of 93 attachments failing on an unwritable store used to read as a success here.
+  //
+  // `gone` is excluded on purpose and the distinction is load-bearing: a 4xx is the archive saying
+  // it does not have that document, which is a fact about the document. Counting it here retired
+  // AERON — a name that is otherwise complete — over two filings NSE has never served.
   if (failed > 0) return broke(line);
   // A name whose announcements point at no document at all. Not a break: an SME that files only
   // XBRL has nothing to fetch, and there is nothing to retry.
@@ -235,9 +261,26 @@ async function backfill(t: Target, priceDays: number): Promise<Step[]> {
     return did(`${after - before} new, ${after} quarters held, ${r.submissions} in the index`);
   }));
 
+  // **The whole PIT history, which the scheduled job also fetches but not until it next runs.**
+  // `lib/ingest/insider.ts` measured the two things that make this a backfill step rather than a
+  // timer's business: a date window with no symbol returns zero rows at HTTP 200, and a symbol with
+  // no window is capped at 20 — so a symbol *with* a wide window is what unlocks history, and it
+  // reaches back to 2015 (232 rows for PRAJIND). Its own docstring says "a newly followed company
+  // arrives with its complete history and there is no backfill job to remember to run", which was
+  // true of `ingestInsider()` sweeping every name and not true of the name added five minutes ago.
+  say(await attempt('insider', async () => {
+    const session = await NseSession.open();
+    const rows = await fetchInsider(t.symbol, session);
+    // Genuinely common and not a fault: a promoter who has neither traded nor pledged since 2015
+    // files nothing, and there is no disclosure for the feed to withhold.
+    if (rows.length === 0) return nothingFiled('no PIT disclosure filed for this name since 2015');
+    const r = await storeInsider(t.id, rows);
+    return did(`${r.seen} disclosures since 2015, ${r.stored} stored`);
+  }));
+
   // A separate process on purpose: it is the long one, it re-primes its own NSE session when the
   // exchange drops it, and running it here would put a twenty-minute loop inside a job that has
-  // already done five other things worth keeping.
+  // already done six other things worth keeping.
   say(await attempt('prices', async () => {
     const { stdout } = await run(
       'pnpm',
@@ -257,11 +300,7 @@ async function backfill(t: Target, priceDays: number): Promise<Step[]> {
   return taken;
 }
 
-async function main(): Promise<void> {
-  const only = arg('--symbol')?.trim().toUpperCase();
-  const priceDays = Number(arg('--price-days') ?? 400);
-  if (!Number.isFinite(priceDays) || priceDays < 1) throw new Error('--price-days must be positive');
-
+async function drain(only: string | undefined, priceDays: number): Promise<void> {
   const targets = await claim(only);
   if (targets.length === 0) {
     if (only) {
@@ -331,6 +370,45 @@ async function main(): Promise<void> {
       throw new Error(`${stuck.join('; ')} — nothing will retry these without a person`);
     }
   }
+}
+
+/**
+ * Stay up and fill a name in the moment somebody follows it.
+ *
+ * The ten-minute timer still exists and is still what *guarantees* the work happens: a `NOTIFY`
+ * with nobody listening is discarded, and a watcher that has died is a watcher nobody notices. This
+ * only removes the wait — `addCompany` announces on `trisula_backfill` inside the transaction that
+ * inserts the row, so Follow and the first fetch are a second apart rather than ten minutes.
+ *
+ * It drains the whole queue on every wake rather than the symbol it was handed, and drains once at
+ * startup. Both for the same reason: the payload is a hint about which name is newest, never the
+ * authority on what is owed. A watcher that trusted the payload would ignore a name followed while
+ * it was restarting, which is the failure a queue is supposed to make impossible.
+ *
+ * A step that fails here does not fail the process. Under systemd this is `Restart=always`, and a
+ * watcher that exits on a bad NSE ten minutes is a watcher that is down when the next name is
+ * followed; the queue and its attempt bound are what handle a name that cannot be filled in.
+ */
+async function watch(priceDays: number): Promise<void> {
+  console.log(`watching ${CHANNEL}; draining what is already owed`);
+  await drain(undefined, priceDays).catch((err: unknown) => console.error(String(err)));
+
+  await listen(CHANNEL, async (payload) => {
+    console.log(`\n${payload || 'a name'} was followed`);
+    await drain(undefined, priceDays);
+  });
+}
+
+async function main(): Promise<void> {
+  const only = arg('--symbol')?.trim().toUpperCase();
+  const priceDays = Number(arg('--price-days') ?? 400);
+  if (!Number.isFinite(priceDays) || priceDays < 1) throw new Error('--price-days must be positive');
+
+  if (process.argv.includes('--watch')) {
+    if (only) throw new Error('--watch drains the whole queue; --symbol is for a single run');
+    return watch(priceDays);
+  }
+  return drain(only, priceDays);
 }
 
 main()

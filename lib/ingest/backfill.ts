@@ -41,7 +41,7 @@
  */
 
 import { randomBytes } from 'node:crypto';
-import { serviceTxn } from '../db.ts';
+import { serviceTxn, type Client } from '../db.ts';
 
 /**
  * Longer than the longest backfill observed (PRAJIND: 845 filings, 16 annual reports, 117 periods
@@ -124,6 +124,23 @@ export async function claim(only?: string | null): Promise<Target[]> {
     // behind one followed at lunch — so the order is re-applied here on the column that means it.
     return rows.sort((a, b) => a.askedAt.getTime() - b.askedAt.getTime());
   });
+}
+
+/**
+ * The channel a newly followed name announces itself on.
+ *
+ * The ten-minute timer is the queue's drainer and stays the thing that guarantees the work happens
+ * — a `NOTIFY` with nobody listening is simply lost, which is exactly why a queue exists and why
+ * this is not a substitute for one. What it buys is the ten minutes: somebody clicks Follow and the
+ * history starts arriving in under a second rather than at the next tick.
+ *
+ * Sent from inside the transaction that inserts the company, so it fires if and only if the row
+ * committed. `pg_notify` is transactional; a rolled-back follow announces nothing.
+ */
+export const CHANNEL = 'trisula_backfill';
+
+export async function announce(c: Client, symbol: string): Promise<void> {
+  await c.query('SELECT pg_notify($1, $2)', [CHANNEL, symbol]);
 }
 
 /**

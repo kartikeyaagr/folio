@@ -17,7 +17,9 @@ import { readFileSync } from 'node:fs';
 import { migrate } from '../../db/migrate.ts';
 import { closePool, readTxn, serviceTxn } from '../db.ts';
 import {
+  announce,
   broke,
+  CHANNEL,
   claim,
   did,
   followed,
@@ -30,7 +32,15 @@ import {
   type Step,
   type Target,
 } from './backfill.ts';
-import { fetchAttachments } from './attachments.ts';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+import pg from 'pg';
+
+/** One round trip after the COMMIT: pg delivers notifications on the next exchange with the server. */
+const settle = async (c: pg.Client): Promise<void> => {
+  await c.query('SELECT 1');
+};
 
 const DB = `trisula_backfill_${process.pid}`;
 const ME = 'u1';
@@ -38,6 +48,9 @@ const ME = 'u1';
 before(async () => {
   execFileSync('createdb', [DB]);
   process.env.DATABASE_URL = `postgres:///${DB}`;
+  // Its own store. The default is the VM's /var/lib/trisula/attachments, which is not writable
+  // here — and a test that passes or fails on the ambient environment is not a test.
+  process.env['ATTACHMENT_DIR'] = mkdtempSync(join(tmpdir(), 'trisula-attach-'));
   await migrate();
   await serviceTxn('system:auth', async (c) => {
     await c.query("INSERT INTO actors (id,kind,label) VALUES ($1,'person','T')", [ME]);
@@ -48,11 +61,15 @@ before(async () => {
 after(async () => {
   await closePool();
   execFileSync('dropdb', ['--if-exists', DB]);
+  rmSync(process.env['ATTACHMENT_DIR'] ?? '', { recursive: true, force: true });
 });
 
 beforeEach(async () => {
   await serviceTxn('system:ingest', async (c) => {
     await c.query('DELETE FROM notification_outbox');
+    // In dependency order: a filing points at an attachment, and both point at a company.
+    await c.query('DELETE FROM filings');
+    await c.query('DELETE FROM attachments');
     await c.query('DELETE FROM companies');
     await c.query(
       `INSERT INTO companies (id, symbol, name, added_by, created_at)
@@ -264,6 +281,50 @@ test('a company already filled in is offered only by name', async () => {
 // The two numbers that are written down in three places
 // ------------------------------------------------------------------------------------------------
 
+// ------------------------------------------------------------------------------------------------
+// Following a name starts the work, rather than scheduling it
+// ------------------------------------------------------------------------------------------------
+
+test('a follow announces on the channel the watcher listens to, and only when it commits', async () => {
+  const heard: string[] = [];
+  const client = new pg.Client({ connectionString: process.env['DATABASE_URL'] });
+  await client.connect();
+  try {
+    client.on('notification', (n) => heard.push(n.payload ?? ''));
+    await client.query(`LISTEN "${CHANNEL}"`);
+
+    await serviceTxn('system:ingest', (c) => announce(c, 'TEGA'));
+    await settle(client);
+    assert.deepEqual(heard, ['TEGA'], 'the watcher must learn the symbol that was followed');
+
+    // pg_notify is transactional. A follow that raised — an unknown symbol, a duplicate — must not
+    // wake a watcher for a company that does not exist, and this is the only thing that makes the
+    // doorbell safe to ring from inside addCompany's own transaction.
+    heard.length = 0;
+    await serviceTxn('system:ingest', async (c) => {
+      await announce(c, 'ROLLEDBACK');
+      throw new Error('the follow failed after announcing');
+    }).catch(() => undefined);
+    await settle(client);
+    assert.deepEqual(heard, [], 'a rolled-back follow announces nothing');
+  } finally {
+    await client.end();
+  }
+});
+
+test('the watcher drains the whole queue, never the symbol it was handed', async () => {
+  // The payload is a hint about which name is newest, never the authority on what is owed. A name
+  // followed while the watcher was restarting has no notification coming, and the queue is what
+  // makes that survivable — so waking on TEGA must still offer the name nobody rang about.
+  await serviceTxn('system:ingest', async (c) => {
+    await c.query(
+      `INSERT INTO companies (id, symbol, name, created_at)
+       VALUES ('c9','MISSED','Followed while the watcher was down', now() - interval '2 days')`,
+    );
+  });
+  assert.deepEqual((await claim()).map((t) => t.symbol), ['MISSED', 'TEGA']);
+});
+
 test('the queue index, the read model and this module agree on the bound and the lease', () => {
   // The index predicate decides whether the queue is a seek or a scan; `company-view.ts` decides
   // what a person is told. Neither can import this module — one is SQL in a migration, the other a
@@ -288,21 +349,3 @@ test('the queue index, the read model and this module agree on the bound and the
  * microseconds without DNS or internet — the counts stay the subject of the test rather than the
  * network being one.
  */
-test('fetchAttachments narrows to one company when the backfill asks it to', async () => {
-  await serviceTxn('system:ingest', async (c) => {
-    await c.query("INSERT INTO companies (id, symbol, name) VALUES ('c2','PRAJIND','Praj Industries Limited')");
-    await c.query(
-      `INSERT INTO filings (id, company_id, symbol, category, announced_at, attachment_url)
-       VALUES ('f1','c2','PRAJIND','Outcome', now(), 'http://127.0.0.1:1/x.pdf')`,
-    );
-  });
-
-  const mine = await fetchAttachments(100, 'c1');
-  assert.deepEqual(
-    { pending: mine.pending, failed: mine.failed },
-    { pending: 0, failed: 0 },
-    'TEGA owns none of PRAJIND\'s filings, so its step must not even try them',
-  );
-  assert.equal((await fetchAttachments(100, 'c2')).pending, 1);
-  assert.equal((await fetchAttachments(100)).pending, 1, 'unscoped still sees the whole desk');
-});

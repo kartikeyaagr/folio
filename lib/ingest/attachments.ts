@@ -12,7 +12,7 @@
  */
 
 import { createHash } from 'node:crypto';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { access, mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
 import { serviceTxn } from '../db.ts';
@@ -90,15 +90,87 @@ export interface FetchResult {
   pending: number;
   fetched: number;
   skipped: number;
+  /**
+   * The archive answered 4xx: it does not have this document and will not tomorrow either.
+   *
+   * Counted apart from `failed` because the caller acts on the difference. A backfill that treats
+   * a permanent 404 as a broken box holds the company in the queue over a document nobody can
+   * produce — AERON, which is otherwise complete, was retired by exactly that on 17-Sep-2026.
+   */
+  gone: number;
   failed: number;
   bytes: number;
 }
+
+/** 4xx is the archive's answer about the document; anything else is about the run. */
+class Gone extends Error {}
 
 interface Row {
   id: string;
   company_id: string;
   category: string | null;
   attachment_url: string;
+}
+
+/**
+ * Forget a sha whose bytes are not in the store, so the fetch below collects it again.
+ *
+ * **`ops/backup.sh` is `pg_dump` and nothing else.** The attachment store is not in it, so a
+ * restore produces a database where every `attachments` row carries a sha and every file is absent
+ * — and until this existed, nothing could heal that: `fetchAttachments` asks "which filing has no
+ * sha yet", so a row that has one is never offered again however little is behind it. The same
+ * state arrives from a moved `ATTACHMENT_DIR` or a lost disk, and it was sitting in the dev
+ * database on 17-Sep-2026: 822 of PRAJIND's attachments had rows, shas, no `extracted_text` and no
+ * bytes, and re-running its backfill produced 26 ENOENT and no documents.
+ *
+ * The comment on the write below already names this as the bad direction — *"a row with no file is
+ * a promise the reader cannot collect"* — and orders its writes so it cannot create one. This is
+ * the repair for when something else does.
+ *
+ * Clearing the sha rather than re-downloading in place, because content-addressing then does the
+ * rest: if the archive still serves the same bytes the file reappears under the same name and the
+ * `attachments` row is untouched; if it now serves something different, the new bytes get their own
+ * sha and the filing is re-pointed at them. Writing a re-download under the old sha's path would
+ * put bytes in the store under a name that is not their hash, which is the one thing this store
+ * promises never to hold.
+ *
+ * The orphaned `attachments` row is left alone. It is referenced by `documents.from_attachment`,
+ * and it is a true record that the file was once held.
+ */
+export async function clearMissingBytes(companyId?: string | null, limit = 2000): Promise<number> {
+  const held = await serviceTxn('system:ingest', async (c) => {
+    const { rows } = await c.query<{ id: string; sha: string }>(
+      `SELECT f.id, f.attachment_sha256 AS sha
+         FROM filings f
+        WHERE f.attachment_sha256 IS NOT NULL
+          AND f.attachment_url LIKE 'http%'
+          AND ($1::text IS NULL OR f.company_id = $1)
+        ORDER BY f.announced_at DESC
+        LIMIT $2`,
+      [companyId ?? null, limit],
+    );
+    return rows;
+  });
+
+  const gone: string[] = [];
+  // One `access` per row against a local filesystem. Cheap enough at this scale, and the honest
+  // alternative — trusting the column — is what put the system in this state.
+  for (const row of held) {
+    try {
+      await access(pathFor(row.sha));
+    } catch {
+      gone.push(row.id);
+    }
+  }
+  if (gone.length === 0) return 0;
+
+  return serviceTxn('system:ingest', async (c) => {
+    const { rowCount } = await c.query(
+      'UPDATE filings SET attachment_sha256 = NULL WHERE id = ANY($1)',
+      [gone],
+    );
+    return rowCount ?? 0;
+  });
 }
 
 /**
@@ -128,10 +200,15 @@ export async function fetchAttachments(limit = 200, companyId?: string | null): 
           AND f.attachment_sha256 IS NULL
           -- NSE writes a bare "-" where a filing has no attachment. It arrives here either as the
           -- hyphen itself, which fetch rejects outright with "Failed to parse URL", or as a URL
-          -- ending in a slash-hyphen, which 404s. Both are excluded by requiring an actual URL,
-          -- rather than by naming the two shapes the placeholder has been seen to take. Nothing
-          -- sets a sha on a failure, so without this the same dead value is retried every run.
+          -- ending in a slash-hyphen, which 404s. Nothing sets a sha on a failure, so without this
+          -- the same dead value is retried every run.
+          --
+          -- The LIKE was claimed to exclude both and excludes only the first: a URL ending in
+          -- slash-hyphen still starts with http. It cost 2 of AERON's 85 filings a guaranteed 404
+          -- on every pass, invisible while a failed fetch was only a counter, and a backfill that
+          -- could never finish once it was not.
           AND f.attachment_url LIKE 'http%'
+          AND f.attachment_url NOT LIKE '%/-'
         ORDER BY f.announced_at DESC
         LIMIT $1`,
       [limit, companyId ?? null],
@@ -141,6 +218,7 @@ export async function fetchAttachments(limit = 200, companyId?: string | null): 
 
   let fetched = 0;
   let skipped = 0;
+  let gone = 0;
   let failed = 0;
   let bytes = 0;
 
@@ -151,7 +229,10 @@ export async function fetchAttachments(limit = 200, companyId?: string | null): 
         redirect: 'follow',
         signal: AbortSignal.timeout(TIMEOUT_MS),
       });
-      if (!res.ok) throw new Error(`${res.status} from the archive`);
+      if (!res.ok) {
+        const how = res.status >= 400 && res.status < 500 ? Gone : Error;
+        throw new how(`${res.status} from the archive`);
+      }
 
       // Checked before reading the body where the server declares it, and again after: a length
       // header is a claim, and the bytes are the fact.
@@ -192,12 +273,13 @@ export async function fetchAttachments(limit = 200, companyId?: string | null): 
         skipped++;
       }
     } catch (err) {
-      failed++;
       // Recorded per filing rather than aborting the sweep: one company's broken link should not
-      // stop the other 199. The count is returned and the job decides what it means.
+      // stop the other 199. The counts are returned and the job decides what they mean.
+      if (err instanceof Gone) gone++;
+      else failed++;
       console.error(`${row.attachment_url}: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 
-  return { pending: pending.length, fetched, skipped, failed, bytes };
+  return { pending: pending.length, fetched, skipped, gone, failed, bytes };
 }

@@ -1,9 +1,9 @@
 # Architecture
 
 How Trisula is put together, and why it is put together that way. Accurate against the tree at the
-time of writing: **51 migrations, 50 tables, 7 agents, 24 job entry points, 19 systemd timers, 18
-routes, 619 tests.** Every number here was counted, not remembered; if you change the shape, count
-again rather than editing around it.
+time of writing: **53 migrations, 51 tables, 7 agents, 24 job entry points, 19 systemd timers, one
+long-running watcher, 18 routes, 641 tests.** Every number here was counted, not remembered; if you
+change the shape, count again rather than editing around it.
 
 For the product argument — what was built, what was deliberately cut, and on whose authority — see
 the private `docs/specs/`. This file describes the machine.
@@ -111,17 +111,30 @@ cost this system two real alerts.
 
 `companies` is the universe. Nearly every ingest job filters to followed names, so adding a company
 is what makes the machine fetch its history — `companies.backfilled_at` is a queue drained by
-`jobs/backfill-company.ts` on a ten-minute timer.
+`jobs/backfill-company.ts`. **Eight steps, all per-symbol**: the announcement history, the annual
+reports, the documents those filings point at and the text inside them, the results (both the old
+feed and Integrated Filing), the corporate actions, the shareholding pattern, the insider and pledge
+disclosures back to 2015, and the price series.
 
-**A step of that backfill ends three ways, not two** (`lib/ingest/backfill.ts`). `gap` is the
-exchange having nothing for this name — a company listed in 2021 has no sixteen years of annual
-reports — and does not hold the queue. `error` is the box or the feed, and the name stays queued: it
-is the same line `lib/agents/queue.ts` draws between a model refusing a subject and a machine with
-no credential. An exception is always `error`, because a step that threw does not know what the
-exchange holds. Only when nothing broke is `backfilled_at` written, which is what the column says it
-means. Three attempts, then the name leaves the queue by that bound rather than by being called
-finished, and `/companies` shows where every name has got to. `backfill_started_at` is the lease,
-so the ten-minute timer cannot start a second pass over a name the first pass is still working.
+`addCompany` announces on `trisula_backfill` inside the transaction that inserts the row, so
+`trisula-backfill-watch.service` starts the fetch in about a second. The ten-minute timer stays
+enabled and remains the guarantee: a `NOTIFY` with nobody listening is discarded, and the watcher
+being down is exactly when that matters. The watcher drains the whole queue on every wake and never
+trusts the symbol in the payload.
+
+**A step ends three ways, not two** (`lib/ingest/backfill.ts`). `gap` is the exchange having nothing
+for this name — a company listed in 2021 has no sixteen years of annual reports — and does not hold
+the queue. `error` is the box or the feed, and the name stays queued: it is the same line
+`lib/agents/queue.ts` draws between a model refusing a subject and a machine with no credential. An
+exception is always `error`, because a step that threw does not know what the exchange holds. Only
+when nothing broke is `backfilled_at` written, which is what the column says it means. Three
+attempts, then the name leaves the queue by that bound rather than by being called finished, and
+`/companies` shows where every name has got to. `backfill_started_at` is the lease, so two passes
+never run over one name.
+
+**The offer document is the one thing no feed serves.** NSE has no endpoint for an RHP or DRHP and
+SEBI's draft index holds 2.3% of NSE Emerge names; both were probed live, in Sep 2026, twice. They
+arrive through the import dialog, which takes 32MB PDFs and keeps the bytes.
 
 ### News
 
