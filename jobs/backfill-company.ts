@@ -65,15 +65,21 @@ function arg(flag: string): string | undefined {
   return i >= 0 ? process.argv[i + 1] : undefined;
 }
 
-/** One SQL count, used by three steps to ask what this name actually ended up with. */
-const countFor = (table: string, id: string): Promise<number> =>
+/**
+ * How many rows this one name ended up with.
+ *
+ * Two steps have no per-name endpoint to assert on — shareholding runs a global ingest, prices walk
+ * a bhavcopy carrying every symbol — so what each of them actually achieved *for this company* is a
+ * question only the database can answer, and both used to skip asking it.
+ */
+const count = (sql: string, arg: string): Promise<number> =>
   readTxn(async (c) => {
-    const { rows } = await c.query<{ n: string }>(
-      `SELECT count(*)::text AS n FROM ${table} WHERE company_id = $1`,
-      [id],
-    );
+    const { rows } = await c.query<{ n: string }>(sql, [arg]);
     return Number(rows[0]!.n);
   });
+
+const SHP = 'SELECT count(*)::text AS n FROM shareholding_patterns WHERE company_id = $1';
+const CLOSES = 'SELECT count(*)::text AS n FROM prices WHERE symbol = $1';
 
 /**
  * Documents, drained for this name rather than sampled from everyone's.
@@ -215,9 +221,9 @@ async function backfill(t: Target, priceDays: number): Promise<Step[]> {
   // company it names. Measured 17-Sep-2026: AERON and TCL were both marked backfilled with no
   // error and neither has a single row in `shareholding_patterns`.
   say(await attempt('shareholding', async () => {
-    const before = await countFor('shareholding_patterns', t.id);
+    const before = await count(SHP, t.id);
     const r = await ingestShareholding();
-    const after = await countFor('shareholding_patterns', t.id);
+    const after = await count(SHP, t.id);
     if (r.submissions === 0) return broke('the shareholding index returned nothing at all');
     if (after === 0) {
       return nothingFiled(
@@ -242,12 +248,7 @@ async function backfill(t: Target, priceDays: number): Promise<Step[]> {
     // nothing for *this* one — the no-op that reports success `backfill-prices.ts` warns about in
     // its own `held` comment. A followed name with no close in the whole window is us or a
     // suspension, either of which is worth another attempt and then a notice.
-    const closes = await readTxn(async (c) => {
-      const { rows } = await c.query<{ n: string }>(
-        'SELECT count(*)::text AS n FROM prices WHERE symbol = $1', [t.symbol],
-      );
-      return Number(rows[0]!.n);
-    });
+    const closes = await count(CLOSES, t.symbol);
     if (closes === 0) return broke(`${line} — and no close is held for ${t.symbol}`);
     return did(`${line}; ${closes} closes held`);
   }));

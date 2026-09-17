@@ -83,6 +83,8 @@ export interface Target {
   addedBy: string | null;
   /** Including this one. `record` needs it to know whether another go is owed. */
   attempts: number;
+  /** When the name was followed. The queue's order, re-applied after RETURNING loses it. */
+  askedAt: Date;
 }
 
 /**
@@ -113,12 +115,14 @@ export async function claim(only?: string | null): Promise<Target[]> {
            ORDER BY q.created_at
              FOR UPDATE SKIP LOCKED)
        RETURNING co.id, co.symbol, co.name, co.added_by AS "addedBy",
-                 co.backfill_attempts AS attempts,
+                 co.backfill_attempts AS attempts, co.created_at AS "askedAt",
                  (SELECT s.platform FROM securities s WHERE s.symbol = co.symbol) AS platform`,
       [symbol, MAX_ATTEMPTS, String(LEASE_MINUTES)],
     );
-    // RETURNING follows no order of its own; the queue is oldest ask first and says so.
-    return rows.sort((a, b) => a.symbol.localeCompare(b.symbol));
+    // The subquery's ORDER BY decides which rows are *locked*; RETURNING follows no order at all.
+    // The queue is oldest ask first — a person who followed a name this morning should not wait
+    // behind one followed at lunch — so the order is re-applied here on the column that means it.
+    return rows.sort((a, b) => a.askedAt.getTime() - b.askedAt.getTime());
   });
 }
 

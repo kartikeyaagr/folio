@@ -224,6 +224,20 @@ test('--symbol overrides the lease and the bound, and resets the counter', async
   assert.equal((await claim('TEGA')).length, 1);
 });
 
+test('the queue is oldest ask first, which RETURNING does not preserve on its own', async () => {
+  await serviceTxn('system:ingest', async (c) => {
+    // Deliberately reverse-alphabetical to the ask order, so a sort on the symbol would pass this
+    // by accident and a sort on nothing at all would pass it by luck.
+    await c.query(
+      `INSERT INTO companies (id, symbol, name, created_at) VALUES
+         ('c2','ZZZ','Asked second', now() - interval '12 hours'),
+         ('c3','AAA','Asked third',  now() - interval '1 hour')`,
+    );
+  });
+  // A person who followed a name this morning should not wait behind one followed at lunch.
+  assert.deepEqual((await claim()).map((t) => t.symbol), ['TEGA', 'ZZZ', 'AAA']);
+});
+
 test('a company already filled in is offered only by name', async () => {
   await record(await one(), [{ label: 'filings', detail: 'ok', outcome: 'ok' }]);
   assert.equal((await claim()).length, 0);
