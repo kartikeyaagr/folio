@@ -98,10 +98,15 @@ export interface Row {
  */
 export async function promoteTranscript(c: Client, row: Row, text: string): Promise<boolean> {
   const id = randomBytes(16).toString('hex');
+  // **The title is what it is, not what the file was called.**
+  // `TEGA_21022022190439_Earnings_call_transcript.pdf` is an exchange upload key: it repeats the
+  // symbol the page already shows, buries the date in fourteen undelimited digits, and differs
+  // between two filings of the same thing. Every screen that lists documents carries the company
+  // and the date in their own columns, so the name has one job left and one word does it.
   await c.query(
     `INSERT INTO documents (id, company_id, title, kind, created_by, from_attachment)
-     VALUES ($1, $2, $3, 'transcript', 'system:ingest', $4)`,
-    [id, row.company_id, row.filename, row.sha256],
+     VALUES ($1, $2, 'Transcript', 'transcript', 'system:ingest', $3)`,
+    [id, row.company_id, row.sha256],
   );
   await c.query(
     `INSERT INTO document_versions (document_id, body, written_by, written_at)

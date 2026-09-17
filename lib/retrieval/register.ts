@@ -170,7 +170,15 @@ const DOCUMENTS_SELECT = `
     JOIN LATERAL (
       SELECT * FROM document_versions v WHERE v.document_id = d.id ${CURRENT_VERSION_ORDER_SQL}
     ) cur ON true
-   WHERE d.archived_at IS NULL`;
+   WHERE d.archived_at IS NULL
+     -- A document promoted from an attachment carries no text of its own: extractPending writes a
+     -- transcript into attachments.extracted_text and copies it into a documents row so agent 2
+     -- has a queue, and ATTACHMENTS_SELECT already indexes the first. Indexing this too put every
+     -- transcript in the corpus twice — 35 documents, 2,063 duplicate chunks on 17-Sep-2026, so a
+     -- question about a call matched the same passage twice and paid to embed it twice. The
+     -- attachment is the copy kept, being the one with the PDF behind it. reap.ts mirrors this
+     -- WHERE, so what is already registered is retracted rather than needing a migration.
+     AND d.from_attachment IS NULL`;
 
 const DOCUMENTS = `
   INSERT INTO sources (kind, ref_id, company_id, title, occurred_at, content_hash)
@@ -232,17 +240,29 @@ const NEWS = `
 // The same fan-out shape makes `./reap.ts`'s retraction correct without special handling: a row is
 // retracted only once `extracted_text` is cleared or the `attachments` row itself is gone, exactly
 // mirroring the SELECT's own admission test.
+// **Identical text under different bytes is the same document, and content-addressing cannot see
+// it.** A re-filed PDF — fresh signature, fresh timestamp, same words — has a different sha, so the
+// inner `DISTINCT ON (a.sha256)` admits both. TCL filed its 1-Oct voting result again on 2-Oct and
+// its 12-Nov board outcome twice nine minutes apart; both pairs sat in `sources` twice.
+//
+// `content_hash` is already the hash of the text, so this costs a sort and no new concept. The
+// EARLIEST copy is kept — the first filing is when the document was released — and `ref_id` breaks
+// the tie for the reason `f.id` breaks the one above. `reap.ts` retracts the loser.
 const ATTACHMENTS_SELECT = `
-  SELECT DISTINCT ON (a.sha256)
-         'attachment' AS kind, a.sha256 AS ref_id,
-         coalesce(f.company_id, a.company_id) AS company_id,
-         coalesce(f.summary, a.filename) AS title,
-         coalesce(f.announced_at, a.added_at) AS occurred_at,
-         encode(sha256(convert_to(a.extracted_text, 'UTF8')), 'hex') AS content_hash
-    FROM attachments a
-    LEFT JOIN filings f ON f.attachment_sha256 = a.sha256
-   WHERE a.extracted_text IS NOT NULL AND length(a.extracted_text) > 0
-   ORDER BY a.sha256, f.announced_at DESC NULLS LAST, f.id`;
+  SELECT DISTINCT ON (company_id, content_hash) kind, ref_id, company_id, title, occurred_at, content_hash
+    FROM (
+      SELECT DISTINCT ON (a.sha256)
+             'attachment' AS kind, a.sha256 AS ref_id,
+             coalesce(f.company_id, a.company_id) AS company_id,
+             coalesce(f.summary, a.filename) AS title,
+             coalesce(f.announced_at, a.added_at) AS occurred_at,
+             encode(sha256(convert_to(a.extracted_text, 'UTF8')), 'hex') AS content_hash
+        FROM attachments a
+        LEFT JOIN filings f ON f.attachment_sha256 = a.sha256
+       WHERE a.extracted_text IS NOT NULL AND length(a.extracted_text) > 0
+       ORDER BY a.sha256, f.announced_at DESC NULLS LAST, f.id
+    ) one_per_file
+   ORDER BY company_id, content_hash, occurred_at, ref_id`;
 
 const ATTACHMENTS = `
   INSERT INTO sources (kind, ref_id, company_id, title, occurred_at, content_hash)

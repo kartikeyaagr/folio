@@ -63,6 +63,25 @@ export interface DocSummary {
   archivedAt: Date | null;
   updatedByName: string | null;
   versions: number;
+  /**
+   * When the current version was written, which for an ingested document is the date of the CALL.
+   *
+   * `0042` made `promoteTranscript` stamp the linking filing's `announced_at` rather than taking
+   * the column's `now()` default, precisely so a 2022 transcript is dated 2022. `updated_at` is on
+   * the `documents` row and moves when the row is touched — every one of these read "17 Sept 2026"
+   * because the backfill re-promoted them this afternoon. A list of filings dated by when this
+   * system happened to fetch them is a list sorted by nothing.
+   */
+  releasedAt: Date;
+  /**
+   * The attachment this document is a reading of, for a transcript `extractPending` promoted.
+   *
+   * Set means **there is a PDF behind this and the PDF is the thing to show**. A company page that
+   * listed the document and not the file handed the desk a machine's extraction of a filing while
+   * the filing itself was unreachable — and listed both once `lib/files.ts` arrived, which is the
+   * same document twice. `filedFor` lists these; this column is how the written list leaves them out.
+   */
+  fromAttachment: string | null;
 }
 
 export interface DocDetail extends DocSummary {
@@ -154,7 +173,10 @@ const SELECT = `
          d.updated_at AS "updatedAt", d.archived_at AS "archivedAt",
          (SELECT a.label FROM document_versions v JOIN actors a ON a.id = v.written_by
            WHERE v.document_id = d.id ORDER BY v.written_at DESC LIMIT 1) AS "updatedByName",
-         (SELECT count(*)::int FROM document_versions v WHERE v.document_id = d.id) AS versions
+         (SELECT count(*)::int FROM document_versions v WHERE v.document_id = d.id) AS versions,
+         (SELECT v.written_at FROM document_versions v
+           WHERE v.document_id = d.id ORDER BY v.written_at DESC, v.id DESC LIMIT 1) AS "releasedAt",
+         d.from_attachment AS "fromAttachment"
     FROM documents d
     LEFT JOIN companies co ON co.id = d.company_id`;
 
@@ -167,7 +189,7 @@ export async function documentsFor(
     const { rows } = await c.query<DocSummary>(
       `${SELECT} WHERE d.company_id = $1
          AND (d.archived_at IS NULL OR $2)
-       ORDER BY d.archived_at IS NOT NULL, d.updated_at DESC`,
+       ORDER BY d.archived_at IS NOT NULL, "releasedAt" DESC`,
       [companyId, opts.archived ?? false],
     );
     return rows;
@@ -186,7 +208,9 @@ export async function allDocuments(opts: { archived?: boolean } = {}): Promise<D
   return readTxn(async (c) => {
     const { rows } = await c.query<DocSummary>(
       `${SELECT} WHERE d.archived_at IS NULL OR $1
-       ORDER BY d.archived_at IS NOT NULL, d.updated_at DESC
+       -- On the date the document carries. Ordering on d.updated_at put a 2022 transcript above a
+       -- 2025 one because the backfill happened to re-promote it a second later.
+       ORDER BY d.archived_at IS NOT NULL, "releasedAt" DESC
        LIMIT 500`,
       [opts.archived ?? false],
     );
@@ -202,6 +226,13 @@ export async function getDocument(id: string): Promise<DocDetail | null> {
               (SELECT a.label FROM document_versions v JOIN actors a ON a.id = v.written_by
                 WHERE v.document_id = d.id ORDER BY v.written_at DESC LIMIT 1) AS "updatedByName",
               (SELECT count(*)::int FROM document_versions v WHERE v.document_id = d.id) AS versions,
+              -- Repeated from SELECT above rather than shared, and that is why this was missing
+              -- until the page was loaded: query<DocDetail> is a cast, so a column absent from the
+              -- SQL is undefined at runtime and DocDetail at compile time. Section 14's finding 23
+              -- is the same trap from the other direction. The page renders the PDF only when this
+              -- is set, so omitting it fell back silently to the extracted text — the exact thing
+              -- being fixed.
+              d.from_attachment AS "fromAttachment",
               (SELECT a.label FROM actors a WHERE a.id = d.created_by) AS "createdByName",
               COALESCE(
                 (SELECT v.body FROM document_versions v

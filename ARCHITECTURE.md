@@ -1,8 +1,8 @@
 # Architecture
 
 How Trisula is put together, and why it is put together that way. Accurate against the tree at the
-time of writing: **53 migrations, 51 tables, 7 agents, 24 job entry points, 19 systemd timers, one
-long-running watcher, 18 routes, 642 tests.** Every number here was counted, not remembered; if you
+time of writing: **54 migrations, 51 tables, 7 agents, 24 job entry points, 19 systemd timers, one
+long-running watcher, 18 routes, 648 tests.** Every number here was counted, not remembered; if you
 change the shape, count again rather than editing around it.
 
 For the product argument — what was built, what was deliberately cut, and on whose authority — see
@@ -135,6 +135,19 @@ never run over one name.
 **The offer document is the one thing no feed serves.** NSE has no endpoint for an RHP or DRHP and
 SEBI's draft index holds 2.3% of NSE Emerge names; both were probed live, in Sep 2026, twice. They
 arrive through the import dialog, which takes 32MB PDFs and keeps the bytes.
+
+**A filed document is read as the PDF it is.** `lib/files.ts` lists what the company published —
+one row per document, a one-word name, the exchange's own date — and the link opens the original
+through `app/api/attachment/[sha]`. The extracted text is not a second document: it is what the
+agents read and what retrieval searches, and nothing else. Until 17-Sep-2026 a transcript existed
+twice, as the PDF and as a `documents` row holding its text, and the page showed the second while
+the first was unreachable from any screen.
+
+Three layers of deduplication, because bytes, text and rows fail differently. The store is
+content-addressed, so identical bytes are one file. `register.ts` collapses the filing fan-out by
+sha and then again by the hash of the text, so a corrected re-filing — new signature, same words —
+is indexed once, keeping the earliest. And a document promoted from an attachment is not indexed at
+all, because the attachment already carries those words: 35 transcripts, 2,063 duplicate chunks.
 
 ### News
 

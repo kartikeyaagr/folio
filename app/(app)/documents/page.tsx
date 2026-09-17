@@ -70,7 +70,7 @@ export default async function DocumentsPage({
                 <thead>
                   <tr>
                     <th>Title</th><th>Company</th><th>Kind</th>
-                    <th className="num">Versions</th><th>Last saved</th><th>By</th>
+                    <th className="num">Versions</th><th>Date</th><th>By</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -96,7 +96,10 @@ export default async function DocumentsPage({
                         )}
                       </td>
                       <td className="num">{d.versions}</td>
-                      <td className="num">{when(d.updatedAt)}</td>
+                      {/* The date the document carries, not the moment this system last touched its row.
+                          For a transcript that is the date of the call (0042); for a note it is the
+                          last save, which is the same statement. */}
+                      <td className="num">{when(d.releasedAt)}</td>
                       <td>{d.updatedByName ?? <Blank why="Written before saves were attributed" />}</td>
                     </tr>
                   ))}

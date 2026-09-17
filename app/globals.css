@@ -1440,6 +1440,21 @@ dialog.dlg[open] {
   resize: vertical;
 }
 
+/* The document as the company published it.
+   70vh rather than a fixed height so it scales with the window, and matching .doc-body-read's
+   ceiling so switching between a filed PDF and a written note does not jump the page. The border
+   is the card's own rule, because the viewer is the card's content and not a thing sitting in it. */
+.doc-file-view {
+  display: block;
+  width: 100%;
+  height: 70vh;
+  border: 0;
+  background: var(--bg);
+}
+.doc-file .picker-none {
+  padding: 16px 18px;
+}
+
 /* Reading a document this system extracted, rather than editing it. Wider measure than a form
    field and a real line height: these run to fifty thousand characters and are read, not scanned. */
 .doc-body-read {

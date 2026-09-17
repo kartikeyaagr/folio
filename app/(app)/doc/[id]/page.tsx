@@ -7,6 +7,7 @@ import { AppHeader, Blank, Card, Empty, Fact, Facts } from '@/components/ui.tsx'
 import { DialogButton } from '@/components/DialogButton.tsx';
 import { DocEditor } from '@/components/DocEditor.tsx';
 import { DocumentText } from '@/components/DocumentText.tsx';
+import { FiledDocument } from '@/components/FiledDocument.tsx';
 import { SheetEditor } from '@/components/SheetEditor.tsx';
 
 import { requireUser } from '../../../_lib/session.ts';
@@ -117,7 +118,12 @@ export default async function DocumentPage({ params }: { params: Promise<{ id: s
             <SheetEditor id={doc.id} cells={cells} lookups={lookups} onSave={saveSheetAction} />
           ) : editable ? (
             <DocEditor id={doc.id} text={text} onSave={saveTextAction} />
+          ) : doc.fromAttachment ? (
+            // The PDF, not the extraction. See components/FiledDocument.tsx.
+            <FiledDocument sha={doc.fromAttachment} label={KIND_LABEL[doc.kind] ?? doc.kind} />
           ) : (
+            // A brief agent 4 wrote has no PDF behind it — it was written here, and its text is the
+            // document rather than a reading of one.
             <DocumentText text={text} />
           )}
         </Card>

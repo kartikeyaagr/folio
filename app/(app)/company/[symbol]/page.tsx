@@ -6,6 +6,7 @@ import { coverers, sectorsWithTerms, STATUSES } from '@/lib/companies.ts';
 import { isRange, priceSeries, type Range } from '@/lib/prices.ts';
 import { ACCEPTED } from '@/lib/import/index.ts';
 import { AUTHORED, documentsFor, KIND_LABEL } from '@/lib/workspace.ts';
+import { FILE_LABEL, filedFor, heldNotListed, type FiledDocument } from '@/lib/files.ts';
 import {
   AppHeader, Blank, Card, Chip, Empty, Fact, Facts, Seg, crore, inr, type Tone,
 } from '@/components/ui.tsx';
@@ -32,15 +33,39 @@ import {
 
 export const dynamic = 'force-dynamic';
 
-/** A timestamp as a person says it. The same shape `/admin` uses for the same reason. */
-const when = (d: Date | null): string =>
-  d === null
-    ? '—'
-    : new Intl.DateTimeFormat('en-IN', {
-        dateStyle: 'medium',
-        timeStyle: 'short',
-        timeZone: 'Asia/Kolkata',
-      }).format(d);
+/**
+ * A date without a time. A document was released on a day, not at 14:32 — the exchange's timestamp
+ * is when its server accepted the upload, and printing it implies a precision the filing has not
+ * got.
+ */
+const day = (d: Date | string): string =>
+  new Intl.DateTimeFormat('en-IN', { dateStyle: 'medium', timeZone: 'Asia/Kolkata' }).format(
+    typeof d === 'string' ? new Date(`${d}T00:00:00+05:30`) : d,
+  );
+
+/**
+ * One filed document as the page shows it: a one-word name, the date the company released it, and
+ * a link to the PDF itself rather than to this system's reading of it.
+ *
+ * An annual report has no release date to show — it arrives from `/api/annual-reports`, which
+ * carries a financial year and no announcement — so it says the year, which is what it is about.
+ * An imported file has neither and says when it was brought in, labelled as that.
+ */
+function asRow(f: FiledDocument) {
+  const fy = f.financialYear;
+  return {
+    key: f.sha,
+    label: FILE_LABEL[f.kind] ?? f.kind,
+    at: new Date(f.releasedOn ?? (fy ? `${fy}-04-01` : f.addedOn)).getTime(),
+    when: f.releasedOn ? day(f.releasedOn) : fy ? `FY${fy}-${String(Number(fy) + 1).slice(2)}` : null,
+    note: `${(f.bytes / 1e6).toFixed(1)} MB` + (f.copies > 1 ? ` · ${f.copies} filed` : ''),
+    href: `/api/attachment/${f.sha}`,
+    external: true,
+    added: f.addedOn,
+    readable: f.readable,
+    doc: null,
+  };
+}
 
 /** The taxonomy's categories, in words a reader uses. */
 
@@ -66,12 +91,36 @@ export default async function CompanyPage({
   const range: Range = isRange(sp.range) ? sp.range : '1y';
   const showArchived = sp.archived === '1';
 
-  const [prices, desk, sectors, docs] = await Promise.all([
+  const [prices, desk, sectors, written, filed, notListed] = await Promise.all([
     priceSeries(co.id, range),
     coverers(),
     sectorsWithTerms(),
     documentsFor(co.id, { archived: showArchived }),
+    filedFor(co.id),
+    heldNotListed(co.id),
   ]);
+
+  // **A document promoted from an attachment is not a second document.** `extractPending` writes a
+  // transcript's text into a `documents` row so agent 2 has something to sweep; `filedFor` lists
+  // the PDF that text came out of. Listing both is the same document twice, and the one worth
+  // opening is the one the company actually published.
+  const docs = written.filter((d) => d.fromAttachment === null);
+  const rows = [
+    ...filed.map(asRow),
+    ...docs.map((d) => ({
+      key: d.id,
+      label: d.title,
+      at: d.updatedAt.getTime(),
+      when: day(d.updatedAt),
+      note: `${d.versions} ${d.versions === 1 ? 'version' : 'versions'}`,
+      href: `/doc/${d.id}`,
+      external: false,
+      added: null,
+      // Written here, so there is nothing to have failed to read.
+      readable: true,
+      doc: d,
+    })),
+  ].sort((a, b) => b.at - a.at);
 
   // One builder for every link on the page, so changing the range does not silently drop the
   // archived filter and a link carries the whole view rather than half of it.
@@ -263,7 +312,20 @@ export default async function CompanyPage({
             until this existed that happened in Google Docs and Excel, which is the thing
             docs/specs/v2-system-map.md says in its first paragraph that this system replaces. */}
         <Card
-          title={<>Documents and models <Link href="/documents" className="btn btn-link">all →</Link></>}
+          title={
+            <>
+              Documents{' '}
+              {/* Stated, not hidden. 1,098 routine intimations and 245 zips are held and searchable
+                  and would bury the seventy documents anybody opens a company to read; a reader who
+                  is not told they exist concludes they were never fetched. */}
+              {notListed > 0 && (
+                <span className="cell-note" title="Routine intimations and archives: held, searchable by the agents, not listed here">
+                  · {notListed} more held
+                </span>
+              )}{' '}
+              <Link href="/documents" className="btn btn-link">all →</Link>
+            </>
+          }
           action={
             <div className="form-actions">
               <Seg
@@ -324,40 +386,55 @@ export default async function CompanyPage({
           }
           padded={docs.length === 0}
         >
-          {docs.length === 0 ? (
+          {rows.length === 0 ? (
             <Empty>
               {showArchived
                 ? 'Nothing archived for this company.'
-                : `Nothing written on ${co.symbol} yet. Notes, memos, meeting records and models live here, versioned and attributed like everything else.`}
+                : `Nothing held for ${co.symbol} yet. Transcripts, decks and annual reports arrive with the backfill; notes, memos and models are written here.`}
             </Empty>
           ) : (
             <div className="tbl-scroll">
               <table className="tbl">
                 <thead>
                   <tr>
-                    <th>Title</th><th>Kind</th><th className="num">Versions</th>
-                    <th>Last saved</th><th>By</th><th />
+                    <th>Document</th><th>Released</th><th /><th />
                   </tr>
                 </thead>
                 <tbody>
-                  {docs.map((d) => (
-                    <tr key={d.id} className={d.archivedAt ? 'pf-void' : undefined}>
+                  {rows.map((r) => (
+                    <tr key={r.key} className={r.doc?.archivedAt ? 'pf-void' : undefined}>
                       <td>
-                        <Link href={`/doc/${d.id}`}><b>{d.title}</b></Link>
+                        {/* A filed document opens as the PDF the company published, in a new tab.
+                            `target` only on those: a note opens in place like every other page. */}
+                        <Link
+                          href={r.href}
+                          {...(r.external ? { target: '_blank', rel: 'noreferrer' } : {})}
+                        >
+                          <b>{r.label}</b>
+                        </Link>
                       </td>
-                      <td>{KIND_LABEL[d.kind] ?? d.kind}</td>
-                      <td className="num">{d.versions}</td>
-                      <td className="num">{when(d.updatedAt)}</td>
-                      <td>{d.updatedByName ?? <Blank why="Written before saves were attributed" />}</td>
+                      <td className="num">
+                        {/* The exchange's date, not ours. An imported file has none, and says the
+                            day it was brought in rather than implying the company published it. */}
+                        {r.when ?? <Blank why={`Not published by the exchange; brought in on ${day(r.added!)}`} />}
+                      </td>
                       <td className="cell-note">
-                        <form action={archiveDocumentAction}>
-                          <input type="hidden" name="id" value={d.id} />
-                          <input type="hidden" name="symbol" value={co.symbol} />
-                          {d.archivedAt && <input type="hidden" name="restore" value="1" />}
-                          <button type="submit" className="btn btn-link">
-                            {d.archivedAt ? 'Restore' : 'Archive'}
-                          </button>
-                        </form>
+                        {r.note}
+                        {!r.readable && (
+                          <> · <span title="No text layer: a scan. The PDF is here; the agents cannot read it.">scan</span></>
+                        )}
+                      </td>
+                      <td className="cell-note">
+                        {r.doc && (
+                          <form action={archiveDocumentAction}>
+                            <input type="hidden" name="id" value={r.doc.id} />
+                            <input type="hidden" name="symbol" value={co.symbol} />
+                            {r.doc.archivedAt && <input type="hidden" name="restore" value="1" />}
+                            <button type="submit" className="btn btn-link">
+                              {r.doc.archivedAt ? 'Restore' : 'Archive'}
+                            </button>
+                          </form>
+                        )}
                       </td>
                     </tr>
                   ))}

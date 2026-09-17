@@ -10,7 +10,10 @@ import { join } from 'node:path';
 import { migrate } from '../db/migrate.ts';
 import { closePool, serviceTxn, writeTxn } from './db.ts';
 import { pathFor } from './ingest/attachments.ts';
-import { keepUploadAsAttachment } from './workspace.ts';
+import {
+  documentsFor,
+  keepUploadAsAttachment,
+} from './workspace.ts';
 
 const DB = `trisula_workspace_${process.pid}`;
 const CO = 'c1'; // Aeron Composite Limited — one of the two names this path exists for
@@ -125,4 +128,44 @@ test('the same bytes kept twice is one row, not two — content-addressing, not 
   // (lib/ingest/attachments.ts) relies on for a document filed twice under different announcements.
   assert.equal(rows[0].n, 1);
   assert.equal(rows[0].filename, 'first_name.pdf');
+});
+
+/**
+ * The date a document carries, against the moment its row was last touched.
+ *
+ * `0042` made `promoteTranscript` stamp the linking filing's `announced_at`, so a 2022 transcript
+ * is dated 2022 — but every list read `documents.updated_at`, which the backfill moves whenever it
+ * re-promotes one. On 17-Sep-2026 all 35 transcripts showed today's timestamp and sorted by nothing.
+ */
+test('a document is dated and ordered by the version it carries, not by when its row moved', async () => {
+  await serviceTxn('system:index', async (c) => {
+    await c.query(
+      `INSERT INTO documents (id, company_id, title, kind, created_by, from_attachment)
+       VALUES ('d_old',$1,'Transcript','transcript','system:ingest',NULL)`, [CO]);
+    await c.query(
+      `INSERT INTO document_versions (document_id, body, written_by, written_at)
+       VALUES ('d_old',$1,'system:ingest','2022-02-21T19:04:00+05:30')`,
+      [JSON.stringify({ text: 'the call' })]);
+    // Touched after the old one, which is what used to decide the order.
+    await c.query("UPDATE documents SET updated_at = now() WHERE id = 'd_old'");
+
+    await c.query(
+      `INSERT INTO documents (id, company_id, title, kind, created_by)
+       VALUES ('d_new',$1,'A note','note','system:index')`, [CO]);
+    await c.query(
+      `INSERT INTO document_versions (document_id, body, written_by, written_at)
+       VALUES ('d_new',$1,'system:index','2026-09-16T12:00:00+05:30')`,
+      [JSON.stringify({ text: 'written later' })]);
+    await c.query("UPDATE documents SET updated_at = now() - interval '1 hour' WHERE id = 'd_new'");
+  });
+
+  const docs = await documentsFor(CO);
+  const old = docs.find((d) => d.id === 'd_old')!;
+  assert.equal(old.releasedAt.getFullYear(), 2022, 'the date of the call, not of the ingest');
+
+  const order = docs.map((d) => d.id);
+  assert.ok(
+    order.indexOf('d_new') < order.indexOf('d_old'),
+    'newest first means newest by the date it carries; updated_at would invert these',
+  );
 });
