@@ -127,6 +127,26 @@ export async function claim(only?: string | null): Promise<Target[]> {
 }
 
 /**
+ * Whether a symbol is followed at all.
+ *
+ * Asked only when a forced `--symbol` claim came back empty, because that has two causes and they
+ * want opposite responses. `SKIP LOCKED` is why: it is right for a job never to block on somebody
+ * else's transaction, but it means an empty claim can mean *this name is not followed* or *this
+ * name is followed and busy*. Hit live on 17-Sep-2026 — three `index-content --watch` processes
+ * from other worktrees against the same dev database held TEGA's row through a foreign key, and
+ * the job said "TEGA is not a followed company" about a company it had filled in ten minutes
+ * earlier.
+ */
+export async function followed(symbol: string): Promise<boolean> {
+  return serviceTxn('system:ingest', async (c) => {
+    const { rowCount } = await c.query('SELECT 1 FROM companies WHERE symbol = $1', [
+      symbol.trim().toUpperCase(),
+    ]);
+    return (rowCount ?? 0) > 0;
+  });
+}
+
+/**
  * What the queue still owes, split by why it was not offered.
  *
  * `claim` returning nothing has three causes and the job used to print one sentence for all of

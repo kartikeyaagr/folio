@@ -36,6 +36,7 @@ import {
   broke,
   claim,
   did,
+  followed,
   nothingFiled,
   owed,
   record,
@@ -263,7 +264,13 @@ async function main(): Promise<void> {
 
   const targets = await claim(only);
   if (targets.length === 0) {
-    if (only) return console.log(`${only} is not a followed company`);
+    if (only) {
+      return console.log(
+        (await followed(only))
+          ? `${only} is followed, but another transaction holds its row — try again in a moment`
+          : `${only} is not a followed company`,
+      );
+    }
     // An empty claim is this job's documented quiet day — but only one of its three causes is. A
     // name being filled in right now by the previous tick, and a name out of attempts, are both
     // invisible to the claim and neither is finished. Counted rather than assumed.
@@ -279,6 +286,12 @@ async function main(): Promise<void> {
   // row at all. This job wrote none until 17-Sep-2026, alone among the 17 that do — so `/admin`'s
   // run list, the only screen that answers "is anything broken", has never shown a company
   // backfill, including the ones that silently did nothing.
+  //
+  // **After the empty check, not before it, and that is the one place this job diverges from the
+  // other sixteen.** This is the one queue in the system that is usually empty on purpose; the
+  // timer says so and says why. A row per tick is 144 a day of `0 items`, and `recentRuns(40)` is
+  // the whole of /admin's window — the screen would show nothing else. A stuck queue is still
+  // visible, on /companies, where a name has been reading `waiting` for hours.
   const runId = await serviceTxn('system:ingest', async (c) => {
     const { rows } = await c.query<{ id: string }>(
       "INSERT INTO ingestion_runs (source) VALUES ('nse_company_backfill') RETURNING id",

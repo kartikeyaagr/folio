@@ -20,6 +20,7 @@ import {
   broke,
   claim,
   did,
+  followed,
   LEASE_MINUTES,
   MAX_ATTEMPTS,
   nothingFiled,
@@ -236,6 +237,21 @@ test('the queue is oldest ask first, which RETURNING does not preserve on its ow
   });
   // A person who followed a name this morning should not wait behind one followed at lunch.
   assert.deepEqual((await claim()).map((t) => t.symbol), ['TEGA', 'ZZZ', 'AAA']);
+});
+
+test('an empty forced claim tells a name that is not followed from one that is busy', async () => {
+  assert.equal(await followed('TEGA'), true);
+  assert.equal(await followed('tega'), true, 'the symbol is normalised before it is asked');
+  assert.equal(await followed('NOTREAL'), false);
+
+  // The live shape: another transaction holds the row through a foreign key, SKIP LOCKED does the
+  // right thing and steps over it, and the claim is empty for a company that plainly exists.
+  const held = await serviceTxn('system:ingest', async (c) => {
+    await c.query('SELECT 1 FROM companies WHERE id = $1 FOR UPDATE', ['c1']);
+    return claim('TEGA');
+  });
+  assert.deepEqual(held, [], 'a job never blocks on somebody else s transaction');
+  assert.equal(await followed('TEGA'), true, 'and must not report the name as unknown');
 });
 
 test('a company already filled in is offered only by name', async () => {
