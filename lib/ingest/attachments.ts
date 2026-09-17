@@ -108,13 +108,22 @@ interface Row {
  * idempotent, resumable after a crash halfway through, and cannot lose a filing to a window.
  * Restricted to followed companies: the corpus holds announcements for 2,539 symbols the fund does
  * not follow, and downloading those would be tens of gigabytes of other people's paperwork.
+ *
+ * **`companyId` narrows it to one name**, which is what the on-add backfill needs and what it did
+ * not have. Unscoped, this orders by `announced_at DESC` across every followed company, so a name
+ * whose history has just been attached — sixteen years of it, all of it older than everything
+ * already held — sorts to the *bottom* of its own backfill. Measured 17-Sep-2026: adding TEGA put
+ * 480 unfetched attachments on the queue behind an existing backlog of 268, against one capped
+ * pass of 500. Nothing would have collected the remainder, because `jobs/ingest-attachments.ts`
+ * has no timer.
  */
-export async function fetchAttachments(limit = 200): Promise<FetchResult> {
+export async function fetchAttachments(limit = 200, companyId?: string | null): Promise<FetchResult> {
   const pending = await serviceTxn('system:ingest', async (c) => {
     const { rows } = await c.query<Row>(
       `SELECT f.id, f.company_id, f.category, f.attachment_url
          FROM filings f
         WHERE f.company_id IS NOT NULL
+          AND ($2::text IS NULL OR f.company_id = $2)
           AND f.attachment_url IS NOT NULL
           AND f.attachment_sha256 IS NULL
           -- NSE writes a bare "-" where a filing has no attachment. It arrives here either as the
@@ -125,7 +134,7 @@ export async function fetchAttachments(limit = 200): Promise<FetchResult> {
           AND f.attachment_url LIKE 'http%'
         ORDER BY f.announced_at DESC
         LIMIT $1`,
-      [limit],
+      [limit, companyId ?? null],
     );
     return rows;
   });

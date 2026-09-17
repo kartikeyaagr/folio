@@ -148,7 +148,11 @@ export async function writeExtracted(row: Row, text: string): Promise<boolean> {
  *
  * Exported so the date resolution can be tested without a real PDF on disk — see extract.test.ts.
  */
-export async function pendingAttachments(c: Client, limit: number): Promise<Row[]> {
+export async function pendingAttachments(
+  c: Client,
+  limit: number,
+  companyId?: string | null,
+): Promise<Row[]> {
   const { rows } = await c.query<Row>(
     `SELECT sha256, company_id, filename, kind, announced_at
        FROM (
@@ -158,11 +162,15 @@ export async function pendingAttachments(c: Client, limit: number): Promise<Row[
            LEFT JOIN filings f ON f.attachment_sha256 = a.sha256
           WHERE a.extracted_text IS NULL
             AND a.media_type LIKE '%pdf%'
+            -- Scoped when the caller is filling in one name. An unscoped pass orders by added_at
+            -- across the whole corpus and is capped, so the backfill of a name with hundreds of
+            -- documents cannot finish inside one call — and nothing runs this on a timer.
+            AND ($2::text IS NULL OR a.company_id = $2)
           ORDER BY a.sha256, f.announced_at DESC NULLS LAST
        ) x
       ORDER BY added_at DESC
       LIMIT $1`,
-    [limit],
+    [limit, companyId ?? null],
   );
   return rows;
 }
@@ -182,8 +190,13 @@ export async function pendingAttachments(c: Client, limit: number): Promise<Row[
  * extraction had stopped. `pdfText` now strips the NUL, which fixes that one instance; this fixes
  * the class, since a NUL byte is not the only write Postgres can reject.
  */
-export async function extractPending(limit = 100): Promise<ExtractResult> {
-  const pending = await serviceTxn('system:ingest', (c) => pendingAttachments(c, limit));
+export async function extractPending(
+  limit = 100,
+  companyId?: string | null,
+): Promise<ExtractResult> {
+  const pending = await serviceTxn('system:ingest', (c) =>
+    pendingAttachments(c, limit, companyId),
+  );
 
   let extracted = 0;
   let documents = 0;

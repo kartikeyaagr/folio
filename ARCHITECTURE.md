@@ -111,7 +111,17 @@ cost this system two real alerts.
 
 `companies` is the universe. Nearly every ingest job filters to followed names, so adding a company
 is what makes the machine fetch its history — `companies.backfilled_at` is a queue drained by
-`jobs/backfill-company.ts` on a timer.
+`jobs/backfill-company.ts` on a ten-minute timer.
+
+**A step of that backfill ends three ways, not two** (`lib/ingest/backfill.ts`). `gap` is the
+exchange having nothing for this name — a company listed in 2021 has no sixteen years of annual
+reports — and does not hold the queue. `error` is the box or the feed, and the name stays queued: it
+is the same line `lib/agents/queue.ts` draws between a model refusing a subject and a machine with
+no credential. An exception is always `error`, because a step that threw does not know what the
+exchange holds. Only when nothing broke is `backfilled_at` written, which is what the column says it
+means. Three attempts, then the name leaves the queue by that bound rather than by being called
+finished, and `/companies` shows where every name has got to. `backfill_started_at` is the lease,
+so the ten-minute timer cannot start a second pass over a name the first pass is still working.
 
 ### News
 

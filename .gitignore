@@ -1,6 +1,6 @@
 # Private planning notes and internal documentation. Never committed.
-docs/
-tasks/
+docs
+tasks
 
 node_modules/
 .next/
