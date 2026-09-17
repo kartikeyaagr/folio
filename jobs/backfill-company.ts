@@ -94,6 +94,7 @@ const count = (sql: string, arg: string): Promise<number> =>
 
 const SHP = 'SELECT count(*)::text AS n FROM shareholding_patterns WHERE company_id = $1';
 const CLOSES = 'SELECT count(*)::text AS n FROM prices WHERE symbol = $1';
+const ATTACHED = 'SELECT count(*)::text AS n FROM attachments WHERE company_id = $1';
 
 /**
  * Documents, drained for this name rather than sampled from everyone's.
@@ -138,9 +139,17 @@ async function documents(companyId: string): Promise<StepResult> {
   // it does not have that document, which is a fact about the document. Counting it here retired
   // AERON — a name that is otherwise complete — over two filings NSE has never served.
   if (failed > 0) return broke(line);
-  // A name whose announcements point at no document at all. Not a break: an SME that files only
-  // XBRL has nothing to fetch, and there is nothing to retry.
-  if (fetched + held + read === 0) return nothingFiled('no attachment is pending for this name');
+  // Nothing pending has two causes, and only one of them is a gap: a name that holds no document
+  // at all (an SME filing only XBRL) against a name whose documents are all already here, which is
+  // the ordinary state of every re-run. Asked of the store rather than inferred from the counters,
+  // because calling the second a gap would put "filled in, with gaps" on /companies for a company
+  // that is complete.
+  if (fetched + held + read === 0) {
+    const total = await count(ATTACHED, companyId);
+    return total === 0
+      ? nothingFiled('this name holds no document; its filings point at none')
+      : did(`${total} already held, nothing left to fetch`);
+  }
   return did(line);
 }
 
