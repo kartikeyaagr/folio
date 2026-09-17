@@ -59,6 +59,7 @@ function asRow(f: FiledDocument) {
     at: new Date(f.releasedOn ?? (fy ? `${fy}-04-01` : f.addedOn)).getTime(),
     when: f.releasedOn ? day(f.releasedOn) : fy ? `FY${fy}-${String(Number(fy) + 1).slice(2)}` : null,
     note: `${(f.bytes / 1e6).toFixed(1)} MB` + (f.copies > 1 ? ` · ${f.copies} filed` : ''),
+    dated: fy ? 'The financial year it reports on' : 'Released by the exchange',
     href: `/api/attachment/${f.sha}`,
     external: true,
     added: f.addedOn,
@@ -110,8 +111,11 @@ export default async function CompanyPage({
     ...docs.map((d) => ({
       key: d.id,
       label: d.title,
-      at: d.updatedAt.getTime(),
-      when: day(d.updatedAt),
+      at: d.documentDate.getTime(),
+      when: day(d.documentDate),
+      // Written here, so the date is the last save. `documents.updated_at` moves when the row is
+      // touched rather than when somebody wrote in it; the version's own timestamp does not.
+      dated: 'Last saved here',
       note: `${d.versions} ${d.versions === 1 ? 'version' : 'versions'}`,
       href: `/doc/${d.id}`,
       external: false,
@@ -397,7 +401,7 @@ export default async function CompanyPage({
               <table className="tbl">
                 <thead>
                   <tr>
-                    <th>Document</th><th>Released</th><th /><th />
+                    <th>Document</th><th>Date</th><th /><th />
                   </tr>
                 </thead>
                 <tbody>
@@ -413,9 +417,11 @@ export default async function CompanyPage({
                           <b>{r.label}</b>
                         </Link>
                       </td>
-                      <td className="num">
-                        {/* The exchange's date, not ours. An imported file has none, and says the
-                            day it was brought in rather than implying the company published it. */}
+                      {/* One column, two facts, and the cell says which. A document the exchange
+                          published is dated when it was released; one written here is dated when it
+                          was last saved. A header claiming either over the whole table is a lie
+                          about half of it. */}
+                      <td className="num" title={r.dated}>
                         {r.when ?? <Blank why={`Not published by the exchange; brought in on ${day(r.added!)}`} />}
                       </td>
                       <td className="cell-note">

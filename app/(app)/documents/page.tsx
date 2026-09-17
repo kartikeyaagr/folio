@@ -96,10 +96,17 @@ export default async function DocumentsPage({
                         )}
                       </td>
                       <td className="num">{d.versions}</td>
-                      {/* The date the document carries, not the moment this system last touched its row.
-                          For a transcript that is the date of the call (0042); for a note it is the
-                          last save, which is the same statement. */}
-                      <td className="num">{when(d.releasedAt)}</td>
+                      {/* One column, two facts, and the cell says which. A document the exchange published is
+                          dated when it was released — for a transcript, the date of the call (0042) —
+                          and one written here is dated when it was last saved. Never
+                          `documents.updated_at`, which moves when the row is touched rather than
+                          when somebody wrote in it. */}
+                      <td
+                        className="num"
+                        title={d.fromAttachment ? 'Released by the exchange' : 'Last saved here'}
+                      >
+                        {when(d.documentDate)}
+                      </td>
                       <td>{d.updatedByName ?? <Blank why="Written before saves were attributed" />}</td>
                     </tr>
                   ))}

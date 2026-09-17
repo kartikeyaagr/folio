@@ -161,7 +161,7 @@ test('a document is dated and ordered by the version it carries, not by when its
 
   const docs = await documentsFor(CO);
   const old = docs.find((d) => d.id === 'd_old')!;
-  assert.equal(old.releasedAt.getFullYear(), 2022, 'the date of the call, not of the ingest');
+  assert.equal(old.documentDate.getFullYear(), 2022, 'the date of the call, not of the ingest');
 
   const order = docs.map((d) => d.id);
   assert.ok(

@@ -59,20 +59,35 @@ export interface DocSummary {
   kind: string;
   companyId: string | null;
   symbol: string | null;
+  /**
+   * When the ROW was last touched, which is not when the document was last written in.
+   *
+   * **Do not date a document with this.** Nothing maintains it on every save path: "Praj model —
+   * Model" has eight versions, the last written 16-Sep-2026, and this column says 9-Sep. It also
+   * moves when a backfill re-promotes a transcript, which is how all 35 of them came to be dated
+   * the afternoon they were fetched. `documentDate` is the field every screen uses; this one is
+   * kept because the column is real and its two writers are real, and is read by nothing.
+   */
   updatedAt: Date;
   archivedAt: Date | null;
   updatedByName: string | null;
   versions: number;
   /**
-   * When the current version was written, which for an ingested document is the date of the CALL.
+   * **The date the document itself carries, which means two different things on purpose.**
    *
-   * `0042` made `promoteTranscript` stamp the linking filing's `announced_at` rather than taking
-   * the column's `now()` default, precisely so a 2022 transcript is dated 2022. `updated_at` is on
-   * the `documents` row and moves when the row is touched — every one of these read "17 Sept 2026"
-   * because the backfill re-promoted them this afternoon. A list of filings dated by when this
-   * system happened to fetch them is a list sorted by nothing.
+   * For a document the exchange published, it is when the company released it: `0042` made
+   * `promoteTranscript` stamp the linking filing's `announced_at` rather than taking the column's
+   * `now()` default, precisely so a 2022 transcript is dated 2022. For a document written here, it
+   * is the last save — the same statement, since a note's current version is its last one.
+   *
+   * Not `documents.updated_at`, which is on the row and moves whenever the row is touched. Every
+   * ingested document read "17 Sept 2026" under it, because the backfill re-promoted them that
+   * afternoon; a list of filings dated by when this system happened to fetch them is sorted by
+   * nothing. The screens label the column `Date` and say which it is per row, because a header
+   * reading "Released" over a note somebody saved this morning is the same lie in the other
+   * direction.
    */
-  releasedAt: Date;
+  documentDate: Date;
   /**
    * The attachment this document is a reading of, for a transcript `extractPending` promoted.
    *
@@ -175,7 +190,7 @@ const SELECT = `
            WHERE v.document_id = d.id ORDER BY v.written_at DESC LIMIT 1) AS "updatedByName",
          (SELECT count(*)::int FROM document_versions v WHERE v.document_id = d.id) AS versions,
          (SELECT v.written_at FROM document_versions v
-           WHERE v.document_id = d.id ORDER BY v.written_at DESC, v.id DESC LIMIT 1) AS "releasedAt",
+           WHERE v.document_id = d.id ORDER BY v.written_at DESC, v.id DESC LIMIT 1) AS "documentDate",
          d.from_attachment AS "fromAttachment"
     FROM documents d
     LEFT JOIN companies co ON co.id = d.company_id`;
@@ -189,7 +204,7 @@ export async function documentsFor(
     const { rows } = await c.query<DocSummary>(
       `${SELECT} WHERE d.company_id = $1
          AND (d.archived_at IS NULL OR $2)
-       ORDER BY d.archived_at IS NOT NULL, "releasedAt" DESC`,
+       ORDER BY d.archived_at IS NOT NULL, "documentDate" DESC`,
       [companyId, opts.archived ?? false],
     );
     return rows;
@@ -210,7 +225,7 @@ export async function allDocuments(opts: { archived?: boolean } = {}): Promise<D
       `${SELECT} WHERE d.archived_at IS NULL OR $1
        -- On the date the document carries. Ordering on d.updated_at put a 2022 transcript above a
        -- 2025 one because the backfill happened to re-promote it a second later.
-       ORDER BY d.archived_at IS NOT NULL, "releasedAt" DESC
+       ORDER BY d.archived_at IS NOT NULL, "documentDate" DESC
        LIMIT 500`,
       [opts.archived ?? false],
     );
