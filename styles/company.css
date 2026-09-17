@@ -1031,24 +1031,31 @@ details.chk-stage > .chk-stage-head:hover {
   border-radius: 999px;
   background: var(--surface-2);
 }
-.chart-ranges a {
+/* Buttons since 17-Sep-2026, when the range stopped being a navigation: nothing is fetched, the
+   whole history is already on the page and this only chooses how much of it to draw. The reset is
+   explicit because a <button> inherits none of an <a>'s typography and all of a form control's. */
+.chart-ranges button {
   padding: 3px 10px;
+  border: 0;
   border-radius: 999px;
+  background: none;
   color: var(--ink-2);
+  font: inherit;
   font-size: 11.5px;
   font-weight: 600;
-  text-decoration: none;
+  line-height: 1.4;
+  cursor: pointer;
   transition: background 0.15s var(--ease), color 0.15s var(--ease);
 }
-.chart-ranges a:hover {
+.chart-ranges button:hover {
   background: var(--surface);
   color: var(--ink);
 }
-.chart-ranges a:focus-visible {
+.chart-ranges button:focus-visible {
   outline: 2px solid var(--navy);
   outline-offset: 1px;
 }
-.chart-ranges a[aria-current='true'] {
+.chart-ranges button[aria-pressed='true'] {
   background: var(--navy);
   color: var(--on-navy);
 }

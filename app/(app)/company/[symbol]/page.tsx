@@ -1,9 +1,8 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 
-import { companyPage } from '@/lib/company-view.ts';
+import { companyPage, priceHistory } from '@/lib/company-view.ts';
 import { coverers, sectorsWithTerms, STATUSES } from '@/lib/companies.ts';
-import { isRange, priceSeries, type Range } from '@/lib/prices.ts';
 import { ACCEPTED } from '@/lib/import/index.ts';
 import { AUTHORED, documentsFor, KIND_LABEL } from '@/lib/workspace.ts';
 import { filedFor, heldNotListed, periodName, type FiledDocument } from '@/lib/files.ts';
@@ -81,7 +80,7 @@ export default async function CompanyPage({
   params: Promise<{ symbol: string }>;
   // Both live in the URL, so a refresh lands where you were and a link to "PRAJIND consolidated,
   // yearly" is a link somebody can send.
-  searchParams: Promise<{ range?: string; archived?: string }>;
+  searchParams: Promise<{ archived?: string }>;
 }) {
   await requireUser();
   const { symbol } = await params;
@@ -89,11 +88,10 @@ export default async function CompanyPage({
   if (!co) notFound();
 
   const sp = await searchParams;
-  const range: Range = isRange(sp.range) ? sp.range : '1y';
   const showArchived = sp.archived === '1';
 
   const [prices, desk, sectors, written, filed, notListed] = await Promise.all([
-    priceSeries(co.id, range),
+    priceHistory(co.id),
     coverers(),
     sectorsWithTerms(),
     documentsFor(co.id, { archived: showArchived }),
@@ -126,14 +124,16 @@ export default async function CompanyPage({
     })),
   ].sort((a, b) => b.at - a.at);
 
-  // One builder for every link on the page, so changing the range does not silently drop the
-  // archived filter and a link carries the whole view rather than half of it.
-  const href = (next: { range?: string; archived?: string }): string => {
+  // One builder for every link on the page. The chart's range left the URL on 17-Sep-2026 — it is
+  // component state now, see components/PriceChart.tsx — so `archived` is the only thing here, and
+  // this stays a builder rather than two string literals so the next bit of view state has one
+  // place to be added.
+  const href = (next: { archived?: string }): string => {
     const q = new URLSearchParams();
-    q.set('range', next.range ?? range);
     const archived = 'archived' in next ? next.archived : (showArchived ? '1' : undefined);
     if (archived) q.set('archived', archived);
-    return `?${q.toString()}`;
+    const qs = q.toString();
+    return qs ? `?${qs}` : '?';
   };
 
   const latest = co.shareholding[0];
@@ -307,7 +307,7 @@ export default async function CompanyPage({
         )}
 
         <Card title="Price">
-          <PriceChart series={prices} href={(r) => href({ range: r })} />
+          <PriceChart history={prices} />
         </Card>
 
         {/* What this page is for now. The financials, filings, ownership and news that used to sit

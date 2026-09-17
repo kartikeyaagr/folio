@@ -8,6 +8,7 @@
 
 import { readTxn } from './db.ts';
 import type { Company } from './companies.ts';
+import type { History } from './prices.ts';
 
 export interface CompanyListRow extends Company {
   sector: string | null;
@@ -145,6 +146,50 @@ export async function companyPage(symbol: string): Promise<CompanyPage | null> {
           WHERE company_id = $1 AND on_date >= current_date - 30 ORDER BY on_date DESC LIMIT 10`,
       ),
       aliases: await rows('SELECT alias, kind FROM company_aliases WHERE company_id = $1 ORDER BY kind, alias'),
+    };
+  });
+}
+
+/**
+ * The whole price history for one name, in one read.
+ *
+ * **All of it, not a window of it.** Changing the chart's range used to be a navigation: the range
+ * was a query parameter, the page re-rendered on the server, and looking at five years and then at
+ * one month cost two round trips to redraw a line over data the browser could already have had.
+ * A five-year history for one name is about 1,250 closes — roughly 30KB of JSON, once — and
+ * `windowOf` slices it in the browser from there.
+ *
+ * That is a deliberate exception to `CLAUDE.md`'s "state lives in the URL", argued in `windowOf`.
+ */
+export async function priceHistory(companyId: string): Promise<History> {
+  return readTxn(async (c) => {
+    const { rows: span } = await c.query<{ from: string | null; to: string | null; n: string }>(
+      `SELECT min(p.on_date)::text AS from, max(p.on_date)::text AS to, count(*)::text AS n
+         FROM prices p
+         JOIN companies co ON (p.isin IS NOT NULL AND p.isin = co.isin) OR p.symbol = co.symbol
+        WHERE co.id = $1`,
+      [companyId],
+    );
+
+    const { rows } = await c.query<{ on: string; close: string }>(
+      `SELECT p.on_date::text AS on, p.close::text AS close
+         FROM prices p
+         JOIN companies co ON (p.isin IS NOT NULL AND p.isin = co.isin) OR p.symbol = co.symbol
+        WHERE co.id = $1
+        ORDER BY p.on_date`,
+      [companyId],
+    );
+
+    const { rows: today } = await c.query<{ d: string }>(
+      "SELECT (current_date AT TIME ZONE 'Asia/Kolkata')::date::text AS d",
+    );
+
+    return {
+      points: rows.map((r) => ({ on: r.on, close: Number(r.close) })),
+      heldFrom: span[0]?.from ?? null,
+      heldTo: span[0]?.to ?? null,
+      heldCount: Number(span[0]?.n ?? 0),
+      asOf: today[0]!.d,
     };
   });
 }

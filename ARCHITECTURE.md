@@ -2,7 +2,7 @@
 
 How Trisula is put together, and why it is put together that way. Accurate against the tree at the
 time of writing: **54 migrations, 51 tables, 7 agents, 24 job entry points, 19 systemd timers, one
-long-running watcher, 18 routes, 656 tests.** Every number here was counted, not remembered; if you
+long-running watcher, 18 routes, 664 tests.** Every number here was counted, not remembered; if you
 change the shape, count again rather than editing around it.
 
 For the product argument — what was built, what was deliberately cut, and on whose authority — see
@@ -312,6 +312,16 @@ Three standing rules, all of which have cost something to learn:
 
 - **State lives in the URL.** `?tab=`, `?filter=`, `?scope=`, plain links. Pages stay server
   components and a refresh lands where you were.
+
+  **One exception, argued in `components/PriceChart.tsx`:** the price chart's range is component
+  state. It was `?range=` until 17-Sep-2026, so looking at five years and then at one month
+  re-rendered the whole company page twice — the documents panel, the shareholding, the coverage
+  form, none of which change — to redraw a line over closes the browser could already have had. The
+  page now loads the whole history once (`priceHistory`, ~270 closes a name today) and `windowOf`
+  slices it in the browser. What the rule protects is a deliberately-chosen filter surviving a
+  refresh; a chart zoom is a lens on data already on the page, costs one click to restore, and falls
+  back to the whole history rather than an arbitrary slice. `?archived=` on the same page still
+  lives in the URL and still should.
 - **Where the system declines to answer, render `<Blank why="…" />`.** Never a zero: an empty cell
   reads as broken, a dash reads as not-applicable, and a zero reads as a measured fact — the most
   dangerous of the three.
