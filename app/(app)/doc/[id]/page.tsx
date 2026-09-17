@@ -8,6 +8,7 @@ import { DialogButton } from '@/components/DialogButton.tsx';
 import { DocEditor } from '@/components/DocEditor.tsx';
 import { DocumentText } from '@/components/DocumentText.tsx';
 import { FiledDocument } from '@/components/FiledDocument.tsx';
+import { periodName } from '@/lib/files.ts';
 import { SheetEditor } from '@/components/SheetEditor.tsx';
 
 import { requireUser } from '../../../_lib/session.ts';
@@ -60,7 +61,7 @@ export default async function DocumentPage({ params }: { params: Promise<{ id: s
   return (
     <>
       <AppHeader
-        title={doc.title}
+        title={doc.fromAttachment ? periodName(doc.kind, doc.documentDate) : doc.title}
         subtitle={
           `${KIND_LABEL[doc.kind] ?? doc.kind}` +
           (doc.symbol ? ` · ${doc.symbol}` : '') +

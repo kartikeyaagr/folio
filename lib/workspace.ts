@@ -247,6 +247,8 @@ export async function getDocument(id: string): Promise<DocDetail | null> {
               -- is the same trap from the other direction. The page renders the PDF only when this
               -- is set, so omitting it fell back silently to the extracted text — the exact thing
               -- being fixed.
+              (SELECT v.written_at FROM document_versions v
+                WHERE v.document_id = d.id ORDER BY v.written_at DESC, v.id DESC LIMIT 1) AS "documentDate",
               d.from_attachment AS "fromAttachment",
               (SELECT a.label FROM actors a WHERE a.id = d.created_by) AS "createdByName",
               COALESCE(

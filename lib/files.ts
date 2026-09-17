@@ -41,6 +41,41 @@ export const FILE_LABEL: Record<string, string> = {
 };
 
 /**
+ * The kinds whose name carries a month.
+ *
+ * A transcript and a deck arrive once a quarter, so "the August call" and "the August deck" are how
+ * the desk refers to them and a list of seventeen rows all reading "Transcript" is a list you have
+ * to read the date column to use. An annual report is named by its financial year, which is already
+ * its date, and a spreadsheet has a title somebody typed — neither gains anything from a month.
+ */
+const PERIODIC = new Set(['transcript', 'presentation']);
+
+/**
+ * `Sept 2026 Transcript` — the month, the year, and what it is.
+ *
+ * **Computed here rather than stored.** Baking it into `documents.title` would need SQL to format
+ * the month, and `to_char(…, 'Mon')` gives `Sep` where `Intl` under `en-IN` gives `Sept` — so a
+ * transcript promoted by the job and one renamed by a migration would disagree about September,
+ * silently, forever. One implementation, one month name, and it always agrees with the date column
+ * beside it because both come from the same formatter.
+ */
+export function periodName(kind: string, on: Date | string | null): string {
+  const label = FILE_LABEL[kind] ?? kind;
+  // `== null`, so an undefined reaches the bare kind rather than throwing on `.getTime()`. A
+  // SELECT that forgot the column should cost a month in a title, not a 500 on the page — and
+  // `getDocument` has now forgotten a column twice, so this is a measured risk, not a hypothetical.
+  if (on == null || !PERIODIC.has(kind)) return label;
+  const at = typeof on === 'string' ? new Date(`${on}T00:00:00+05:30`) : on;
+  if (Number.isNaN(at.getTime())) return label;
+  const month = new Intl.DateTimeFormat('en-IN', {
+    month: 'short',
+    year: 'numeric',
+    timeZone: 'Asia/Kolkata',
+  }).format(at);
+  return `${month} ${label}`;
+}
+
+/**
  * What a person opens a company to read.
  *
  * `filing` and `other` are held and searchable and are not here: 1,098 routine intimations —

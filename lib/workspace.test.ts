@@ -11,7 +11,9 @@ import { migrate } from '../db/migrate.ts';
 import { closePool, serviceTxn, writeTxn } from './db.ts';
 import { pathFor } from './ingest/attachments.ts';
 import {
+  createDocument,
   documentsFor,
+  getDocument,
   keepUploadAsAttachment,
 } from './workspace.ts';
 
@@ -168,4 +170,21 @@ test('a document is dated and ordered by the version it carries, not by when its
     order.indexOf('d_new') < order.indexOf('d_old'),
     'newest first means newest by the date it carries; updated_at would invert these',
   );
+});
+
+/**
+ * `getDocument` keeps its own copy of the documents SELECT, and it has now silently missed a new
+ * column twice — `fromAttachment` first, then `documentDate`, which took `/doc/[id]` down with a
+ * `Cannot read properties of undefined` because `c.query<DocDetail>` is a cast and not a parse.
+ * Asserting the fields the page branches on, so the third time is a red test rather than a 500.
+ */
+test('getDocument returns every field the document page reads, not just the ones it shares', async () => {
+  const id = await createDocument({ title: 'A note', kind: 'note', companyId: CO }, ME);
+  const doc = await getDocument(id);
+  assert.ok(doc);
+  for (const field of ['title', 'kind', 'symbol', 'versions', 'documentDate', 'fromAttachment'] as const) {
+    assert.ok(field in doc!, `getDocument dropped ${field}`);
+  }
+  assert.ok(doc!.documentDate instanceof Date, 'documentDate must be a date, not undefined');
+  assert.equal(doc!.fromAttachment, null, 'a document written here has no PDF behind it');
 });

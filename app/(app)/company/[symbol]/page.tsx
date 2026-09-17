@@ -6,7 +6,7 @@ import { coverers, sectorsWithTerms, STATUSES } from '@/lib/companies.ts';
 import { isRange, priceSeries, type Range } from '@/lib/prices.ts';
 import { ACCEPTED } from '@/lib/import/index.ts';
 import { AUTHORED, documentsFor, KIND_LABEL } from '@/lib/workspace.ts';
-import { FILE_LABEL, filedFor, heldNotListed, type FiledDocument } from '@/lib/files.ts';
+import { filedFor, heldNotListed, periodName, type FiledDocument } from '@/lib/files.ts';
 import {
   AppHeader, Blank, Card, Chip, Empty, Fact, Facts, Seg, crore, inr, type Tone,
 } from '@/components/ui.tsx';
@@ -55,7 +55,7 @@ function asRow(f: FiledDocument) {
   const fy = f.financialYear;
   return {
     key: f.sha,
-    label: FILE_LABEL[f.kind] ?? f.kind,
+    label: periodName(f.kind, f.releasedOn),
     at: new Date(f.releasedOn ?? (fy ? `${fy}-04-01` : f.addedOn)).getTime(),
     when: f.releasedOn ? day(f.releasedOn) : fy ? `FY${fy}-${String(Number(fy) + 1).slice(2)}` : null,
     note: `${(f.bytes / 1e6).toFixed(1)} MB` + (f.copies > 1 ? ` · ${f.copies} filed` : ''),

@@ -2,7 +2,7 @@
 
 How Trisula is put together, and why it is put together that way. Accurate against the tree at the
 time of writing: **54 migrations, 51 tables, 7 agents, 24 job entry points, 19 systemd timers, one
-long-running watcher, 18 routes, 648 tests.** Every number here was counted, not remembered; if you
+long-running watcher, 18 routes, 656 tests.** Every number here was counted, not remembered; if you
 change the shape, count again rather than editing around it.
 
 For the product argument — what was built, what was deliberately cut, and on whose authority — see
@@ -137,8 +137,11 @@ SEBI's draft index holds 2.3% of NSE Emerge names; both were probed live, in Sep
 arrive through the import dialog, which takes 32MB PDFs and keeps the bytes.
 
 **A filed document is read as the PDF it is.** `lib/files.ts` lists what the company published —
-one row per document, a one-word name, the exchange's own date — and the link opens the original
-through `app/api/attachment/[sha]`. The extracted text is not a second document: it is what the
+one row per document, named for its period and its type (`Sept 2026 Transcript`, `Aug 2026 PPT`),
+with the exchange's own date beside it — and the link opens the original through
+`app/api/attachment/[sha]`. The name is composed at render, not stored: `to_char(…, 'Mon')` gives
+`Sep` where `Intl` under `en-IN` gives `Sept`, so a title written by SQL and one written by
+TypeScript would disagree for one month a year. The extracted text is not a second document: it is what the
 agents read and what retrieval searches, and nothing else. Until 17-Sep-2026 a transcript existed
 twice, as the PDF and as a `documents` row holding its text, and the page showed the second while
 the first was unreachable from any screen.
