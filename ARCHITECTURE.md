@@ -2,7 +2,7 @@
 
 How Trisula is put together, and why it is put together that way. Accurate against the tree at the
 time of writing: **53 migrations, 51 tables, 7 agents, 24 job entry points, 19 systemd timers, one
-long-running watcher, 18 routes, 641 tests.** Every number here was counted, not remembered; if you
+long-running watcher, 18 routes, 642 tests.** Every number here was counted, not remembered; if you
 change the shape, count again rather than editing around it.
 
 For the product argument — what was built, what was deliberately cut, and on whose authority — see
