@@ -16,11 +16,11 @@
  * graveyard rests on the same argument.
  */
 
-import { createHash, randomBytes } from 'node:crypto';
+import { createHash } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 
-import { readTxn, writeTxn, type Client } from './db.ts';
+import { readTxn, rowId, type Client, writeTxn } from './db.ts';
 import { pathFor } from './ingest/attachments.ts';
 
 export type DocKind = 'note' | 'memo' | 'meeting' | 'checklist' | 'sheet';
@@ -230,7 +230,7 @@ export async function createDocument(
 ): Promise<string> {
   const title = input.title.trim();
   if (!title) throw new TitleRequired('A document needs a title.');
-  const id = randomBytes(16).toString('hex');
+  const id = rowId();
   const body = input.kind === 'sheet' ? { cells: {} } : { text: '' };
 
   await writeTxn(actorId, async (c) => {

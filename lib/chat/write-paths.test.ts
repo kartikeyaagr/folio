@@ -11,15 +11,14 @@
 
 import { test, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
-import { migrate } from '../../db/migrate.ts';
-import { closePool, readTxn, serviceTxn } from '../db.ts';
+import { readTxn, serviceTxn } from '../db.ts';
 import { enqueue } from '../agents/queue.ts';
 import { acceptDraft, pendingDrafts } from '../agents/review.ts';
 import { INVOCABLE_KEYS } from '../agents/tools/queue-run.ts';
 import type { ToolModel } from '../agents/loop.ts';
 import { startThread, threadWithMessages } from './threads.ts';
 import { takeTurn } from './turn.ts';
+import { createTestDatabase, dropTestDatabase } from '../../db/testing.ts';
 
 const DB = `trisula_wp_${process.pid}`;
 const ME = 'p1';
@@ -27,9 +26,7 @@ const CO = 'c1';
 const CRORE = 10_000_000;
 
 before(async () => {
-  execFileSync('createdb', [DB]);
-  process.env.DATABASE_URL = `postgres:///${DB}`;
-  await migrate();
+  await createTestDatabase(DB);
   await serviceTxn('system:auth', async (c) => {
     await c.query("INSERT INTO actors (id,kind,label) VALUES ($1,'person','T')", [ME]);
     await c.query("INSERT INTO users (id,email,name) VALUES ($1,'t@x.com','T')", [ME]);
@@ -44,8 +41,7 @@ before(async () => {
 });
 
 after(async () => {
-  await closePool();
-  execFileSync('dropdb', ['--if-exists', DB]);
+  await dropTestDatabase(DB);
 });
 
 beforeEach(async () => {

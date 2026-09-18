@@ -19,6 +19,7 @@ import {
 import {
   archiveDocumentAction, createDocumentAction, importFileAction,
 } from '../../../_lib/actions/workspace.ts';
+import { stamp } from '@/components/ui';
 
 /**
  * One company: what it is, what it has done, and what this desk has written about it.
@@ -33,15 +34,6 @@ import {
 export const dynamic = 'force-dynamic';
 
 /** A timestamp as a person says it. The same shape `/admin` uses for the same reason. */
-const when = (d: Date | null): string =>
-  d === null
-    ? '—'
-    : new Intl.DateTimeFormat('en-IN', {
-        dateStyle: 'medium',
-        timeStyle: 'short',
-        timeZone: 'Asia/Kolkata',
-      }).format(d);
-
 /** The taxonomy's categories, in words a reader uses. */
 
 const STATUS_TONE: Record<string, Tone> = {
@@ -347,7 +339,7 @@ export default async function CompanyPage({
                       </td>
                       <td>{KIND_LABEL[d.kind] ?? d.kind}</td>
                       <td className="num">{d.versions}</td>
-                      <td className="num">{when(d.updatedAt)}</td>
+                      <td className="num">{stamp(d.updatedAt)}</td>
                       <td>{d.updatedByName ?? <Blank why="Written before saves were attributed" />}</td>
                       <td className="cell-note">
                         <form action={archiveDocumentAction}>

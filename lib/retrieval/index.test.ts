@@ -1,13 +1,12 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { migrate } from '../../db/migrate.ts';
-import { closePool, serviceTxn, type Client } from '../db.ts';
+import { serviceTxn, type Client } from '../db.ts';
 import { indexOne, drain } from './index.ts';
 import { EMBED_MODEL, isLoaded } from './embed.ts';
 import { registerAll, contentHash } from './register.ts';
+import { createTestDatabase, dropTestDatabase } from '../../db/testing.ts';
 
 const DB = `trisula_idx_${process.pid}`;
 
@@ -41,15 +40,12 @@ async function sourceIdFor(c: Client, refId: string): Promise<string> {
 }
 
 before(async () => {
-  execFileSync('createdb', [DB]);
-  process.env.DATABASE_URL = `postgres:///${DB}`;
+  await createTestDatabase(DB);
   process.env.EMBED_MODEL_DIR = MODEL_DIR;
-  await migrate();
 });
 
 after(async () => {
-  await closePool();
-  execFileSync('dropdb', ['--if-exists', DB]);
+  await dropTestDatabase(DB);
 });
 
 // Run first, against a database with nothing registered yet: the one shape where "found nothing"

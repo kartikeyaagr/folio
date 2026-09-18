@@ -4,6 +4,7 @@ import { allDocuments, INGESTED, KIND_LABEL } from '@/lib/workspace.ts';
 import { AppHeader, Blank, Card, Chip, Empty, Seg } from '@/components/ui.tsx';
 
 import { requireUser } from '../../_lib/session.ts';
+import { stamp } from '@/components/ui';
 
 /**
  * Everything written or ingested, in one list.
@@ -15,15 +16,6 @@ import { requireUser } from '../../_lib/session.ts';
  */
 
 export const dynamic = 'force-dynamic';
-
-const when = (d: Date | null): string =>
-  d === null
-    ? '—'
-    : new Intl.DateTimeFormat('en-IN', {
-        dateStyle: 'medium',
-        timeStyle: 'short',
-        timeZone: 'Asia/Kolkata',
-      }).format(d);
 
 export default async function DocumentsPage({
   searchParams,
@@ -96,7 +88,7 @@ export default async function DocumentsPage({
                         )}
                       </td>
                       <td className="num">{d.versions}</td>
-                      <td className="num">{when(d.updatedAt)}</td>
+                      <td className="num">{stamp(d.updatedAt)}</td>
                       <td>{d.updatedByName ?? <Blank why="Written before saves were attributed" />}</td>
                     </tr>
                   ))}

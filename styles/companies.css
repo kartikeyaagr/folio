@@ -47,133 +47,14 @@
 }
 
 /* --- The pipeline: four lanes of cards ------------------------------------------------------ */
-
-.lanes {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
-}
-.lane {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  min-width: 0;
-}
-.lane-head {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  padding: 4px 4px 6px;
-}
-.lane-range {
-  font-size: 11px;
-  color: var(--muted);
-}
-.lane-n {
-  margin-left: auto;
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--ink-2);
-}
-.lane-empty {
-  padding: 14px 12px;
-  border: 1px dashed var(--line-2);
-  border-radius: 10px;
-  font-size: 12px;
-  color: var(--muted);
-}
-
-.co-card {
-  display: block;
-  padding: 12px 14px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: var(--surface);
-  color: var(--ink);
-  text-decoration: none;
-  box-shadow: var(--shadow-sm);
-  transition:
-    border-color 140ms var(--ease),
-    box-shadow 140ms var(--ease),
-    transform 100ms var(--ease);
-}
-.co-card:hover {
-  border-color: var(--line-2);
-  color: var(--ink);
-  box-shadow: var(--shadow-lg);
-}
-.co-card:active {
-  transform: scale(0.97);
-}
-.co-card-top {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-}
-.co-card-top b {
-  font-size: 14px;
-  font-weight: 700;
-}
-.co-board {
-  font-size: 11px;
-  color: var(--muted);
-}
-.co-flags {
-  margin-left: auto;
-  display: flex;
-  gap: 6px;
-  font-size: 11px;
-  font-weight: 700;
-  color: var(--muted);
-}
 .co-flags .is-bad {
   color: var(--red);
-}
-.kb-name {
-  margin-top: 2px;
-  font-size: 12.5px;
-  color: var(--ink-2);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.co-stage {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 10px;
-}
-.co-stage .segs {
-  flex: 1;
-}
-.kb-stage {
-  font-size: 11px;
-  color: var(--muted);
-  white-space: nowrap;
-}
-.co-by {
-  margin-top: 6px;
-  font-size: 11.5px;
-  color: var(--muted);
 }
 .co-by.is-warn {
   color: var(--amber);
 }
 
 /* --- The two tables: all names, killed ------------------------------------------------------ */
-
-.co-sym {
-  font-weight: 700;
-  color: var(--ink);
-  text-decoration: none;
-}
-.co-sym:hover {
-  color: var(--teal);
-}
-.co-held {
-  font-size: 11px;
-  color: var(--muted);
-}
 .co-assign {
   display: flex;
   align-items: center;
@@ -184,19 +65,8 @@
   font-size: 12px;
 }
 /* Nobody covering is a fact the row states, not a default it hides in. */
-.co-assign .field.is-warn,
-.co-nobody {
+.co-assign .field.is-warn {
   color: var(--amber);
-}
-.co-last {
-  font-size: 12.5px;
-  color: var(--muted);
-}
-.kb-revisit {
-  display: block;
-  margin-top: 2px;
-  font-size: 12px;
-  color: var(--muted);
 }
 /* Its own name: `.co-search` is the Files tab's search box on the company page. */
 .grave-search .field {
@@ -205,16 +75,7 @@
 }
 
 /* --- Small screens -------------------------------------------------------------------------- */
-
-@media (max-width: 1100px) {
-  .lanes {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
 @media (max-width: 620px) {
-  .lanes {
-    grid-template-columns: minmax(0, 1fr);
-  }
   .co-bar {
     padding: 10px 12px;
   }

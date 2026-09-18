@@ -87,7 +87,11 @@ export function AvatarMenu({
             </div>
           </form>
         </DialogButton>
-        <a href="/logout">Sign out</a>
+        {/* A form, not a link: signing out revokes the session, and a GET that changes state is
+            reachable from any page that can make the browser fetch a URL. Still scriptless. */}
+        <form method="post" action="/logout" className="rail-menu-out">
+          <button type="submit" className="btn btn-link">Sign out</button>
+        </form>
       </div>
     </details>
   );

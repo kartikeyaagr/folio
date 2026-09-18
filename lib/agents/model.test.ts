@@ -193,7 +193,30 @@ test('an answer that is not JSON, and one that is the wrong shape, are told apar
   assert.equal(!(await askModel(scripted([{ text: 'sorry' }]), ASK)).ok && 'unparseable', 'unparseable');
   const wrong = await askModel(scripted([{ text: '{"b":1}' }]), ASK);
   assert.equal(!wrong.ok && wrong.kind, 'schema_mismatch');
-  assert.match((!wrong.ok && wrong.detail) || '', /missing required: a/);
+  assert.match((!wrong.ok && wrong.detail) || '', /required property 'a'/);
+});
+
+test('a declared type is checked, not just the presence of the key', async () => {
+  // The shallow check this replaced looked only at required top-level *keys*, so `a` arriving as
+  // a number passed, reached `ai_drafts.content`, and failed later against a check constraint
+  // inside the acceptance transaction — where there is no error boundary to catch it.
+  const wrong = await askModel(scripted([{ text: '{"a":1}' }]), ASK);
+  assert.equal(!wrong.ok && wrong.kind, 'schema_mismatch');
+  assert.match((!wrong.ok && wrong.detail) || '', /must be string/);
+});
+
+test('a required key missing from a nested object is caught', async () => {
+  const nested = {
+    ...ASK,
+    schema: {
+      type: 'object',
+      properties: { figures: { type: 'object', properties: { revenue: { type: 'number' } }, required: ['revenue'] } },
+      required: ['figures'],
+    },
+  };
+  const wrong = await askModel(scripted([{ text: '{"figures":{}}' }]), nested);
+  assert.equal(!wrong.ok && wrong.kind, 'schema_mismatch');
+  assert.match((!wrong.ok && wrong.detail) || '', /required property 'revenue'/);
 });
 
 test('a transport error is an error, not a refusal', async () => {

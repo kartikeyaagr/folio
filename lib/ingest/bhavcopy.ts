@@ -15,8 +15,8 @@
  * which is why the caller records the distinction.
  */
 
-import { inflateRawSync } from 'node:zlib';
 import { serviceTxn } from '../db.ts';
+import { unzip } from '../import/zip.ts';
 import { NseError, NseSession, parseCsv } from './nse.ts';
 
 const URL_TEMPLATE =
@@ -45,35 +45,28 @@ const num = (v: string | undefined): string | null => {
 };
 
 /**
- * Extract the single CSV from a zip without a zip library.
+ * Extract the single CSV from the bhavcopy zip.
  *
- * The bhavcopy zip holds one stored-or-deflated entry. Node ships `zlib`, so the only missing
- * piece is walking the local file header to find where the deflate stream starts — about twenty
- * lines against a dependency, and the reuse ladder says the standard library first.
+ * This walked the local file header by hand until 18-Sep-2026, on the reuse-ladder argument that
+ * `node:zlib` supplies inflate and the rest is twenty lines. It was the second such walker in the
+ * tree, and it found the end of the entry by scanning forward for the central-directory signature
+ * — which those four bytes appearing inside a compressed stream would have defeated. `lib/import`
+ * reads the directory instead, and now both go through it.
  */
 export class UnreadableBhavcopy extends Error {}
 
 export function unzipSingle(buf: Buffer): string {
   // Not a NoBhavcopy: the archive answered 200 with something that is not a zip, which is a broken
   // feed rather than a day with no trading. A captive portal and an error page both land here.
-  if (buf.readUInt32LE(0) !== 0x04034b50) throw new UnreadableBhavcopy('not a zip file');
-  const method = buf.readUInt16LE(8);
-  const nameLen = buf.readUInt16LE(26);
-  const extraLen = buf.readUInt16LE(28);
-  const start = 30 + nameLen + extraLen;
-
-  // Central directory marks the end of the entry's data; the local header's size fields are
-  // sometimes zero when a data descriptor is used, so trust the directory offset instead.
-  const cd = buf.indexOf(Buffer.from([0x50, 0x4b, 0x01, 0x02]), start);
-  const end = cd === -1 ? buf.length : cd;
-  const body = buf.subarray(start, end);
-
-  if (method === 0) return body.toString('utf8');
-  // Zip stores a bare deflate stream with no zlib or gzip wrapper, which is exactly what
-  // inflateRaw expects. Fabricating a gzip header instead fails: that format also needs a
-  // trailing CRC and length, which the zip entry does not carry here.
-  if (method === 8) return inflateRawSync(body).toString('utf8');
-  throw new UnreadableBhavcopy(`unsupported zip compression method ${method}`);
+  let entries: Map<string, Buffer>;
+  try {
+    entries = unzip(buf);
+  } catch (err) {
+    throw new UnreadableBhavcopy(err instanceof Error ? err.message : String(err));
+  }
+  const only = entries.values().next().value;
+  if (!only) throw new UnreadableBhavcopy('the zip held no entries');
+  return only.toString('utf8');
 }
 
 export function parseBhavcopy(csv: string): PriceRow[] {

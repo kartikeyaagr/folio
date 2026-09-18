@@ -14,13 +14,12 @@
  * a person did about it.
  */
 
-import { randomBytes } from 'node:crypto';
 
 import { draftDistance, positions } from './distance.ts';
 import { recordExemplar } from './exemplars.ts';
 import { removeAt, setPath, UnwritablePath } from './paths.ts';
 import { fieldAt, shapeFor } from './shapes.ts';
-import { readTxn, writeTxn, type Client } from '../db.ts';
+import { readTxn, rowId, type Client, writeTxn } from '../db.ts';
 
 export class UnknownDraft extends Error {}
 export class AlreadyDecided extends Error {}
@@ -28,7 +27,6 @@ export class ReasonRequired extends Error {}
 export class NotAChoice extends Error {}
 export { UnwritablePath };
 
-const id = (): string => randomBytes(16).toString('hex');
 
 export interface PendingDraft {
   id: string;
@@ -241,7 +239,7 @@ async function landForensics(
   const version = Number(content['version']);
   const answers = (content['answers'] ?? []) as { item: number; verdict: string; note: string }[];
 
-  const checklistId = id();
+  const checklistId = rowId();
   await c.query(
     `INSERT INTO forensics_checklists (id, company_id, version, drafted_by_agent)
      VALUES ($1,$2,$3,true)`,
@@ -314,7 +312,7 @@ async function landDocument(
   content: Record<string, unknown>,
   actorId: string,
 ): Promise<void> {
-  const docId = id();
+  const docId = rowId();
   await c.query(
     `INSERT INTO documents (id, company_id, title, kind, created_by, from_draft_id)
      VALUES ($1,$2,$3,$4,$5,$6)`,

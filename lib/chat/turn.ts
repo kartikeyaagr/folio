@@ -4,12 +4,12 @@
  * The system prompt is assembled in `v4.md §7`'s order, which is a decision and not a detail:
  *
  *     agents.purpose          what this agent is for. Static, changed by migration.
- *     approved prompt_rules   what we have learned to tell it.       — R6, not built
- *     retrieved exemplars     work of this kind an analyst accepted. — R5, not built
+ *     approved prompt_rules   what we have learned to tell it.
+ *     retrieved exemplars     work of this kind an analyst accepted.
  *
- * Ordered by authority, so a retrieved example that contradicts an approved rule loses. R3 has
- * only the first block, and the order exists here already so that adding the other two is an
- * insertion rather than a rewrite.
+ * Ordered by authority, so a retrieved example that contradicts an approved rule loses. All three
+ * blocks are assembled by `systemFor()` in `lib/agents/prompt.ts` — R5 and R6 both landed, and the
+ * order this file reserved for them is the one they went into.
  *
  * **Nothing here writes to the record.** The agent's message is a message in a thread. Turning one
  * into a document is `draft_document`, which is R4's, and it lands in `/review` like every other

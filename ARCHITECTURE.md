@@ -2,7 +2,7 @@
 
 How Trisula is put together, and why it is put together that way. Accurate against the tree at the
 time of writing: **51 migrations, 50 tables, 7 agents, 24 job entry points, 19 systemd timers, 18
-routes, 619 tests.** Every number here was counted, not remembered; if you change the shape, count
+routes, 657 tests.** Every number here was counted, not remembered; if you change the shape, count
 again rather than editing around it.
 
 For the product argument — what was built, what was deliberately cut, and on whose authority — see
@@ -291,7 +291,7 @@ export DATABASE_URL=postgres:///trisula_v3_dev
 pnpm install
 pnpm fetch-model                 # ~130 MB, bge-small-en-v1.5, validated on download
 pnpm exec tsx db/migrate.ts      # one transaction each, checksummed
-pnpm check                       # lint + typecheck + 619 tests
+pnpm check                       # lint + typecheck + 657 tests
 pnpm dev                         # port 3100
 ```
 

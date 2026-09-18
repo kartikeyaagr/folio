@@ -16,9 +16,9 @@
 
 import type { Client } from '../../db.ts';
 import { betaTool, resolveSubject, served, type ToolContext, type ToolSpec } from './spec.ts';
+import { croreText } from '../../money.ts';
 
 /** One crore. Figures are reported in crore because that is how the desk says them out loud. */
-const CRORE = 10_000_000;
 
 const DEFAULT_PERIODS = 8;
 const MAX_PERIODS = 20;
@@ -38,16 +38,6 @@ interface Row {
   context_dates_disagreed: boolean;
   period_inferred: boolean;
 }
-
-/**
- * A figure, or the fact that there is not one.
- *
- * Never `0`. House rule 4: an empty cell reads as broken, a dash reads as not-applicable, and a
- * zero reads as a measured fact — which is the most dangerous of the three, and doubly so here,
- * because AERON really does file `0.00` into every P&L element it does not report (lesson L9).
- */
-const cr = (v: string | null): string =>
-  v === null ? 'not reported' : `${(Number(v) / CRORE).toFixed(1)} cr`;
 
 export const spec: ToolSpec = {
   name: 'get_financials',
@@ -117,11 +107,11 @@ export const spec: ToolSpec = {
             ].filter((x): x is string => x !== null);
             return [
               `${r.period_kind} ${r.period_start} to ${r.period_end} (${r.basis})`,
-              `  revenue          ${cr(r.revenue)}`,
-              `  other income     ${cr(r.other_income)}`,
-              `  total expenses   ${cr(r.total_expenses)}`,
-              `  profit before tax ${cr(r.profit_before_tax)}`,
-              `  profit after tax  ${cr(r.profit_after_tax)}`,
+              `  revenue          ${croreText(r.revenue)}`,
+              `  other income     ${croreText(r.other_income)}`,
+              `  total expenses   ${croreText(r.total_expenses)}`,
+              `  profit before tax ${croreText(r.profit_before_tax)}`,
+              `  profit after tax  ${croreText(r.profit_after_tax)}`,
               `  basic EPS        ${r.eps_basic ?? 'not reported'}`,
               doubt.length > 0 ? `  caution: ${doubt.join('; ')}` : null,
             ].filter((x): x is string => x !== null).join('\n');

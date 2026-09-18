@@ -1,11 +1,10 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
-import { migrate } from '../../db/migrate.ts';
-import { closePool, readTxn, serviceTxn } from '../db.ts';
+import { readTxn, serviceTxn } from '../db.ts';
 import { canonicalFigures } from './fundamentals.ts';
 import { parse } from './xbrl.ts';
+import { createTestDatabase, dropTestDatabase } from '../../db/testing.ts';
 
 const DB = `trisula_fun_${process.pid}`;
 const fixture = () => readFileSync(new URL('./__fixtures__/vsttillers-q3fy25.xml', import.meta.url));
@@ -15,14 +14,11 @@ const fixture = () => readFileSync(new URL('./__fixtures__/vsttillers-q3fy25.xml
 const aeron = () => readFileSync(new URL('./__fixtures__/aeron-fy24-annual.xml', import.meta.url));
 
 before(async () => {
-  execFileSync('createdb', [DB]);
-  process.env.DATABASE_URL = `postgres:///${DB}`;
-  await migrate();
+  await createTestDatabase(DB);
 });
 
 after(async () => {
-  await closePool();
-  execFileSync('dropdb', ['--if-exists', DB]);
+  await dropTestDatabase(DB);
 });
 
 test('maps taxonomy elements onto the columns ratios read', () => {

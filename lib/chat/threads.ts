@@ -15,8 +15,7 @@
  * an unbounded history is the unbounded prompt that killed agent 3.
  */
 
-import { randomBytes } from 'node:crypto';
-import { readTxn, serviceTxn, writeTxn, type Client } from '../db.ts';
+import { readTxn, rowId, serviceTxn, type Client, writeTxn } from '../db.ts';
 
 /** §6.1's budget: the last 10 turns or 40,000 characters, whichever is smaller, oldest dropped. */
 export const MAX_TURNS = 10;
@@ -67,7 +66,6 @@ export interface Spend {
   costUsd: number | null;
 }
 
-const newId = (): string => randomBytes(16).toString('hex');
 
 /** A thread's name, taken from its first message. One line, never empty. */
 export function titleFrom(body: string): string {
@@ -143,7 +141,7 @@ export async function threadWithMessages(
 export async function startThread(body: string, actorId: string): Promise<string> {
   const text = body.trim();
   if (!text) throw new EmptyMessage('A thread starts with a question.');
-  const threadId = newId();
+  const threadId = rowId();
   await writeTxn(actorId, async (c) => {
     await c.query(
       'INSERT INTO chat_threads (id, title, created_by) VALUES ($1,$2,$3)',
@@ -151,7 +149,7 @@ export async function startThread(body: string, actorId: string): Promise<string
     );
     await c.query(
       'INSERT INTO chat_messages (id, thread_id, seq, role, body, written_by) VALUES ($1,$2,1,$3,$4,$5)',
-      [newId(), threadId, 'person', text, actorId],
+      [rowId(), threadId, 'person', text, actorId],
     );
   });
   return threadId;
@@ -171,7 +169,7 @@ export async function ask(threadId: string, body: string, actorId: string): Prom
     if (rowCount === 0) throw new UnknownThread(`no thread ${threadId}`);
     await c.query(
       'INSERT INTO chat_messages (id, thread_id, seq, role, body, written_by) VALUES ($1,$2,$3,$4,$5,$6)',
-      [newId(), threadId, rows[0]!.next, 'person', text, actorId],
+      [rowId(), threadId, rows[0]!.next, 'person', text, actorId],
     );
   });
 }
@@ -224,7 +222,7 @@ export async function turnInFlight(threadId: string): Promise<boolean> {
 export async function recordAnswer(
   threadId: string, body: string, calls: ToolCallRow[], spend: Spend,
 ): Promise<string> {
-  const messageId = newId();
+  const messageId = rowId();
   await serviceTxn('system:agents', async (c) => {
     const { rows } = await c.query<{ next: number }>(
       'SELECT coalesce(max(seq), 0) + 1 AS next FROM chat_messages WHERE thread_id = $1',
@@ -248,7 +246,7 @@ export async function recordAnswer(
            (id, message_id, ord, tool, arguments, result_summary, chunk_ids, duration_ms, error)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
         [
-          newId(), messageId, ord, call.tool, JSON.stringify(call.arguments),
+          rowId(), messageId, ord, call.tool, JSON.stringify(call.arguments),
           call.resultSummary, call.chunkIds, call.durationMs, call.error,
         ],
       );

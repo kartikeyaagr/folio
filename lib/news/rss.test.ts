@@ -21,6 +21,18 @@ test('an RSS item comes back whole', () => {
   assert.equal(item?.publishedAt, '2026-09-07T04:00:00.000Z');
 });
 
+test('a named entity outside the old table of thirteen is decoded', () => {
+  // These reached `news_items.title` verbatim until 18-Sep-2026 — a reader saw "Godrej&rsquo;s".
+  // Indian business press uses the curly apostrophe and the ellipsis constantly.
+  const [item] = parseFeed(rss(`
+    <item>
+      <title>Godrej&rsquo;s &pound;40m bid&hellip; caf&eacute; chain</title>
+      <link>https://example.com/b</link>
+      <guid isPermaLink="false">tag:example,2026:2</guid>
+    </item>`));
+  assert.equal(item?.title, 'Godrej’s £40m bid… café chain');
+});
+
 test('an Atom entry comes back the same way', () => {
   const [item] = parseFeed(`<?xml version="1.0"?><feed xmlns="http://www.w3.org/2005/Atom">
     <entry>

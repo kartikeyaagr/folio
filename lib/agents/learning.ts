@@ -33,8 +33,10 @@ export async function coverage(): Promise<Coverage[]> {
     const { rows } = await c.query<Coverage>(
       `SELECT a.key AS "agentKey", a.label, a.learning, a.model,
               count(e.id)::int AS held,
-              -- Embedded AND retrievable by this agent. Until R5b nothing embeds, so this is 0 for
-              -- everyone — which is the honest reading, not a placeholder.
+              -- Embedded AND retrievable by this agent. Both halves matter: an exemplar with no
+              -- embedding cannot be retrieved, and neither can one belonging to an agent that does
+              -- not learn. jobs/index-content.ts drains the embed queue, so a persistent zero
+              -- here against a non-zero held count means that job is not running.
               count(e.id) FILTER (WHERE e.embedding IS NOT NULL AND a.learning)::int AS retrievable
          FROM agents a
          LEFT JOIN exemplars e ON e.agent_id = a.key

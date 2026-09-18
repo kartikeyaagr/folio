@@ -20,6 +20,7 @@
  */
 
 import Anthropic from '@anthropic-ai/sdk';
+import Ajv, { type ValidateFunction } from 'ajv';
 
 import { modelClient } from './client.ts';
 
@@ -80,19 +81,43 @@ export type Model = (input: AskInput) => Promise<Answer>;
 const DEFAULT_MAX_TOKENS = 16_000;
 
 /**
- * Shallow structural check against the schema's required top-level keys.
+ * Does the model's reply match the schema it was given?
  *
- * Not a full JSON Schema validator: the API already constrained the shape, so this catches the
- * case where it did not, and a full validator would be a dependency earning its place on one
- * check. If schemas grow beyond this, reach for one then.
+ * This checked the required *top-level* keys and nothing else until 18-Sep-2026, under a comment
+ * that set its own expiry: *"a full validator would be a dependency earning its place on one
+ * check. If schemas grow beyond this, reach for one then."* It was two checks by then — `loop.ts`
+ * carried a verbatim copy — with the handlers making up the difference by hand, and what the
+ * shallow form could not see was the case that matters. A declared number arriving as a string,
+ * or a required key missing from a nested object, passed here and landed in `ai_drafts.content`,
+ * to surface later as a 23514 from a check constraint *inside the acceptance transaction*, which
+ * `shapes.ts` records the app as having no error boundary for.
+ *
+ * `schema_mismatch` exists to say "our schema is wrong" loudly and early. A validator is what
+ * makes that true.
+ *
+ * Ajv rather than Zod because these schemas are already JSON Schema objects and have to stay that
+ * way — they are what the API is handed. `strict: false` because they are written for Anthropic's
+ * structured outputs rather than for Ajv, and an unknown keyword there is not our bug.
  */
-function fitsSchema(value: unknown, schema: Record<string, unknown>): string | null {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-    return 'expected a JSON object';
+const ajv = new Ajv({ strict: false, allErrors: true });
+
+/** Compiled once per schema. The schemas are module constants, so identity is stable. */
+const compiled = new WeakMap<object, ValidateFunction | Error>();
+
+export function fitsSchema(value: unknown, schema: Record<string, unknown>): string | null {
+  let validate = compiled.get(schema);
+  if (validate === undefined) {
+    try {
+      validate = ajv.compile(schema);
+    } catch (err) {
+      validate = err instanceof Error ? err : new Error(String(err));
+    }
+    compiled.set(schema, validate);
   }
-  const required = Array.isArray(schema['required']) ? (schema['required'] as string[]) : [];
-  const missing = required.filter((k) => !(k in (value as Record<string, unknown>)));
-  return missing.length > 0 ? `missing required: ${missing.join(', ')}` : null;
+  // A schema that will not compile is our mistake rather than the model's, which is exactly what
+  // this failure kind means — so it is reported here and not thrown past the caller.
+  if (validate instanceof Error) return `schema will not compile: ${validate.message}`;
+  return validate(value) ? null : ajv.errorsText(validate.errors, { dataVar: 'answer' });
 }
 
 /**

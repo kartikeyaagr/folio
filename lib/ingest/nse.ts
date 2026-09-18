@@ -10,6 +10,8 @@
  * still wants a browser-shaped User-Agent.
  */
 
+import { parse } from 'csv-parse/sync';
+
 const BASE = 'https://www.nseindia.com';
 
 /**
@@ -151,38 +153,40 @@ export function pickRows<T>(payload: unknown): T[] {
 }
 
 /**
- * Parse a CSV with a header row.
+ * Parse a CSV into positional rows, the header among them.
  *
- * NSE's masters are plain comma-separated with quoted fields and no embedded newlines. A CSV
- * dependency would be the fourth rung of the reuse ladder for something this shape.
+ * Hand-written until 18-Sep-2026, on the argument that "NSE's masters are plain comma-separated
+ * with quoted fields and no embedded newlines". That was true of the masters, and had quietly
+ * stopped being true of the callers: `lib/import/index.ts` passes whatever somebody uploaded from
+ * the fund's shared drive. The old reader split on newlines *before* it looked at quotes, so a
+ * quoted cell containing one — ordinary Excel output — became two rows with every later column
+ * shifted, and no error anywhere. On a securities master that invents a symbol out of the tail of
+ * an address.
+ *
+ * `relax_column_count` because the masters are ragged in places and a short row should still read
+ * rather than throw. `bom` because Excel prefixes one on export; the old reader stripped it only
+ * by accident, `String.prototype.trim()` counting U+FEFF as whitespace.
+ */
+export function parseCsvRows(text: string): string[][] {
+  return parse(text, {
+    bom: true,
+    relax_column_count: true,
+    skip_empty_lines: true,
+    trim: true,
+  });
+}
+
+/**
+ * Parse a CSV with a header row, keyed by column name.
+ *
+ * Collapses two columns that share a name, which is correct here — a master's columns are found
+ * by name, and `field()` below is how. It is wrong for a grid, whose columns are found by
+ * position, so `csvToSheet` reads `parseCsvRows` instead.
  */
 export function parseCsv(text: string): Record<string, string>[] {
-  const lines = text.split(/\r?\n/).filter((l) => l.trim() !== '');
-  if (lines.length < 2) return [];
-
-  const split = (line: string): string[] => {
-    const out: string[] = [];
-    let cur = '';
-    let quoted = false;
-    for (let i = 0; i < line.length; i++) {
-      const ch = line[i];
-      if (quoted) {
-        if (ch === '"' && line[i + 1] === '"') { cur += '"'; i++; }
-        else if (ch === '"') quoted = false;
-        else cur += ch;
-      } else if (ch === '"') quoted = true;
-      else if (ch === ',') { out.push(cur); cur = ''; }
-      else cur += ch;
-    }
-    out.push(cur);
-    return out.map((s) => s.trim());
-  };
-
-  const header = split(lines[0]!);
-  return lines.slice(1).map((line) => {
-    const cells = split(line);
-    return Object.fromEntries(header.map((h, i) => [h, cells[i] ?? '']));
-  });
+  const [header, ...rows] = parseCsvRows(text);
+  if (!header) return [];
+  return rows.map((cells) => Object.fromEntries(header.map((h, i) => [h, cells[i] ?? ''])));
 }
 
 /**

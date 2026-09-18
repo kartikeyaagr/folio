@@ -15,16 +15,14 @@
  * record of why that output looked the way it did, so withdrawal is `retired`.
  */
 
-import { randomBytes } from 'node:crypto';
 
-import { readTxn, writeTxn, type Client } from '../db.ts';
+import { readTxn, rowId, type Client, writeTxn } from '../db.ts';
 
 export class UnknownRule extends Error {}
 export class RuleAlreadyDecided extends Error {}
 export class RuleTextRequired extends Error {}
 export class RuleReasonRequired extends Error {}
 
-const id = (): string => randomBytes(16).toString('hex');
 
 /** One correction that argued for a candidate, with the text of the correction itself. */
 export interface Observation {
@@ -154,7 +152,7 @@ async function lockRule(c: Client, ruleId: string): Promise<{ status: string; ru
  */
 export async function writeRule(agentKey: string, rule: string, actorId: string): Promise<string> {
   if (!rule.trim()) throw new RuleTextRequired('A rule needs a sentence in it.');
-  const ruleId = id();
+  const ruleId = rowId();
   await writeTxn(actorId, async (c) => {
     await c.query(
       `INSERT INTO prompt_rules (id, agent_id, origin, rule, status)

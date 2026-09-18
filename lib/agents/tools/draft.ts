@@ -20,8 +20,8 @@
  * straight.
  */
 
-import { serviceTxn } from '../../db.ts';
-import { id } from '../queue.ts';
+import { rowId, serviceTxn } from '../../db.ts';
+
 import { betaTool, resolveSubject, served, type ToolContext, type ToolSpec } from './spec.ts';
 
 const KINDS = ['note', 'memo'] as const;
@@ -101,7 +101,7 @@ export const spec: ToolSpec = {
           const cited = turn.cited();
           const sources = cited.map((chunkId) => ({ kind: 'chunk', ref: chunkId }));
 
-          const draftId = id();
+          const draftId = rowId();
           await serviceTxn('system:agents', async (c) => {
             await c.query(
               `INSERT INTO ai_drafts

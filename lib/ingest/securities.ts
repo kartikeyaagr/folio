@@ -14,6 +14,7 @@
 
 import { serviceTxn } from '../db.ts';
 import { field, NseSession, parseCsv } from './nse.ts';
+import { nseDate } from './dates.ts';
 
 const MAINBOARD = 'https://nsearchives.nseindia.com/content/equities/EQUITY_L.csv';
 const SME = 'https://nsearchives.nseindia.com/emerge/corporates/content/SME_EQUITY_L.csv';
@@ -32,12 +33,7 @@ export interface Security {
 
 /** NSE writes listing dates as `DD-MMM-YYYY`. */
 function asDate(value: string): string | null {
-  const m = /^(\d{2})-([A-Za-z]{3})-(\d{4})$/.exec(value.trim());
-  if (!m) return null;
-  const months = 'janfebmaraprmayjunjulaugsepoctnovdec';
-  const idx = months.indexOf(m[2]!.toLowerCase()) / 3;
-  if (!Number.isInteger(idx) || idx < 0) return null;
-  return `${m[3]}-${String(idx + 1).padStart(2, '0')}-${m[1]}`;
+  return nseDate(value);
 }
 
 export function parseMaster(csv: string, platform: Platform): Security[] {

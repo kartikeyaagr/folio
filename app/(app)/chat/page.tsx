@@ -6,6 +6,7 @@ import { listThreads, threadWithMessages, turnInFlight, type MessageRow } from '
 
 import { archive, askInThread, startChat } from '../../_lib/actions/chat.ts';
 import { requireUser } from '../../_lib/session.ts';
+import { dayMonthTime } from '@/components/ui';
 
 /**
  * Chat — where a question gets asked, and the agent goes and reads before answering.
@@ -24,13 +25,6 @@ import { requireUser } from '../../_lib/session.ts';
  */
 
 export const dynamic = 'force-dynamic';
-
-function ist(at: Date): string {
-  return new Intl.DateTimeFormat('en-GB', {
-    timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
-    hour12: false,
-  }).format(at);
-}
 
 /**
  * What an answer read, in one line.
@@ -126,7 +120,7 @@ export default async function ChatPage({
                 >
                   <div className="ch-row-title">{t.title}</div>
                   <div className="ch-row-meta">
-                    {t.lastAt ? ist(t.lastAt) : ist(t.createdAt)} · {t.messages} message
+                    {t.lastAt ? dayMonthTime(t.lastAt) : dayMonthTime(t.createdAt)} · {t.messages} message
                     {t.messages === 1 ? '' : 's'}
                     {t.archivedAt ? ' · archived' : ''}
                   </div>
@@ -162,7 +156,7 @@ export default async function ChatPage({
               open.messages.map((m) => (
                 <div key={m.id} className={`ch-msg ${m.role === 'person' ? 'is-me' : 'is-agent'}`}>
                   <span className="ch-who">
-                    {m.role === 'person' ? 'You' : 'Anveshak'} · {ist(m.writtenAt)}
+                    {m.role === 'person' ? 'You' : 'Anveshak'} · {dayMonthTime(m.writtenAt)}
                   </span>
                   <p className="ch-body">{m.body}</p>
                   {reading(m, user.isAdmin)}

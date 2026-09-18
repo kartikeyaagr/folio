@@ -16,6 +16,7 @@ import {
   saveSheetAction,
   saveTextAction,
 } from '../../../_lib/actions/workspace.ts';
+import { stamp } from '@/components/ui';
 
 /**
  * One document, open.
@@ -29,15 +30,6 @@ import {
  */
 
 export const dynamic = 'force-dynamic';
-
-const when = (d: Date | null): string =>
-  d === null
-    ? '—'
-    : new Intl.DateTimeFormat('en-IN', {
-        dateStyle: 'medium',
-        timeStyle: 'short',
-        timeZone: 'Asia/Kolkata',
-      }).format(d);
 
 export default async function DocumentPage({ params }: { params: Promise<{ id: string }> }) {
   await requireUser();
@@ -72,7 +64,7 @@ export default async function DocumentPage({ params }: { params: Promise<{ id: s
       <div className="page">
         {doc.archivedAt && (
           <p className="notice">
-            Archived {when(doc.archivedAt)}. It is still here and still editable — nothing in this
+            Archived {stamp(doc.archivedAt)}. It is still here and still editable — nothing in this
             system deletes writing.
           </p>
         )}
@@ -154,7 +146,7 @@ export default async function DocumentPage({ params }: { params: Promise<{ id: s
             </p>
             <Facts>
               <Fact label="Filing" value={from.filingCategory ?? <Blank why="No announcement still links to this file" />} />
-              <Fact label="Announced" value={from.announcedAt ? when(from.announcedAt) : <Blank why="Not linked to an announcement" />} />
+              <Fact label="Announced" value={from.announcedAt ? stamp(from.announcedAt) : <Blank why="Not linked to an announcement" />} />
               <Fact label="Size" value={`${(from.bytes / 1e6).toFixed(2)} MB`} />
             </Facts>
             {from.filingSubject && <p className="tbl-note">{from.filingSubject}</p>}
@@ -176,7 +168,7 @@ export default async function DocumentPage({ params }: { params: Promise<{ id: s
                 <tbody>
                   {revisions.map((r) => (
                     <tr key={r.id}>
-                      <td className="num">{when(r.writtenAt)}</td>
+                      <td className="num">{stamp(r.writtenAt)}</td>
                       <td>{r.writtenByName ?? <Blank why="Written before saves were attributed" />}</td>
                     </tr>
                   ))}

@@ -24,6 +24,7 @@
 import { createHash } from 'node:crypto';
 import { serviceTxn } from '../db.ts';
 import { NseSession } from './nse.ts';
+import { nseDate } from './dates.ts';
 
 const REFERER = 'https://www.nseindia.com/companies-listing/corporate-filings-insider-trading';
 
@@ -59,15 +60,9 @@ function text(v: unknown): string | null {
   return s === '' || s === '-' ? null : s;
 }
 
-const MONTHS = 'janfebmaraprmayjunjulaugsepoctnovdec';
-
 /** Dates arrive as DD-MMM-YYYY, sometimes with a time after them. */
 export function pitDate(value: unknown): string | null {
-  const m = /^(\d{2})-([A-Za-z]{3})-(\d{4})/.exec(String(value ?? '').trim());
-  if (!m) return null;
-  const i = MONTHS.indexOf(m[2]!.toLowerCase());
-  if (i < 0 || i % 3 !== 0) return null;
-  return `${m[3]}-${String(i / 3 + 1).padStart(2, '0')}-${m[1]}`;
+  return nseDate(value);
 }
 
 /** The same, keeping the time when there is one, because two disclosures can share a day. */

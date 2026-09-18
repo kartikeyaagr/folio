@@ -193,6 +193,14 @@
   margin-bottom: 8px;
 }
 
+/* Sign out is the last thing in the popover, so it carries no gap under it. */
+.rail-menu-out {
+  margin: 0;
+}
+.rail-menu-out .btn-link {
+  margin-bottom: 0;
+}
+
 /* --- Header ---------------------------------------------------------------------------------- */
 
 .app-head {
@@ -337,15 +345,6 @@
   padding: 8px 10px;
   font-size: 13px;
   color: var(--muted);
-}
-
-/* --- Editor shell (full-bleed, no rail) ---------------------------------------------------- */
-
-.editor-shell {
-  display: flex;
-  flex-direction: column;
-  min-height: 100vh;
-  background: var(--bg);
 }
 
 /* --- Login ----------------------------------------------------------------------------------- */

@@ -12,7 +12,7 @@
 
 import { extractText, getDocumentProxy } from 'unpdf';
 
-import { parseCsv } from '../ingest/nse.ts';
+import { parseCsvRows } from '../ingest/nse.ts';
 import { columnName } from '../sheet/cells.ts';
 import { readDocx, UnreadableDocument } from './docx.ts';
 import { readWorkbook, UnreadableWorkbook, type ImportedSheet } from './xlsx.ts';
@@ -34,22 +34,20 @@ const extensionOf = (name: string): string => {
   return i === -1 ? '' : name.slice(i + 1).toLowerCase();
 };
 
-/** A CSV becomes a grid, because that is what it is: rows of cells somebody exported from one. */
+/**
+ * A CSV becomes a grid, because that is what it is: rows of cells somebody exported from one.
+ *
+ * Positionally, via `parseCsvRows`. Routing through the keyed form was the first cut and it lost
+ * columns: a workbook exported with two columns called `Total` collapsed to one, because the keyed
+ * form is a `Record` and the second write wins. In a grid a column's position is its identity.
+ */
 export function csvToSheet(text: string, name: string): ImportedSheet {
-  const rows = parseCsv(text);
   const cells: Record<string, string> = {};
-  if (rows.length > 0) {
-    const header = Object.keys(rows[0]!);
-    header.forEach((h, c) => {
-      if (h !== '') cells[`${columnName(c)}1`] = h;
+  parseCsvRows(text).forEach((row, r) => {
+    row.forEach((v, c) => {
+      if (v !== '') cells[`${columnName(c)}${r + 1}`] = v;
     });
-    rows.forEach((row, r) => {
-      header.forEach((h, c) => {
-        const v = row[h];
-        if (v !== undefined && v !== '') cells[`${columnName(c)}${r + 2}`] = v;
-      });
-    });
-  }
+  });
   // Never a formula. A CSV cell beginning with "=" is the oldest spreadsheet attack there is, and
   // this system would happily evaluate it — so an imported CSV holds text, exactly as it arrived.
   for (const [ref, v] of Object.entries(cells)) {

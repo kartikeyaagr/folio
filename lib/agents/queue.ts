@@ -18,8 +18,7 @@
  * crashed run is caught by the lease instead.
  */
 
-import { randomBytes } from 'node:crypto';
-import { readTxn, serviceTxn } from '../db.ts';
+import { readTxn, rowId, serviceTxn } from '../db.ts';
 
 /** Generous: a long annual report legitimately takes minutes, and re-running one costs money. */
 export const LEASE_MINUTES = 30;
@@ -38,7 +37,6 @@ export const RETRY_AFTER_HOURS = 6;
 /** Per pass. A broken box should not enqueue its whole backlog on every tick of a five-minute timer. */
 export const RETRY_BATCH = 25;
 
-export const id = (): string => randomBytes(16).toString('hex');
 
 export interface EnqueueInput {
   agentKey: string;
@@ -50,7 +48,7 @@ export interface EnqueueInput {
 
 /** Enqueue an intent, never a prompt. The worker builds the prompt when it picks the run up. */
 export async function enqueue(input: EnqueueInput): Promise<string> {
-  const runId = id();
+  const runId = rowId();
   await serviceTxn('system:agents', async (c) => {
     await c.query(
       `INSERT INTO agent_runs (id, agent_key, subject_ref, company_id, request, requested_by)
@@ -89,7 +87,7 @@ export async function sweepScheduled(): Promise<number> {
     for (const r of rows) {
       // Ids are generated here rather than in SQL, like every other id in this codebase.
       // gen_random_bytes lives in pgcrypto, which is one extension more than this needs.
-      await c.query('INSERT INTO agent_runs (id, agent_key) VALUES ($1, $2)', [id(), r.key]);
+      await c.query('INSERT INTO agent_runs (id, agent_key) VALUES ($1, $2)', [rowId(), r.key]);
     }
     return rows.length;
   });

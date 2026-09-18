@@ -8,12 +8,11 @@
  * so a job can write one at all.
  */
 
-import { randomBytes } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 
 import { extractText, getDocumentProxy } from 'unpdf';
 
-import { serviceTxn, type Client } from '../db.ts';
+import { rowId, serviceTxn, type Client } from '../db.ts';
 import { pathFor } from './attachments.ts';
 
 /**
@@ -87,7 +86,7 @@ export interface Row {
  * the bug this replaces did — is not.
  */
 export async function promoteTranscript(c: Client, row: Row, text: string): Promise<boolean> {
-  const id = randomBytes(16).toString('hex');
+  const id = rowId();
   await c.query(
     `INSERT INTO documents (id, company_id, title, kind, created_by, from_attachment)
      VALUES ($1, $2, $3, 'transcript', 'system:ingest', $4)`,

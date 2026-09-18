@@ -38,6 +38,7 @@ import { createHash } from 'node:crypto';
 import type { Client } from '../db.ts';
 import { reapAll } from './reap.ts';
 import { sheetGridText } from './chunk.ts';
+import { croreText } from '../money.ts';
 
 export type SourceKind =
   | 'document_version'
@@ -297,15 +298,12 @@ const FUNDAMENTALS_SELECT = `
     FROM fundamentals f JOIN companies c ON c.id = f.company_id
    WHERE f.superseded_by IS NULL`;
 
-const CRORE = 10_000_000;
 const PERIOD_LABEL: Record<string, string> = {
   quarter: 'quarter',
   half_year: 'half year',
   year_to_date: 'year to date',
   year: 'year',
 };
-
-const cr = (v: string | null): string => (v === null ? 'not reported' : `${(Number(v) / CRORE).toFixed(1)} cr`);
 
 interface FundamentalsRow {
   companyName: string;
@@ -324,7 +322,7 @@ interface FundamentalsRow {
 function renderFundamentals(row: FundamentalsRow): { title: string; text: string } {
   const period = `${PERIOD_LABEL[row.periodKind] ?? row.periodKind} to ${row.periodEnd}`;
   const title = `${row.companyName}, ${period}`;
-  const text = `${title}: revenue ${cr(row.revenue)}, PAT ${cr(row.profitAfterTax)}`;
+  const text = `${title}: revenue ${croreText(row.revenue)}, PAT ${croreText(row.profitAfterTax)}`;
   return { title, text };
 }
 

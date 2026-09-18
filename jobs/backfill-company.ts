@@ -20,11 +20,10 @@
  * A step that fails does not stop the others: a company with no shareholding filing should still
  * get its prices, and the error is recorded against the name rather than thrown away.
  */
-import { randomBytes } from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 
-import { closePool, readTxn, serviceTxn } from '../lib/db.ts';
+import { closePool, readTxn, rowId, serviceTxn } from '../lib/db.ts';
 import {
   fetchAnnouncementsForSymbol,
   linkAllFollowed,
@@ -38,13 +37,10 @@ import { extractPending } from '../lib/ingest/extract.ts';
 import { fetchResultsForSymbol, ingestFundamentals } from '../lib/ingest/fundamentals.ts';
 import { NseSession } from '../lib/ingest/nse.ts';
 import { ingestShareholding } from '../lib/ingest/shareholding.ts';
+import { readFlags } from './_args.ts';
 
 const run = promisify(execFile);
 
-function arg(flag: string): string | undefined {
-  const i = process.argv.indexOf(flag);
-  return i >= 0 ? process.argv[i + 1] : undefined;
-}
 
 interface Target {
   id: string;
@@ -179,8 +175,9 @@ async function backfill(t: Target, priceDays: number): Promise<Step[]> {
 }
 
 async function main(): Promise<void> {
-  const only = arg('--symbol')?.trim().toUpperCase();
-  const priceDays = Number(arg('--price-days') ?? 400);
+  const flags = readFlags(['symbol', 'price-days']);
+  const only = flags.str('symbol')?.trim().toUpperCase();
+  const priceDays = Number(flags.str('price-days') ?? 400);
   if (!Number.isFinite(priceDays) || priceDays < 1) throw new Error('--price-days must be positive');
 
   const targets = await readTxn(async (c) => {
@@ -231,7 +228,7 @@ async function main(): Promise<void> {
           `INSERT INTO notification_outbox (id, kind, recipient, subject, body)
            VALUES ($1, 'backfill', $2, $3, $4)`,
           [
-            randomBytes(16).toString('hex'),
+            rowId(),
             userId,
             failed.length > 0
               ? `${t.symbol} is ready, with ${failed.length} gap${failed.length === 1 ? '' : 's'}`

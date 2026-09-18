@@ -12,13 +12,12 @@
  */
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { migrate } from '../../db/migrate.ts';
-import { closePool, serviceTxn, type Client } from '../db.ts';
+import { serviceTxn, type Client } from '../db.ts';
 import { indexOne } from './index.ts';
 import { registerAll } from './register.ts';
+import { createTestDatabase, dropTestDatabase } from '../../db/testing.ts';
 
 const DB = `trisula_sweep_${process.pid}`;
 const MODEL_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '.models', 'bge-small-en-v1.5');
@@ -39,15 +38,12 @@ async function sourceIdFor(c: Client, refId: string): Promise<string> {
 }
 
 before(async () => {
-  execFileSync('createdb', [DB]);
-  process.env.DATABASE_URL = `postgres:///${DB}`;
+  await createTestDatabase(DB);
   process.env.EMBED_MODEL_DIR = MODEL_DIR;
-  await migrate();
 });
 
 after(async () => {
-  await closePool();
-  execFileSync('dropdb', ['--if-exists', DB]);
+  await dropTestDatabase(DB);
 });
 
 test('a re-attributed source carries its already-indexed chunks to the new company', async () => {
