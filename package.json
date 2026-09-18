@@ -2,8 +2,9 @@
   "name": "trisula",
   "private": true,
   "type": "module",
+  "packageManager": "pnpm@10.27.0",
   "engines": {
-    "node": ">=22"
+    "node": ">=22.18"
   },
   "scripts": {
     "dev": "next dev -p 3100",

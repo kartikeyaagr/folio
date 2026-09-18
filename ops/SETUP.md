@@ -59,17 +59,21 @@ unzip -q /tmp/awscliv2.zip -d /tmp && sudo /tmp/aws/install && aws --version
 `age` is the backup encryption. It must be present before §7, and the AWS CLI before the first
 nightly upload — without it `backup.sh` writes the local copy and then fails at the `aws` call.
 
-## 3. Node 22+ and pnpm
+## 3. Node 22.18+ and pnpm
 
 ```bash
 curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
 sudo apt install -y nodejs
-sudo corepack enable && corepack prepare pnpm@latest --activate
+sudo corepack enable
 node --version && pnpm --version
 ```
 
-Node 22 is the floor. The code runs TypeScript natively with no build step, which is why the
-version matters more than it usually would.
+Node 22.18 is the floor — the release that made type stripping default. The code runs TypeScript
+natively with no build step, which is why the version matters more than it usually would.
+
+pnpm is pinned by `packageManager` in `package.json` and corepack reads it, so `corepack enable` is
+the whole step. Do not `corepack prepare pnpm@latest --activate`: it pins the provisioning date
+rather than a version, so two VMs built six months apart resolve different pnpm majors.
 
 ## 4. Postgres 18
 
