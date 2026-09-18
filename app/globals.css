@@ -13,83 +13,87 @@
 /*
  * Trisula.
  *
- * A ledger, not a dashboard. Warm paper, an ink rail, and no shadows anywhere — a card is a ruled
- * region rather than a floating panel, and separation is carried by the rule, the ground step and
- * the weight, in that order. One accent (`--navy`) for actions and the active state, and three
- * meaning colours — teal good, red bad, amber pending — spent only where they say something.
- * Manrope carries the chrome; Lora carries anything that is a record, including the figures in
- * `Stat`, because a number this fund rereads in three years is part of the record and not part of
- * the UI.
+ * The palette is shadcn's, read off ui.shadcn.com rather than remembered: an achromatic neutral
+ * scale at literally zero chroma, black as the primary in light and near-white in dark, borders
+ * that separate by a single step rather than by shadow. In dark, a card sits *above* the ground
+ * (#171717 on #0a0a0a) and the border becomes white at 10% — elevation is carried by lightness,
+ * not by a drop shadow, which is why the shadows here are one hairline ring and nothing else.
  *
- * Every colour is a token here and each has exactly one name. The pre-v2 vocabulary (`--paper`,
- * `--oxblood`, `--rule` …) was aliased onto these while the pages migrated; the aliases are gone,
- * so `var(--faint)` in a new file resolves to nothing and shows up, instead of quietly starting a
- * second vocabulary alongside this one.
+ * WHAT IS DELIBERATELY NOT shadcn: the three meanings. shadcn ships one non-neutral colour,
+ * `destructive`, because a documentation site has one thing to warn about. This is a book of
+ * holdings — `+66.8%` and `−17.6%` in the same column have to be separable at a glance, and a
+ * neutral-only table makes a loss look like a gain until you read the sign. So teal/red/amber stay,
+ * and the design system's rule is unchanged: one accent, three meanings, never a fourth. The
+ * accent is simply black now instead of navy.
  *
- * EVERY TOKEN IS DECLARED ONCE, via `light-dark()`. Through v3 the dark palette was a second block
- * copy-pasted into a `prefers-color-scheme` query and a third into `[data-theme='dark']` — 22
- * overrides written out twice, where adding a token to one and not the others is silent and the
- * symptom appears only in the theme you were not looking at. `light-dark()` resolves against
- * `color-scheme`, so the two override blocks below carry no colours at all: they set
- * `color-scheme` and the values follow.
+ * Every colour is a token and each has exactly one name. EVERY TOKEN IS DECLARED ONCE, via
+ * `light-dark()`: the dark palette used to be 22 overrides written out twice, where adding a token
+ * to one and not the other fails silently in whichever theme you were not looking at.
  */
 
 :root {
   /* The default. A chosen theme wins below; absent one, the OS decides. */
   color-scheme: light dark;
 
-  /* Surfaces — warm paper, not cool grey. */
-  --bg: light-dark(#f6f3ee, #15130f);
-  --surface: light-dark(#fffdfa, #1d1a15);
-  --surface-2: light-dark(#efebe3, #26221b);
-  --line: light-dark(#e0d9cd, #322d24);
-  --line-2: light-dark(#c8bfae, #474034);
+  /* Surfaces. In light, bg and card are both white and the border does the separating. In dark the
+     card lifts above the ground, which is how shadcn expresses elevation without a shadow. */
+  --bg: light-dark(#ffffff, #0a0a0a);
+  --surface: light-dark(#ffffff, #171717);
+  --surface-2: light-dark(#f5f5f5, #262626);
+  --line: light-dark(#e5e5e5, rgba(255, 255, 255, 0.1));
+  --line-2: light-dark(#d4d4d4, rgba(255, 255, 255, 0.18));
 
   /* Ink — four levels. Fewer than four and the hierarchy goes flat. */
-  --ink: light-dark(#221f1a, #f0ece4);
-  --ink-2: light-dark(#4a453c, #cdc6ba);
-  --muted: light-dark(#736c5f, #948b7c);
-  --ghost: light-dark(#a39a89, #6a6153);
+  --ink: light-dark(#0a0a0a, #fafafa);
+  --ink-2: light-dark(#404040, #d4d4d4);
+  --muted: light-dark(#737373, #a1a1a1);
+  --ghost: light-dark(#a1a1a1, #737373);
 
-  /* Brand, and the three meanings. Never a fourth — `app/tailwind.css` now enforces that. */
-  --navy: light-dark(#2a3a52, #c3cede);
-  --navy-2: light-dark(#1d2a3d, #e6ecf5);
-  --navy-soft: light-dark(#e4e7ec, #262c36);
-  --on-navy: light-dark(#fffdfa, #15130f);
-  --teal: light-dark(#1f6b52, #5fae8e);
-  --teal-soft: light-dark(#e2ece5, #1a2a23);
-  --red: light-dark(#9e3b2f, #d4796b);
-  --red-soft: light-dark(#f3e4e0, #2e1d19);
-  --amber: light-dark(#8a6416, #c99a3f);
-  --amber-soft: light-dark(#f2e9d6, #2c2415);
+  /* One accent: black, inverting to near-white in dark, exactly as shadcn's `primary` does. */
+  --navy: light-dark(#0a0a0a, #fafafa);
+  --navy-2: light-dark(#262626, #ffffff);
+  --navy-soft: light-dark(#f5f5f5, #262626);
+  --on-navy: light-dark(#fafafa, #0a0a0a);
 
-  /* The rail is ink in both themes — it is the one fixed point on the screen. */
-  --rail: light-dark(#221f1a, #0e0c09);
-  --rail-ink: light-dark(rgba(255, 253, 250, 0.62), rgba(240, 236, 228, 0.6));
-  --rail-on: #fffdfa;
+  /* The three meanings. Saturated on purpose — against a zero-chroma ground a little colour goes
+     a long way, and these are the only things on screen allowed to have any. */
+  --teal: light-dark(oklch(62.7% 0.194 149.214), oklch(79.2% 0.209 151.711));
+  --red: light-dark(#e7000b, #ff6467);
+  --amber: light-dark(oklch(66.6% 0.179 58.318), oklch(82.8% 0.189 84.429));
+
+  /* The washes are mixed from the meaning and the surface, so they follow both the colour and the
+     theme instead of being six more hand-picked values that can drift out of step. */
+  --teal-soft: color-mix(in oklab, var(--teal) 12%, var(--surface));
+  --red-soft: color-mix(in oklab, var(--red) 12%, var(--surface));
+  --amber-soft: color-mix(in oklab, var(--amber) 12%, var(--surface));
+
+  /* The rail follows the theme now. shadcn's sidebar is a near-white panel held by a border, not a
+     dark slab, so the rail stops being "the one fixed point" and becomes part of the page. */
+  --rail: light-dark(#fafafa, #171717);
+  --rail-ink: light-dark(#737373, #a1a1a1);
+  --rail-on: light-dark(#0a0a0a, #fafafa);
+  --rail-line: light-dark(#e5e5e5, rgba(255, 255, 255, 0.1));
   --rail-w: 72px;
   --head-h: 60px;
 
-  --ring: light-dark(rgba(34, 31, 26, 0.16), rgba(240, 236, 228, 0.2));
+  --ring: light-dark(#a1a1a1, #737373);
 
-  /*
-   * No depth. A card is a ruled region, so `--shadow-sm` is nothing at all and the 1px `--line`
-   * does the separating. Something that has genuinely left the page — a dialog, a popover, a
-   * toast — earns a ring rather than a drop shadow: it says "above" without pretending to a light
-   * source the rest of the page does not have.
-   */
+  /* Depth is a border, not a shadow. shadcn's cards carry a hairline and nothing else; only a
+     thing that has genuinely left the page gets a ring plus a soft drop. */
   --shadow-sm: none;
-  --shadow-lg: 0 0 0 1px var(--line-2);
+  --shadow-ring: light-dark(#e5e5e5, rgba(255, 255, 255, 0.12));
+  --shadow-drop: light-dark(rgba(0, 0, 0, 0.12), rgba(0, 0, 0, 0.6));
+  --shadow-lg: 0 0 0 1px var(--shadow-ring), 0 16px 40px var(--shadow-drop);
 
-  /* Softened, because a hairline already separates and a hard corner repeats the statement. */
-  --r-sm: 7px;
-  --r-md: 10px;
-  --r-lg: 14px;
-  --r-xl: 18px;
+  /* shadcn ships one radius, 0.625rem, and derives the rest from it. */
+  --r-sm: 6px;
+  --r-md: 8px;
+  --r-lg: 10px;
+  --r-xl: 12px;
 
-  /* Type. `next/font` injects `--font-sans` and `--font-serif`; these name what they are for. */
+  /* Geist for anything written, Geist Mono for every figure. */
   --font: var(--font-sans), ui-sans-serif, system-ui, -apple-system, sans-serif;
-  --serif: var(--font-serif), Georgia, 'Iowan Old Style', serif;
+  --mono: var(--font-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
 
   /* Motion. Ease-out only — ease-in delays the frame the user is watching. */
   --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
@@ -142,6 +146,17 @@ th,
 [data-num] {
   font-variant-numeric: tabular-nums;
 }
+/* Geist Mono on every declared figure. A holdings table is read down its columns, and in a
+   proportional face 1,42,000 and 96,400 are different widths for the same digit count, so the eye
+   re-finds the decimal on every row. `.num` marks a numeric cell in 79 places; nothing else here
+   becomes monospace, least of all a company name. */
+.num,
+[data-num],
+.stat-v,
+.fact-v {
+  font-family: var(--mono);
+  font-feature-settings: 'tnum' 1;
+}
 
 a {
   color: var(--navy);
@@ -154,7 +169,7 @@ a:hover {
 
 /* Serif is for things that are documents — memo bodies, the document editor, long prose. */
 .prose {
-  font-family: var(--serif);
+  font-family: var(--font);
   font-size: 15.5px;
   line-height: 1.65;
 }
@@ -688,13 +703,9 @@ select:focus-visible {
   color: var(--muted);
 }
 .stat-v {
-  /* Lora, not Manrope. The split is the point: a figure this fund rereads in three years belongs to
-     the written record, and the record should not look like UI. Applies to `Stat` only — `Fact`
-     tiles are chrome-scale context and stay in Manrope. */
-  font-family: var(--serif);
   font-size: 22px;
-  font-weight: 700;
-  letter-spacing: -0.015em;
+  font-weight: 600;
+  letter-spacing: -0.02em;
   line-height: 1.15;
   font-variant-numeric: tabular-nums;
 }

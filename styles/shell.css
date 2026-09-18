@@ -31,6 +31,8 @@
   padding: 16px 0 14px;
   background: var(--rail);
   color: var(--rail-on);
+  /* shadcn's sidebar is held by a border, not by contrast against the page. */
+  border-right: 1px solid var(--rail-line);
 }
 .rail-brand {
   width: 32px;
@@ -38,16 +40,16 @@
   margin-bottom: 14px;
   display: grid;
   place-items: center;
-  border-radius: 9px;
-  background: rgba(255, 255, 255, 0.14);
-  color: var(--rail-on);
-  font-weight: 800;
+  border-radius: var(--r-md);
+  background: var(--navy);
+  color: var(--on-navy);
+  font-weight: 700;
   font-size: 14px;
   text-decoration: none;
 }
 .rail-brand:hover {
-  background: rgba(255, 255, 255, 0.24);
-  color: var(--rail-on);
+  background: var(--navy-2);
+  color: var(--on-navy);
 }
 .rail-hub {
   position: relative;
@@ -71,11 +73,11 @@
     color 140ms var(--ease);
 }
 .rail-hub:hover {
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--navy-soft);
   color: var(--rail-on);
 }
 .rail-hub[aria-current='page'] {
-  background: rgba(255, 255, 255, 0.16);
+  background: var(--navy-soft);
   color: var(--rail-on);
 }
 .rail-hub svg {
@@ -116,11 +118,11 @@
     color 140ms var(--ease);
 }
 .rail-icon:hover {
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--navy-soft);
   color: var(--rail-on);
 }
 .rail-icon:focus-visible {
-  outline-color: var(--rail-on);
+  outline-color: var(--ring);
 }
 
 /* The avatar and its menu. A <details>, so it needs no script and closes on the next click. */
@@ -134,9 +136,9 @@
   height: 34px;
   display: grid;
   place-items: center;
-  border: 1px solid rgba(255, 255, 255, 0.25);
+  border: 1px solid var(--line-2);
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--surface-2);
   color: var(--rail-on);
   font-weight: 700;
   font-size: 12px;
@@ -146,10 +148,10 @@
   display: none;
 }
 .rail-menu > summary:hover {
-  background: rgba(255, 255, 255, 0.18);
+  background: var(--navy-soft);
 }
 .rail-menu[open] > summary {
-  background: rgba(255, 255, 255, 0.22);
+  background: var(--navy-soft);
 }
 .rail-menu-pop {
   position: absolute;
@@ -383,7 +385,7 @@
   font-size: 13px;
 }
 .login-copy h1 {
-  font-family: var(--serif);
+  font-family: var(--font);
   font-weight: 500;
   font-size: 56px;
   line-height: 1.05;

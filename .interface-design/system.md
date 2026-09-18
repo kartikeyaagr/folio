@@ -13,28 +13,40 @@ years and audited in five.
 
 ## Feel
 
-**A ledger, not a dashboard.** Warm paper, an ink rail, and no shadows anywhere: a card is a ruled
-region, not a floating panel. Hierarchy comes from the rule, the ground step and the weight — in
-that order — and never from depth. Corners are softened rather than sharp, because a hairline
-already does the separating and a hard corner on top of it reads as two statements of the same
-thing. Dense where the work is dense, calm everywhere else.
+**Achromatic and quiet, after shadcn.** The palette is shadcn's own, read off ui.shadcn.com rather
+than remembered: a neutral scale at literally zero chroma, black as the accent in light and
+near-white in dark, and separation carried by a single-step border rather than by shadow. In dark a
+card sits *above* the ground — `#171717` on `#0a0a0a` — so elevation is lightness, not a drop
+shadow. Dense where the work is dense, calm everywhere else.
+
+**The one thing here that is not shadcn is the colour that means something.** shadcn ships a single
+non-neutral token, `destructive`, because a documentation site has one thing to warn about. This is
+a book of holdings: `+66.8%` and `−17.6%` sit in the same column and have to be separable before
+the sign is read. So teal, red and amber stay. The rule is unchanged — one accent, three meanings,
+never a fourth — and the accent is simply black now instead of navy.
 
 ## Direction
 
 |             |                                                                                                                                                                                                  |
 | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Ground**  | `--bg` #f6f3ee, a warm paper. Cards are `--surface` #fffdfa; inset areas (tiles, table heads, segmented controls) are `--surface-2` #efebe3. Dark swaps the whole set; the rail stays ink.       |
+| **Ground**  | `--bg` #ffffff. In light the card is white too and the `--line` #e5e5e5 border does the separating; in dark `--bg` #0a0a0a and `--surface` #171717, so the card lifts. Inset areas are `--surface-2` #f5f5f5 / #262626. Borders in dark are white at 10%, not a solid grey. |
 | **Ink**     | Four levels: `--ink` `--ink-2` `--muted` `--ghost`. Fewer than four and hierarchy goes flat. `--ghost` is for non-text only.                                                                     |
-| **Accent**  | One: `--navy` #2a3a52, for the primary action and the active state. Three meanings — `--teal` good, `--red` bad, `--amber` pending — each with a `-soft` wash. **Never a fourth**, and since v4 that is enforced by the build rather than by memory: see *Tailwind* below. |
-| **Depth**   | **None.** `--shadow-sm` is `none`. Separation is a 1px `--line`; a thing that has left the page (dialog, popover, toast) gets a `--line-2` ring, not a drop shadow. Boxes inside a card use a rule. |
-| **Type**    | `Manrope` for chrome; `Lora` for anything that is a record — document bodies, the editor, `.prose`, **and the figures in `Stat`**. A number this fund will reread in three years is part of the record, not part of the UI. Both self-hosted via `next/font/google` — no runtime CDN, because the app runs behind Tailscale. |
-| **Scale**   | 14px base. Titles 18/600, detail headlines 26/600, stats 22/800, facts 18–20/800, eyebrows 12/700 uppercase. Hierarchy comes from **weight and colour first**, size last.                        |
+| **Accent**  | One: `--navy`, now **black** (#0a0a0a) inverting to #fafafa in dark, exactly as shadcn's `primary` does. The token keeps its name because renaming it touches every stylesheet; it no longer means the colour navy. Three meanings — `--teal` good, `--red` bad, `--amber` pending — each with a `-soft` wash **mixed from the meaning and the surface**, so a wash cannot drift out of step with its colour or its theme. **Never a fourth**, enforced by the build: see *Tailwind*. |
+| **Depth**   | **None on a card.** `--shadow-sm` is `none` and a hairline separates, which is what shadcn does. Only a thing that has genuinely left the page — dialog, popover, toast — takes `--shadow-lg`: a 1px ring plus a soft drop. |
+| **Type**    | `Geist` for everything written; `Geist Mono` for every figure. The split is no longer serif-versus-sans, it is prose-versus-number: a holdings table is read down its columns, and in a proportional face `1,42,000` and `96,400` are different widths for the same digit count, so the eye re-finds the decimal on every row. The mono face is hung on `.num` / `[data-num]`, which is the app's own marker for a numeric cell — 79 call sites — plus `.stat-v` and `.fact-v`. A company name never becomes monospace. Both faces self-hosted via `next/font/google`; both happen to be on Google Fonts, which is what makes this direction available at all, because a CDN-only face could not be used behind Tailscale however good it looked. |
+| **Scale**   | 14px base, not shadcn's 16px — this is a dense book of holdings, not a docs site, and that is the one density decision not taken from them. Titles 18/600, detail headlines 26/600, stats 22/600, facts 18–20/800, eyebrows 12/700 uppercase. Hierarchy comes from **weight and colour first**, size last. |
 | **Numbers** | `tabular-nums` globally on `td`, `th`, `.num`, `[data-num]`. Indian grouping (`inr()`), crore where the fund thinks in crore (`crore()`).                                                        |
-| **Spacing** | Base 4. Table cells `9px 13px`. Card body `16px 18px`. Pane body `26px 30px`. Page gap 16. The rail is 72px; the header 60px.                                                                    |
-| **Radius**  | `--r-sm` 7 (inputs, seg options) · `--r-md` 10 (buttons, fields) · `--r-lg` 14 (cards, panes) · `--r-xl` 18 (dialogs, login card). The hatch keeps 3: it is a mark, not a container.             |
+| **Spacing** | Base 4. Table cells `9px 13px`. Card body `16px 18px`. Pane body `26px 30px`. Page gap 16. The rail is 72px; the header 60px. |
+| **Radius**  | shadcn ships one radius, `0.625rem`, and derives the rest. Here: `--r-sm` 6 (inputs, seg options) · `--r-md` 8 (buttons, fields) · `--r-lg` 10 (cards, panes) · `--r-xl` 12 (dialogs, login card). The hatch keeps 3: it is a mark, not a container. |
 | **Motion**  | ≤350ms, `--ease` (ease-out) only. `rise` for anything that appears. Press is `scale(0.97)`. Never animate anything but transform and opacity. `prefers-reduced-motion` drops movement.           |
 
 ## Structure
+
+**The rail follows the theme now.** Through v3 it was "the one fixed point on the screen" — navy,
+then ink, dark in both themes. shadcn's sidebar is a near-white panel held by a border, and taking
+its philosophy means taking that: `--rail` is #fafafa in light and #171717 in dark, with a
+`--rail-line` border doing the separating. Everything in the rail that used to be white-at-alpha is
+a token, because white-at-alpha assumed a dark slab and disappears on a light one.
 
 **Six hubs, not twenty pages.** The rail in `components/Rail.tsx` is the single source: Desk · News ·
 Portfolio · Companies · Agents · Chat. It is six and not the five this document claimed through v3 —
@@ -107,7 +119,7 @@ Measurements worth remembering:
 - `.tbl` — head 11px/600 uppercase `0.03em` on `--surface-2`, sticky; cells `9px 13px`; row hover
   `--surface-2`. **Always wrap in `.tbl-scroll`.**
 - `Chip` — 22px pill, 11px/700, soft wash.
-- `Stat` — its own card; label 11px uppercase, value 22px/800 in Lora, sub 11.5px.
+- `Stat` — its own card; label 11px uppercase, value 22px/600 in Geist Mono, sub 11.5px.
 - `Fact` — tinted tile; label 11px uppercase, value 18px/800.
 
 ## Tailwind, and what it is allowed to do
