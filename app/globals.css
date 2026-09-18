@@ -1,3 +1,6 @@
+/* Tailwind's theme and utilities — no preflight, no default palette. See tailwind.css. */
+@import './tailwind.css';
+
 /* Thesis and the editor are not carried forward: D2 cut /thesis, /memo and /pipeline. */
 @import '../styles/shell.css';
 @import '../styles/company.css';
