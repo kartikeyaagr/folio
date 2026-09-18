@@ -30,7 +30,7 @@
   gap: 4px;
   padding: 16px 0 14px;
   background: var(--rail);
-  color: #fff;
+  color: var(--rail-on);
 }
 .rail-brand {
   width: 32px;
@@ -40,14 +40,14 @@
   place-items: center;
   border-radius: 9px;
   background: rgba(255, 255, 255, 0.14);
-  color: #fff;
+  color: var(--rail-on);
   font-weight: 800;
   font-size: 14px;
   text-decoration: none;
 }
 .rail-brand:hover {
   background: rgba(255, 255, 255, 0.24);
-  color: #fff;
+  color: var(--rail-on);
 }
 .rail-hub {
   position: relative;
@@ -58,9 +58,9 @@
   gap: 3px;
   padding: 6px 0 4px;
   border: 0;
-  border-radius: 10px;
+  border-radius: var(--r-md);
   background: transparent;
-  color: rgba(255, 255, 255, 0.62);
+  color: var(--rail-ink);
   font-size: 10px;
   font-weight: 600;
   letter-spacing: 0.02em;
@@ -72,11 +72,11 @@
 }
 .rail-hub:hover {
   background: rgba(255, 255, 255, 0.1);
-  color: #fff;
+  color: var(--rail-on);
 }
 .rail-hub[aria-current='page'] {
   background: rgba(255, 255, 255, 0.16);
-  color: #fff;
+  color: var(--rail-on);
 }
 .rail-hub svg {
   display: block;
@@ -89,8 +89,10 @@
   height: 16px;
   padding: 0 4px;
   border-radius: 999px;
-  background: #4fb695;
-  color: #0f2440;
+  /* Tokenised: this pair was literal `#4fb695` on `#0f2440`, which survived the rail going from
+     navy to ink by not noticing. `--rail` is the ground it actually sits on. */
+  background: var(--teal);
+  color: var(--rail);
   font-size: 10px;
   font-weight: 800;
   line-height: 16px;
@@ -105,9 +107,9 @@
   display: grid;
   place-items: center;
   border: 0;
-  border-radius: 10px;
+  border-radius: var(--r-md);
   background: transparent;
-  color: rgba(255, 255, 255, 0.65);
+  color: var(--rail-ink);
   cursor: pointer;
   transition:
     background-color 140ms var(--ease),
@@ -115,10 +117,10 @@
 }
 .rail-icon:hover {
   background: rgba(255, 255, 255, 0.1);
-  color: #fff;
+  color: var(--rail-on);
 }
 .rail-icon:focus-visible {
-  outline-color: #fff;
+  outline-color: var(--rail-on);
 }
 
 /* The avatar and its menu. A <details>, so it needs no script and closes on the next click. */
@@ -135,7 +137,7 @@
   border: 1px solid rgba(255, 255, 255, 0.25);
   border-radius: 50%;
   background: rgba(255, 255, 255, 0.08);
-  color: #fff;
+  color: var(--rail-on);
   font-weight: 700;
   font-size: 12px;
   cursor: pointer;
@@ -226,7 +228,7 @@
 }
 .app-title {
   font-size: 18px;
-  font-weight: 700;
+  font-weight: 600;
   letter-spacing: -0.01em;
   white-space: nowrap;
   margin: 0;
@@ -376,7 +378,7 @@
   place-items: center;
   border-radius: 8px;
   background: var(--rail);
-  color: #fff;
+  color: var(--rail-on);
   font-weight: 800;
   font-size: 13px;
 }

@@ -13,56 +13,79 @@
 /*
  * Trisula.
  *
- * A navy rail, white cards on a cool grey ground, one accent (navy) for actions and three meaning
- * colours — teal for good, red for bad, amber for pending — spent only where they say something.
- * Depth is a soft shadow on cards and a firm one on anything that leaves the page. Manrope carries
- * the chrome; Lora carries anything that is a document.
+ * A ledger, not a dashboard. Warm paper, an ink rail, and no shadows anywhere — a card is a ruled
+ * region rather than a floating panel, and separation is carried by the rule, the ground step and
+ * the weight, in that order. One accent (`--navy`) for actions and the active state, and three
+ * meaning colours — teal good, red bad, amber pending — spent only where they say something.
+ * Manrope carries the chrome; Lora carries anything that is a record, including the figures in
+ * `Stat`, because a number this fund rereads in three years is part of the record and not part of
+ * the UI.
  *
- * Every colour is a token here, and each has exactly one name. The pre-v2 vocabulary (`--paper`,
- * `--oxblood`, `--rule` …) was aliased onto these tokens while the pages migrated; the migration is
- * finished and the aliases are gone, so `var(--faint)` in a new file now resolves to nothing and
- * shows up, instead of quietly starting a second vocabulary alongside this one.
+ * Every colour is a token here and each has exactly one name. The pre-v2 vocabulary (`--paper`,
+ * `--oxblood`, `--rule` …) was aliased onto these while the pages migrated; the aliases are gone,
+ * so `var(--faint)` in a new file resolves to nothing and shows up, instead of quietly starting a
+ * second vocabulary alongside this one.
+ *
+ * EVERY TOKEN IS DECLARED ONCE, via `light-dark()`. Through v3 the dark palette was a second block
+ * copy-pasted into a `prefers-color-scheme` query and a third into `[data-theme='dark']` — 22
+ * overrides written out twice, where adding a token to one and not the others is silent and the
+ * symptom appears only in the theme you were not looking at. `light-dark()` resolves against
+ * `color-scheme`, so the two override blocks below carry no colours at all: they set
+ * `color-scheme` and the values follow.
  */
 
 :root {
-  /* Surfaces */
-  --bg: #f4f6f9;
-  --surface: #ffffff;
-  --surface-2: #f0f3f7;
-  --line: #e2e7ee;
-  --line-2: #cbd3de;
+  /* The default. A chosen theme wins below; absent one, the OS decides. */
+  color-scheme: light dark;
+
+  /* Surfaces — warm paper, not cool grey. */
+  --bg: light-dark(#f6f3ee, #15130f);
+  --surface: light-dark(#fffdfa, #1d1a15);
+  --surface-2: light-dark(#efebe3, #26221b);
+  --line: light-dark(#e0d9cd, #322d24);
+  --line-2: light-dark(#c8bfae, #474034);
 
   /* Ink — four levels. Fewer than four and the hierarchy goes flat. */
-  --ink: #15223a;
-  --ink-2: #3b475c;
-  --muted: #6b7689;
-  --ghost: #98a2b3;
+  --ink: light-dark(#221f1a, #f0ece4);
+  --ink-2: light-dark(#4a453c, #cdc6ba);
+  --muted: light-dark(#736c5f, #948b7c);
+  --ghost: light-dark(#a39a89, #6a6153);
 
-  /* Brand, and the three meanings. Never a fourth. */
-  --navy: #0f2440;
-  --navy-2: #1a3559;
-  --navy-soft: #e7edf6;
-  --on-navy: #ffffff;
-  --teal: #1f7a63;
-  --teal-soft: #e3f2ec;
-  --red: #b4413a;
-  --red-soft: #f9e9e7;
-  --amber: #a86f1a;
-  --amber-soft: #f9f0dd;
+  /* Brand, and the three meanings. Never a fourth — `app/tailwind.css` now enforces that. */
+  --navy: light-dark(#2a3a52, #c3cede);
+  --navy-2: light-dark(#1d2a3d, #e6ecf5);
+  --navy-soft: light-dark(#e4e7ec, #262c36);
+  --on-navy: light-dark(#fffdfa, #15130f);
+  --teal: light-dark(#1f6b52, #5fae8e);
+  --teal-soft: light-dark(#e2ece5, #1a2a23);
+  --red: light-dark(#9e3b2f, #d4796b);
+  --red-soft: light-dark(#f3e4e0, #2e1d19);
+  --amber: light-dark(#8a6416, #c99a3f);
+  --amber-soft: light-dark(#f2e9d6, #2c2415);
 
-  /* The rail is navy in both themes — it is the one fixed point on the screen. */
-  --rail: #0f2440;
+  /* The rail is ink in both themes — it is the one fixed point on the screen. */
+  --rail: light-dark(#221f1a, #0e0c09);
+  --rail-ink: light-dark(rgba(255, 253, 250, 0.62), rgba(240, 236, 228, 0.6));
+  --rail-on: #fffdfa;
   --rail-w: 72px;
   --head-h: 60px;
 
-  --ring: rgba(15, 36, 64, 0.14);
-  --shadow-sm: 0 1px 2px rgba(15, 36, 64, 0.06), 0 1px 1px rgba(15, 36, 64, 0.04);
-  --shadow-lg: 0 12px 32px rgba(15, 36, 64, 0.14), 0 2px 6px rgba(15, 36, 64, 0.08);
+  --ring: light-dark(rgba(34, 31, 26, 0.16), rgba(240, 236, 228, 0.2));
 
-  --r-sm: 6px;
-  --r-md: 8px;
-  --r-lg: 12px;
-  --r-xl: 14px;
+  /*
+   * No depth. A card is a ruled region, so `--shadow-sm` is nothing at all and the 1px `--line`
+   * does the separating. Something that has genuinely left the page — a dialog, a popover, a
+   * toast — earns a ring rather than a drop shadow: it says "above" without pretending to a light
+   * source the rest of the page does not have.
+   */
+  --shadow-sm: none;
+  --shadow-lg: 0 0 0 1px var(--line-2);
+
+  /* Softened, because a hairline already separates and a hard corner repeats the statement. */
+  --r-sm: 7px;
+  --r-md: 10px;
+  --r-lg: 14px;
+  --r-xl: 18px;
 
   /* Type. `next/font` injects `--font-sans` and `--font-serif`; these name what they are for. */
   --font: var(--font-sans), ui-sans-serif, system-ui, -apple-system, sans-serif;
@@ -70,61 +93,13 @@
 
   /* Motion. Ease-out only — ease-in delays the frame the user is watching. */
   --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+}
 
+/* The toggle wins either way; it carries no colours, only which half of `light-dark()` applies. */
+:root[data-theme='light'] {
   color-scheme: light;
 }
-
-/* Dark. The OS preference applies when no theme has been chosen; the toggle wins either way. */
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme='light']) {
-    --bg: #0e131c;
-    --surface: #151c28;
-    --surface-2: #1c2533;
-    --line: #26324a;
-    --line-2: #34425c;
-    --ink: #e9edf4;
-    --ink-2: #c3cbd9;
-    --muted: #8a96ad;
-    --ghost: #5c6780;
-    --navy: #dfe7f3;
-    --navy-2: #ffffff;
-    --navy-soft: #1f2c42;
-    --on-navy: #0e131c;
-    --teal: #4fb695;
-    --teal-soft: #15302a;
-    --red: #e07a72;
-    --red-soft: #3a1f1e;
-    --amber: #d9a54a;
-    --amber-soft: #3a2e17;
-    --ring: rgba(223, 231, 243, 0.18);
-    --shadow-sm: 0 0 0 1px rgba(255, 255, 255, 0.04);
-    --shadow-lg: 0 0 0 1px rgba(255, 255, 255, 0.06), 0 20px 50px rgba(0, 0, 0, 0.6);
-    color-scheme: dark;
-  }
-}
 :root[data-theme='dark'] {
-  --bg: #0e131c;
-  --surface: #151c28;
-  --surface-2: #1c2533;
-  --line: #26324a;
-  --line-2: #34425c;
-  --ink: #e9edf4;
-  --ink-2: #c3cbd9;
-  --muted: #8a96ad;
-  --ghost: #5c6780;
-  --navy: #dfe7f3;
-  --navy-2: #ffffff;
-  --navy-soft: #1f2c42;
-  --on-navy: #0e131c;
-  --teal: #4fb695;
-  --teal-soft: #15302a;
-  --red: #e07a72;
-  --red-soft: #3a1f1e;
-  --amber: #d9a54a;
-  --amber-soft: #3a2e17;
-  --ring: rgba(223, 231, 243, 0.18);
-  --shadow-sm: 0 0 0 1px rgba(255, 255, 255, 0.04);
-  --shadow-lg: 0 0 0 1px rgba(255, 255, 255, 0.06), 0 20px 50px rgba(0, 0, 0, 0.6);
   color-scheme: dark;
 }
 
@@ -547,7 +522,7 @@ select:focus-visible {
   top: 0;
   z-index: 1;
   text-align: left;
-  padding: 10px 12px;
+  padding: 9px 13px;
   background: var(--surface-2);
   border-bottom: 1px solid var(--line);
   color: var(--muted);
@@ -566,7 +541,7 @@ select:focus-visible {
   color: var(--ink);
 }
 .tbl td {
-  padding: 10px 12px;
+  padding: 9px 13px;
   border-bottom: 1px solid var(--line);
   vertical-align: top;
 }
@@ -713,9 +688,13 @@ select:focus-visible {
   color: var(--muted);
 }
 .stat-v {
+  /* Lora, not Manrope. The split is the point: a figure this fund rereads in three years belongs to
+     the written record, and the record should not look like UI. Applies to `Stat` only — `Fact`
+     tiles are chrome-scale context and stay in Manrope. */
+  font-family: var(--serif);
   font-size: 22px;
-  font-weight: 800;
-  letter-spacing: -0.02em;
+  font-weight: 700;
+  letter-spacing: -0.015em;
   line-height: 1.15;
   font-variant-numeric: tabular-nums;
 }
