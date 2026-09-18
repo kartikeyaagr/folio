@@ -62,7 +62,7 @@ export default async function DocumentsPage({
             <Empty>
               {showArchived
                 ? 'Nothing archived.'
-                : 'Nothing written yet. Notes, memos and models are made on a company page; transcripts arrive with the filings.'}
+                : 'Nothing written yet. Notes, memos and models are made on a company page.'}
             </Empty>
           ) : (
             <div className="tbl-scroll">
@@ -85,7 +85,7 @@ export default async function DocumentsPage({
                         ) : (
                           // Not a gap: a brief covering the whole book belongs to no one name, and
                           // this list is where it is reachable at all.
-                          <Blank why="About the book rather than one company" />
+                          <Blank why="About the book, not one company" />
                         )}
                       </td>
                       <td>
@@ -97,7 +97,7 @@ export default async function DocumentsPage({
                       </td>
                       <td className="num">{d.versions}</td>
                       <td className="num">{when(d.updatedAt)}</td>
-                      <td>{d.updatedByName ?? <Blank why="Written before saves were attributed" />}</td>
+                      <td>{d.updatedByName ?? <Blank why="Saved before authorship was recorded" />}</td>
                     </tr>
                   ))}
                 </tbody>

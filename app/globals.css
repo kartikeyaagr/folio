@@ -1466,3 +1466,100 @@ dialog.dlg[open] {
   background: var(--teal);
   color: var(--on-navy, #fff);
 }
+
+/* The mailbox panel in the avatar menu: what the daily update leaves from, and whether it worked.
+   `.mbx-bad` is the whole reason the panel is there — a linked mailbox that stopped working still
+   delivers, because the digest falls back to the shared relay, so the only way to notice is to be
+   told. */
+.mbx-now {
+  margin-bottom: 4px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.mbx-now code {
+  font-size: 12px;
+}
+.mbx-now form {
+  margin-top: 8px;
+}
+.mbx-bad {
+  margin-top: 6px;
+  padding: 8px 10px;
+  border-radius: var(--r-md);
+  background: var(--red-soft);
+  color: var(--red);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+/* The request desk. One company for the whole page, then a card per agent. */
+.ask-company {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.ask-company select.field {
+  flex: 1;
+  min-width: 0;
+}
+.ask-what {
+  margin-top: 0;
+  margin-bottom: 12px;
+}
+.ask-form {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.ask-pick {
+  flex: 1;
+  min-width: 220px;
+}
+
+/* First sign-in: the one thing worth interrupting for. Shown once and dismissed by doing either
+   thing — linking, or saying not now — so it can never become a dialog somebody learns to close. */
+.first-run {
+  border-left: 3px solid var(--teal);
+}
+.first-run .btn + .btn {
+  margin-left: 8px;
+}
+
+/* The agent grid on /chat. A card is a link: the whole thing is the target, not a word inside it. */
+.ag-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 12px;
+}
+.ag-card {
+  display: grid;
+  align-content: start;
+  gap: 4px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  color: var(--ink);
+  text-decoration: none;
+  transition: border-color 120ms var(--ease), background-color 120ms var(--ease);
+}
+.ag-card:hover {
+  border-color: var(--teal);
+  background: var(--surface-2);
+}
+.ag-card:focus-visible {
+  outline-offset: 2px;
+}
+.ag-card-what {
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--ink-2);
+}
+.ag-card-n {
+  margin-top: 4px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--muted);
+}

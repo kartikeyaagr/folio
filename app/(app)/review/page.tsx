@@ -1,6 +1,6 @@
 import Link from 'next/link';
 
-import { pendingDrafts } from '@/lib/agents/review.ts';
+import { pendingDraftCount, pendingDrafts } from '@/lib/agents/review.ts';
 import { shapeFor } from '@/lib/agents/shapes.ts';
 import { label } from '@/lib/agents/paths.ts';
 import { Brief } from '@/components/Brief.tsx';
@@ -28,8 +28,10 @@ export const dynamic = 'force-dynamic';
  * Only the plain `{kind, ref}` shape is unwrapped, and that narrowness is deliberate: agents 1, 2
  * and 6 carry extra fields on theirs — a period, a count of filings — and stringifying those whole
  * is still the most honest rendering available until somebody designs a real one. What changed is
- * that a chat draft can cite a dozen passages, and a dozen lines of `{"ref":"2742","kind":"chunk"}`
+ * that one draft could cite a dozen passages, and a dozen lines of `{"ref":"2742","kind":"chunk"}`
  * is provenance a reader skips, which trains exactly the waving-through this screen exists to stop.
+ * The agent that did that is gone (`0053`); the narrowness stays, because agents 1, 2 and 6 still
+ * carry extra fields on their sources and stringifying those whole is still the honest rendering.
  */
 function sourceLine(s: unknown): string {
   if (s !== null && typeof s === 'object') {
@@ -43,29 +45,66 @@ function sourceLine(s: unknown): string {
 }
 
 export default async function ReviewPage() {
-  await requireUser();
-  const drafts = await pendingDrafts();
+  // Kept rather than discarded. Migration `0030`: model, effort and spend are operating detail
+  // about how the system is run, not research anybody needs to do their job, and "a per-run dollar
+  // figure invites the wrong argument about which questions are worth asking" — which is a worse
+  // argument to invite *here* than on `/agents`, because here it sits above the accept button.
+  const user = await requireUser();
+  const [drafts, waiting] = await Promise.all([pendingDrafts(), pendingDraftCount()]);
+  const capped = waiting > drafts.length;
 
   return (
     <>
       <AppHeader
         title="Review"
-        subtitle={drafts.length === 0 ? 'Nothing waiting' : `${drafts.length} waiting`}
+        subtitle={
+          waiting === 0
+            ? 'Nothing waiting'
+            // `drafts.length` is the number *or fifty, whichever is smaller*. Stating it as the
+            // count put this screen at odds with the rail badge beside it, which has no limit.
+            : capped
+              ? `${waiting} waiting · the newest ${drafts.length} are below`
+              : `${waiting} waiting`
+        }
       />
 
       <div className="page">
         {drafts.length === 0 ? (
           <Card title="Queue">
-            <Empty>
-              No drafts are waiting. An agent writes into this queue and nothing it writes reaches
-              the record until somebody here accepts it.
-            </Empty>
+            <Empty>No drafts are waiting.</Empty>
           </Card>
         ) : (
           drafts.map((d) => {
+            /*
+              Two verifiers write into this column and they check different things, so the union is
+              the honest type. Agent 1's is arithmetic — the filed figure beside what the model
+              read. Agent 7's is structural: `verifyStructure()` returns which checklist items were
+              left out and which were marked `clear` on something no filing can show. Only `checks`
+              had a renderer, so a forensic draft displayed a red "disagrees" chip over an empty
+              space — a verdict with its evidence withheld, on the agent `agent-specs.md` says runs
+              at `high` rather than `xhigh` precisely because this net exists.
+            */
             const verified = d.verification as
-              | { agreed: boolean | null; checks?: { field: string; filed: number | null; model: number | null; agreed: boolean }[]; note?: string }
+              | {
+                  agreed: boolean | null;
+                  checks?: { field: string; filed: number | null; model: number | null; agreed: boolean }[];
+                  missing?: number[];
+                  overconfident?: number[];
+                  note?: string;
+                }
               | null;
+            const shapeProblems: { what: string; why: string; items: number[] }[] = [
+              {
+                what: 'Not answered',
+                why: 'It was not answered.',
+                items: verified?.missing ?? [],
+              },
+              {
+                what: 'Marked clear on something a filing cannot show',
+                why: 'A filing cannot show this.',
+                items: verified?.overconfident ?? [],
+              },
+            ].filter((p) => p.items.length > 0);
             const shape = shapeFor(d.agentKey, d.content);
             const shown = readOnly(d.content, shape);
             return (
@@ -83,9 +122,11 @@ export default async function ReviewPage() {
                   </>
                 }
                 action={
-                  <span className="draft-meta">
-                    {d.model} · {d.costUsd ? `$${Number(d.costUsd).toFixed(4)}` : 'cost unknown'}
-                  </span>
+                  user.isAdmin ? (
+                    <span className="draft-meta">
+                      {d.model} · {d.costUsd ? `$${Number(d.costUsd).toFixed(4)}` : 'cost unknown'}
+                    </span>
+                  ) : undefined
                 }
               >
                 {/*
@@ -94,20 +135,9 @@ export default async function ReviewPage() {
                 */}
                 <Eyebrow>Built from</Eyebrow>
                 <ul className="draft-sources">
-                  {/*
-                    A draft proposed inside a thread links back to it. Everything above this line
-                    says what was read; this says what was being asked, which is the half a reader
-                    needs to judge whether the answer is to the right question. Null for every
-                    draft an agent wrote off a sweep, which is most of them.
-                  */}
-                  {d.threadId && (
-                    <li>
-                      <Link href={`/chat?thread=${d.threadId}`}>Read the conversation →</Link>
-                    </li>
-                  )}
                   {d.sources.length === 0 ? (
                     <li>
-                      <Blank why="This draft recorded no sources, which is itself worth asking about" />
+                      <Blank why="No sources recorded" />
                     </li>
                   ) : (
                     d.sources.map((s, i) => <li key={i}>{sourceLine(s)}</li>)
@@ -143,6 +173,22 @@ export default async function ReviewPage() {
                           </tbody>
                         </table>
                       </div>
+                    )}
+                    {/*
+                      The item numbers, not a count. "2 items missing" tells a reviewer that
+                      something is wrong and not where to look; the numbers below are the same ones
+                      the answers carry, so the way from the chip to the row is a scroll.
+                    */}
+                    {shapeProblems.length > 0 && (
+                      <ul className="draft-shape">
+                        {shapeProblems.map((p) => (
+                          <li key={p.what}>
+                            <b>{p.what}</b>
+                            {' — item'}{p.items.length === 1 ? ' ' : 's '}
+                            {p.items.join(', ')}. <span className="muted">{p.why}</span>
+                          </li>
+                        ))}
+                      </ul>
                     )}
                     {verified.note && <p className="hint">{verified.note}</p>}
                   </>
@@ -199,12 +245,9 @@ export default async function ReviewPage() {
                   <p className="hint">
                     Shown and not correctable here:{' '}
                     {shown.paths.map((p) => label(p)).join(', ')}.{' '}
-                    {shown.figures &&
-                      'A figure is never retyped at this gate — the filed reading and the agent\u2019s are both kept, neither corrected. '}
-                    {shown.identities &&
-                      'An identity is not corrected but rejected: an agent that named the wrong thing did not make a wording mistake. '}
-                    Nothing here moves the edit distance, which is not the same as the draft being
-                    right.
+                    {shown.figures && 'Figures are not retyped here; both readings are kept. '}
+                    {shown.identities && 'Reject a draft that named the wrong thing. '}
+                    These do not affect the edit distance.
                   </p>
                 )}
 

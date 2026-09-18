@@ -30,7 +30,7 @@ const drop = (path: string): string => `d.${path}`;
 /** A value that is shown and never typed into. */
 function Fixed({ value }: { value: unknown }) {
   if (value === null || value === undefined || value === '') {
-    return <Blank why="The agent returned nothing for this field" />;
+    return <Blank why="The agent returned nothing here" />;
   }
   return <span className="draft-text">{typeof value === 'string' ? value : JSON.stringify(value)}</span>;
 }

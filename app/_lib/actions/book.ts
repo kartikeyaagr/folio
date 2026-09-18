@@ -62,9 +62,7 @@ export async function recordTradeAction(form: FormData): Promise<void> {
       { companyId, tradeDate, side, quantity, price, fees, seq: seq ?? undefined },
       user.userId,
     );
-    await flash(
-      `Recorded: ${side} ${quantity} at ${price}, as ${user.email}. The position has been replayed.`,
-    );
+    await flash(`Recorded: ${side} ${quantity} at ${price}, as ${user.email}.`);
   } catch (err) {
     // A double-submitted form is the ordinary cause, and the library's message already names the
     // escape hatch for a genuine second fill. Said in place rather than thrown.
@@ -90,7 +88,7 @@ export async function reverseTradeAction(form: FormData): Promise<void> {
       String(form.get('reason') ?? ''),
       user.userId,
     );
-    await flash(`Reversed, as ${user.email}. The trade stays on the record with its reason.`);
+    await flash(`Reversed, as ${user.email}. The trade stays on the record.`);
   } catch (err) {
     if (err instanceof ReasonRequired) return flash(err.message);
     throw err;
@@ -132,7 +130,7 @@ export async function recordCapitalAction(form: FormData): Promise<void> {
 export async function confirmActionAction(form: FormData): Promise<void> {
   const user = await requireUser();
   await confirmAction(String(form.get('id') ?? ''), user.userId);
-  await flash(`Applied to the book, as ${user.email}. The position has been replayed.`);
+  await flash(`Applied to the book, as ${user.email}.`);
   revalidatePath('/portfolio');
   revalidatePath('/');
 }

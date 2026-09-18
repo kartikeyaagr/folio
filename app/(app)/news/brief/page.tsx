@@ -61,8 +61,8 @@ export default async function BriefsPage() {
             </button>
           </form>
           <p className="hint">
-            Every followed name, filings first. Only news that cleared the mechanism gate is used.
-            The brief lands in Review, and nothing reaches this page until a person accepts it.
+            Every followed name, filings first, using only confirmed news. The brief waits in
+            Review until someone accepts it.
           </p>
         </Card>
 
@@ -94,9 +94,8 @@ export default async function BriefsPage() {
         ) : (
           <Card title="No brief yet">
             <Empty>
-              Nobody has asked for one. A brief gathers what every followed name has filed, what
-              cleared the news gate, and what is scheduled — and names the companies that had
-              nothing, which is the half a press summary leaves out.
+              Nobody has asked for one. A brief covers what each followed name filed, what news was
+              confirmed, and what is scheduled, including the names that had nothing.
             </Empty>
           </Card>
         )}

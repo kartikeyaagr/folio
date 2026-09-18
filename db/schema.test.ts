@@ -17,7 +17,6 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import pg from 'pg';
 import { migrate } from './migrate.ts';
-import { toolReads } from '../lib/agents/tools/index.ts';
 
 const DB = `trisula_test_${process.pid}`;
 let client: pg.Client;
@@ -146,18 +145,21 @@ test('the indexer principal exists in the database as well as the type', async (
   assert.equal(rows[0]?.label, 'Content indexer');
 });
 
-test('the desk analyst can reach every table its tools read', async () => {
-  // `tools` and `data_scope` are two hand-written columns of one migration, and nothing else
-  // compares them. A tool added to the first without its tables added to the second fails at
-  // runtime — on a claimed run, after the queue has already spent an attempt on it — with a
-  // ScopeViolation that reads like a code bug rather than the seed data it is.
-  const { rows } = await client.query<{ tools: string[]; data_scope: string[] }>(
-    "SELECT tools, data_scope FROM agents WHERE key = 'desk-analyst'",
+test('no agent declares a tool, because there is no longer anything to bind', async () => {
+  // This replaces "the desk analyst can reach every table its tools read", which compared agent 8's
+  // `tools` against its `data_scope` because nothing else did. `0053` cut agent 8 and deleted the
+  // tool registry with it, so that test has no subject — but the column it guarded is still here
+  // (see `0053`'s closing note for why it was kept).
+  //
+  // The guard that survives is the one that still bites: a migration seeding a tool name now names
+  // something no code can build, and `bindTools` would fail on a claimed run with an error reading
+  // like a code bug rather than the seed data it is. An eighth agent with real tools has to change
+  // this line, which is the point — it forces the registry and the code to be reconciled on
+  // purpose rather than discovered at runtime.
+  const { rows } = await client.query<{ key: string; tools: string[] }>(
+    'SELECT key, tools FROM agents WHERE cardinality(tools) > 0',
   );
-  const row = rows[0];
-  assert.ok(row, 'agent 8 is seeded');
-  const missing = toolReads(row.tools).filter((t) => !row.data_scope.includes(t));
-  assert.deepEqual(missing, [], 'data_scope must name every table the declared tools read');
+  assert.deepEqual(rows, [], 'a declared tool with no implementation fails only when a run claims it');
 });
 
 test('a source can only be registered once per referenced row', async () => {

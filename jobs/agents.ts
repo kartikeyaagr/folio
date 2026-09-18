@@ -35,13 +35,10 @@ import * as results from '../lib/agents/results.ts';
 import * as forensics from '../lib/agents/forensics.ts';
 import * as concall from '../lib/agents/concall.ts';
 // Imported for their side effect: registering handlers. Agents 4 and 5 have no sweep of their own
-// (sweepScheduled covers them); agents 6 and 8 are prompted and are enqueued by a person, but every
-// handler must be registered before the queue is drained or a run finds no code to execute.
+// (sweepScheduled covers them); agent 6 is prompted and enqueued by a person, but every handler
+// must be registered before the queue is drained or a run finds no code to execute.
 import '../lib/agents/notify.ts';
 import '../lib/agents/newsbrief.ts';
-// Agent 8. Chat claims its own run immediately (`runNow`), so the timer only sees one whose web
-// process died mid-turn and whose lease expired — which is exactly what it is here for.
-import '../lib/agents/desk.ts';
 
 async function main(): Promise<void> {
   const limit = Number(process.argv[2] ?? 10);

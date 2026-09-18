@@ -102,7 +102,7 @@ export default async function NewsPage({
           {visible.length === 0 ? (
             <Empty>
               {showDismissed
-                ? 'Nothing has been dismissed. What you dismiss is kept, because it says which kind of match is not earning its place.'
+                ? 'Nothing has been dismissed. Dismissed items are kept.'
                 : 'No news has been matched to a followed name in the last 30 days. Only stories the gate could state a mechanism for appear here.'}
             </Empty>
           ) : (
@@ -145,7 +145,7 @@ export default async function NewsPage({
                       <input type="hidden" name="id" value={n.id} />
                       <input type="hidden" name="state" value={n.state === 'dismissed' ? 'clear' : 'dismissed'} />
                       <button type="submit" className="btn btn-quiet btn-sm">
-                        {n.state === 'dismissed' ? 'Bring back' : 'Not relevant'}
+                        {n.state === 'dismissed' ? 'Restore' : 'Dismiss'}
                       </button>
                     </form>
                   </div>

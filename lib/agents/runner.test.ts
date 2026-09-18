@@ -134,6 +134,8 @@ test('a run gives up after MAX_ATTEMPTS and becomes visible as failed', async ()
   const failed = await failedRuns();
   assert.equal(failed.length, 1, 'a failed run must be findable; the sweep never re-offers it');
   assert.equal(failed[0]?.id, runId);
+  assert.equal(failed[0]?.retired, true, 'out of attempts: nothing will offer it again');
+  assert.equal(failed[0]?.nextAttemptAt, null, 'so there is no next attempt to name');
 
   assert.equal(await requeue(runId), true, 'and a person can put it back after looking');
   assert.equal((await failedRuns()).length, 0);
