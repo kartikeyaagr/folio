@@ -46,53 +46,6 @@ a.pf-sym:hover {
   white-space: normal;
 }
 
-/* --- Holdings: eight columns and a bar. Below 860px the table scrolls inside its card. ------- */
-
-.pf-holdings {
-  min-width: 860px;
-}
-.pf-weight {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 200px;
-}
-/* Actual weight as a navy bar, target as a teal tick, both scaled to the largest on the page. */
-.pf-bar {
-  position: relative;
-  flex: 1;
-  height: 6px;
-  border-radius: 3px;
-  background: var(--surface-2);
-}
-.pf-bar-fill {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  width: var(--w, 0%);
-  border-radius: 3px;
-  background: var(--navy);
-}
-.pf-bar-tick {
-  position: absolute;
-  top: -3px;
-  bottom: -3px;
-  left: var(--t, 0%);
-  width: 2px;
-  background: var(--teal);
-}
-.pf-w {
-  min-width: 44px;
-  text-align: right;
-}
-.pf-drift {
-  min-width: 34px;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--amber);
-}
-
 /* --- Transactions --------------------------------------------------------------------------- */
 
 /* A reversed row and its reversal both stay in the log, faded. */
@@ -197,13 +150,6 @@ a.pf-sym:hover {
   display: flex;
   gap: 6px;
   white-space: nowrap;
-}
-
-/* --- Facts at the head of a card, above its table ------------------------------------------- */
-
-.pf-facts {
-  padding: 14px 16px;
-  border-bottom: 1px solid var(--line);
 }
 
 /* --- Return: the headline figure, Stat-sized ------------------------------------------------ */

@@ -4,7 +4,6 @@
 /* Thesis and the editor are not carried forward: D2 cut /thesis, /memo and /pipeline. */
 @import '../styles/shell.css';
 @import '../styles/company.css';
-@import '../styles/calendar.css';
 @import '../styles/desk.css';
 @import '../styles/news.css';
 @import '../styles/portfolio.css';
@@ -350,49 +349,6 @@ select:focus-visible {
   height: 44px;
   font-size: 14px;
   font-weight: 700;
-}
-
-/* --- Pill (a filter with a count) ---------------------------------------------------------- */
-
-.pills {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-.pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 28px;
-  padding: 0 10px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: transparent;
-  color: var(--ink);
-  font-size: 12px;
-  font-weight: 600;
-  text-decoration: none;
-  white-space: nowrap;
-  cursor: pointer;
-  transition:
-    background-color 140ms var(--ease),
-    border-color 140ms var(--ease),
-    transform 100ms var(--ease);
-}
-.pill:hover {
-  border-color: var(--line-2);
-  color: var(--ink);
-}
-.pill[aria-current='true'],
-.pill[aria-current='page'] {
-  background: var(--navy);
-  border-color: var(--navy);
-  color: var(--on-navy);
-}
-.pill-n {
-  font-size: 11px;
-  font-weight: 700;
-  opacity: 0.8;
 }
 
 /* --- Segmented control ----------------------------------------------------------------------- */
@@ -1223,29 +1179,6 @@ dialog.dlg[open] {
   animation: rise 0.25s var(--ease);
 }
 
-/* --- Progress: twelve stage segments --------------------------------------------------------- */
-
-.segs {
-  display: flex;
-  gap: 3px;
-}
-.segs span {
-  flex: 1;
-  height: 5px;
-  border-radius: 3px;
-  background: var(--line-2);
-}
-.segs span.is-past {
-  background: var(--teal);
-}
-.segs span.is-now {
-  background: var(--navy);
-}
-.segs-sm span {
-  height: 4px;
-  border-radius: 2px;
-}
-
 /* --- Control states -------------------------------------------------------------------------- */
 /*                                                                                                */
 /* Hover and focus-visible are declared with each control above, and focus-visible is one rule for */
@@ -1255,7 +1188,6 @@ dialog.dlg[open] {
 /* their own, so it fences them off at the hover instead.                                          */
 
 /* Press: the 0.97 the buttons use, for everything else shaped like a button. */
-.pill:active,
 .seg a:active,
 .seg button:active,
 .tabs a:active,
@@ -1276,7 +1208,6 @@ dialog.dlg[open] {
 /* Disabled. An anchor cannot carry `disabled`, so a link says it with `aria-disabled`. Each of
    these rests on a transparent background, so restoring it is enough to stop hover repainting a
    control that no longer answers. */
-.pill[aria-disabled='true'],
 .seg a[aria-disabled='true'],
 .seg button:disabled,
 .tabs a[aria-disabled='true'],

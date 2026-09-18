@@ -32,6 +32,9 @@ const TSX_DIRS = ['app', 'components'];
 function walk(dir: string, ext: string, out: string[] = []): string[] {
   for (const entry of readdirSync(join(ROOT, dir))) {
     if (entry === 'node_modules' || entry.startsWith('.')) continue;
+    // `styles/unbuilt/` is imported by nothing on purpose. Counting it would mean this census can
+    // never come down, and a number that cannot improve stops being read.
+    if (dir === 'styles' && entry === 'unbuilt') continue;
     const rel = join(dir, entry);
     if (statSync(join(ROOT, rel)).isDirectory()) walk(rel, ext, out);
     else if (entry.endsWith(ext)) out.push(rel);

@@ -169,26 +169,6 @@ export function Chip({ children, tone = 'neutral' }: { children: ReactNode; tone
   return <span className={`chip chip-${tone}`}>{children}</span>;
 }
 
-/** A filter with a count. `<a>` so it stays URL-driven. */
-export function Pill({
-  href,
-  current,
-  children,
-  count,
-}: {
-  href: string;
-  current: boolean;
-  children: ReactNode;
-  count?: number | string;
-}) {
-  return (
-    <a href={href} className="pill" aria-current={current ? 'true' : undefined}>
-      {children}
-      {count !== undefined && <span className="pill-n">{count}</span>}
-    </a>
-  );
-}
-
 /** A segmented control of links, the value in the URL. */
 export function Seg({
   options,
@@ -345,32 +325,6 @@ export function Tabs({
   );
 }
 
-/** A twelve-segment progress line: teal behind, navy now, rule ahead. */
-export function Segs({
-  stage,
-  total = 12,
-  small,
-}: {
-  stage: number;
-  total?: number;
-  small?: boolean;
-}) {
-  return (
-    <div
-      className={small ? 'segs segs-sm' : 'segs'}
-      role="img"
-      aria-label={`Stage ${stage} of ${total}`}
-    >
-      {Array.from({ length: total }, (_, i) => (
-        <span
-          key={i}
-          className={i + 1 < stage ? 'is-past' : i + 1 === stage ? 'is-now' : undefined}
-        />
-      ))}
-    </div>
-  );
-}
-
 /* --------------------------------------------------------------------------------------------- */
 /* Tables and formatting                                                                           */
 /* --------------------------------------------------------------------------------------------- */
@@ -402,28 +356,6 @@ export function signedPct(value: number | string | null, dp = 1): string {
   const n = typeof value === 'string' ? Number(value) : value;
   if (!Number.isFinite(n)) return '—';
   return `${n > 0 ? '+' : n < 0 ? '−' : ''}${Math.abs(n).toFixed(dp)}%`;
-}
-
-/**
- * Shown when tax lots are behind the transaction log.
- *
- * Materialisation is asynchronous. Displaying stale positions silently would be worse than saying
- * so, because the number would look authoritative and be wrong.
- */
-export function StaleBanner({
-  logCount,
-  projectedCount,
-}: {
-  logCount: number;
-  projectedCount: number;
-}) {
-  return (
-    <p role="status" className="notice">
-      Positions are behind the transaction log ({projectedCount} of {logCount} replayed). The
-      portfolio worker may be stopped — run{' '}
-      <code>uv run python -m trisula_portfolio.materialise</code>.
-    </p>
-  );
 }
 
 export function Empty({ children }: { children: ReactNode }) {

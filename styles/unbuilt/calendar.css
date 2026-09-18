@@ -1,3 +1,21 @@
+/*
+ * NOT IMPORTED. Nothing in `app/globals.css` pulls this file in, and that is the point.
+ *
+ * `tasks/open-items.md` found 62% of this tree's CSS referenced by no component, and warned what
+ * that costs: "A stylesheet for a capability the specs *cut* is the exact thing CLAUDE.md's 'a gap
+ * against something the specs deliberately cut is not a gap' warns future readers about, sitting in
+ * the tree as evidence that it wasn't cut." Its prescription was to move rather than delete, because
+ * some of this is finished design for a screen that was never wired — lesson L14 — and deleting it
+ * would throw away work, while leaving it imported keeps asserting that a cut feature exists.
+ *
+ * The whole calendar screen: month grid, open day, fund obligations. 33 of its 33 classes
+ * were dead — there is no calendar route. Its colour argument is worth keeping: hue says which
+ * feed an entry came from, ink level says how much it costs to miss.
+ *
+ * Re-check with `pnpm exec tsx ops/measure-css.ts` before reviving any of it.
+ */
+
+/* from styles/calendar.css:1-456 */
 /* Calendar: the month grid and the open day. */
 
 /* --- Calendar --------------------------------------------------------------------------------- */
@@ -453,3 +471,4 @@ a.cal-day-sym:active {
     margin-top: 2px;
   }
 }
+

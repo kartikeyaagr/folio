@@ -1,0 +1,148 @@
+/*
+ * NOT IMPORTED. Nothing in `app/globals.css` pulls this file in, and that is the point.
+ *
+ * `tasks/open-items.md` found 62% of this tree's CSS referenced by no component, and warned what
+ * that costs: "A stylesheet for a capability the specs *cut* is the exact thing CLAUDE.md's 'a gap
+ * against something the specs deliberately cut is not a gap' warns future readers about, sitting in
+ * the tree as evidence that it wasn't cut." Its prescription was to move rather than delete, because
+ * some of this is finished design for a screen that was never wired — lesson L14 — and deleting it
+ * would throw away work, while leaving it imported keeps asserting that a cut feature exists.
+ *
+ * Sections whose designs are complete but wired to nothing.
+ *
+ * Re-check with `pnpm exec tsx ops/measure-css.ts` before reviving any of it.
+ */
+
+/* from styles/news.css:203-253 */
+/* --- Story cards on the company tab ----------------------------------------------------------- */
+
+.news-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.news-card {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 14px 16px;
+  display: grid;
+  gap: 8px;
+}
+.news-card-meta {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  font-size: 12px;
+  color: var(--muted);
+}
+.news-card-also {
+  margin-left: auto;
+}
+.news-card-title {
+  font-size: 15.5px;
+  font-weight: 700;
+  margin: 0;
+  line-height: 1.35;
+}
+.news-card-title a {
+  color: inherit;
+  text-decoration: none;
+}
+.news-card-title a:hover {
+  text-decoration: underline;
+}
+.news-card-body {
+  font-size: 13.5px;
+  color: var(--ink-2);
+  margin: 0;
+  line-height: 1.55;
+}
+.news-attached {
+  font-size: 12px;
+  color: var(--teal);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+
+/* from styles/desk.css:4-24 */
+/* --- Inbox head: the filter pills, the acknowledged toggle, the reminder button ---------------- */
+
+.desk-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.desk-toggle {
+  margin-left: 4px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--muted);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.desk-toggle:hover {
+  color: var(--ink);
+  text-decoration: underline;
+}
+
+
+/* from styles/portfolio.css:49-95 */
+/* --- Holdings: eight columns and a bar. Below 860px the table scrolls inside its card. ------- */
+
+.pf-holdings {
+  min-width: 860px;
+}
+.pf-weight {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 200px;
+}
+/* Actual weight as a navy bar, target as a teal tick, both scaled to the largest on the page. */
+.pf-bar {
+  position: relative;
+  flex: 1;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--surface-2);
+}
+.pf-bar-fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: var(--w, 0%);
+  border-radius: 3px;
+  background: var(--navy);
+}
+.pf-bar-tick {
+  position: absolute;
+  top: -3px;
+  bottom: -3px;
+  left: var(--t, 0%);
+  width: 2px;
+  background: var(--teal);
+}
+.pf-w {
+  min-width: 44px;
+  text-align: right;
+}
+.pf-drift {
+  min-width: 34px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--amber);
+}
+
+
+/* from styles/portfolio.css:202-208 */
+/* --- Facts at the head of a card, above its table ------------------------------------------- */
+
+.pf-facts {
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--line);
+}
+
