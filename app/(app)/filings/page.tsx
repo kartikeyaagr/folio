@@ -4,6 +4,7 @@ import { filingCategories, filings } from '@/lib/filings.ts';
 import { AppHeader, Blank, Card, Chip, Empty, Seg, type Tone } from '@/components/ui.tsx';
 
 import { requireUser } from '../../_lib/session.ts';
+import { dayMonthTime } from '@/components/ui';
 
 /**
  * C1 — exchange filings, readable.
@@ -21,13 +22,6 @@ export const dynamic = 'force-dynamic';
 const SEVERITY_TONE: Record<string, Tone> = {
   critical: 'bad', high: 'bad', normal: 'navy', low: 'neutral',
 };
-
-function ist(at: Date): string {
-  return new Intl.DateTimeFormat('en-GB', {
-    timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
-    hour12: false,
-  }).format(at);
-}
 
 export default async function FilingsPage({
   searchParams,
@@ -91,8 +85,7 @@ export default async function FilingsPage({
 
           {rows.length === 0 ? (
             <Empty>
-              No filings in this window. The announcements job runs through the day; a company
-              added today arrives with its history already present.
+              No filings in this window. Announcements are fetched through the day.
             </Empty>
           ) : (
             <div className="tbl-scroll">
@@ -110,7 +103,7 @@ export default async function FilingsPage({
                 <tbody>
                   {rows.map((f) => (
                     <tr key={f.id}>
-                      <td className="num">{ist(f.announcedAt)}</td>
+                      <td className="num">{dayMonthTime(f.announcedAt)}</td>
                       <td>
                         {f.companyId ? (
                           <Link href={`/company/${f.symbol}`}>

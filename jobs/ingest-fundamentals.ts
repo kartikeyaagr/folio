@@ -28,13 +28,13 @@ async function main(): Promise<void> {
         "UPDATE ingestion_runs SET finished_at = now(), status = 'ok', items = $1, detail = $2 WHERE id = $3",
         [
           r.stored,
-          `${r.indexRows} index rows, ${r.candidates} candidates, ${r.parsed} parsed, ${r.failed} failed, ${r.disagreed} periods whose context lied`,
+          `${r.indexRows} index rows, ${r.candidates} candidates, ${r.parsed} parsed, ${r.unreadable} unreadable, ${r.failed} failed, ${r.disagreed} periods whose context lied`,
           runId,
         ],
       );
     });
     console.log(
-      `index ${r.indexRows}  candidates ${r.candidates}  parsed ${r.parsed}  stored ${r.stored}  failed ${r.failed}  context-disagreed ${r.disagreed}`,
+      `index ${r.indexRows}  candidates ${r.candidates}  parsed ${r.parsed}  stored ${r.stored}  unreadable ${r.unreadable}  failed ${r.failed}  context-disagreed ${r.disagreed}`,
     );
   } catch (err) {
     await serviceTxn('system:ingest', async (c) => {

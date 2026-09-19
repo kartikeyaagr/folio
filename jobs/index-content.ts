@@ -20,15 +20,17 @@
  * was claimed and could not be indexed is not a quiet day — it is a failure, and fails the run.
  *
  *   pnpm exec tsx jobs/index-content.ts          one bounded batch (what the ten-minute timer runs)
+ *   pnpm exec tsx jobs/index-content.ts --watch   stay up; index within seconds of a save
  *   pnpm exec tsx jobs/index-content.ts --all     loop until the queue is empty — for a human doing
  *                                                  a backfill, never for the timer. Prints progress
  *                                                  per batch: a run over the real corpus is many
  *                                                  minutes of silence otherwise, indistinguishable
  *                                                  from a hang.
  */
-import { closePool, readTxn, serviceTxn } from '../lib/db.ts';
+import { closePool, listen, readTxn, serviceTxn } from '../lib/db.ts';
 import { drain, type DrainResult } from '../lib/retrieval/index.ts';
 import { embedPending } from '../lib/agents/exemplars.ts';
+import { pathToFileURL } from 'node:url';
 
 /** Sources still waiting to be claimed — queried only to print `--all`'s progress line. */
 async function remaining(): Promise<number> {
@@ -77,7 +79,97 @@ async function drainAll(): Promise<DrainResult> {
   });
 }
 
+/**
+ * The channel migration `0052` nudges. A statement-level trigger on `documents`,
+ * `document_versions` and `attachments` sends one notification per committed transaction.
+ */
+const CHANNEL = 'trisula_content';
+
+/** Collapse a burst of saves into one pass, and never run two passes at once. */
+const SETTLE_MS = 2000;
+
+/**
+ * The safety net, and the reason this mode is allowed to exist at all.
+ *
+ * `NOTIFY` is fire-and-forget: one sent while this process was restarting, or while its socket was
+ * down, is gone and nothing replays it. So this is never the thing that guarantees the queue
+ * drains — it only makes the common case fast. The durable queue is `indexed_at IS NULL`, and it is
+ * swept on this interval regardless of whether anything was heard, which is the same
+ * "what has no run yet, never what is new since I last looked" rule the agent sweeps follow.
+ */
+const SWEEP_MS = 10 * 60 * 1000;
+
+/**
+ * Stay up and index within seconds of a save.
+ *
+ * The ten-minute timer is still what the VM runs and still what guarantees correctness; this is
+ * the difference between a spreadsheet being searchable when you switch tabs and being searchable
+ * after a coffee. It matters most on a development box, which has no systemd at all and where the
+ * indexer had therefore not run for five days.
+ *
+ * Deliberately not an `ingestion_runs` row per pass. A watcher that wakes on every save would
+ * write hundreds of rows a day and bury the timer's runs, which are the ones `/admin`'s lag figure
+ * reads. A pass that FAILS is still reported — on stderr, and by the exit code if it keeps failing.
+ */
+async function watch(): Promise<void> {
+  let running = false;
+  let again = false;
+  let timer: NodeJS.Timeout | undefined;
+
+  const pass = async (why: string): Promise<void> => {
+    if (running) { again = true; return; }
+    running = true;
+    try {
+      do {
+        again = false;
+        const r = await untilQueueEmpty(drain, async () => {});
+        const embedded = await embedPending();
+        if (r.indexed > 0 || r.failed > 0 || embedded > 0) {
+          console.log(
+            `[${new Date().toISOString().slice(11, 19)}] ${why}: ` +
+              `${r.registered} registered, ${r.indexed} indexed, ${r.failed} failed, ` +
+              `${embedded} exemplars embedded`,
+          );
+        }
+      } while (again);
+    } catch (err) {
+      // Logged and swallowed: one bad source must not take down a watcher that is the only thing
+      // making the rest of the corpus searchable. The row keeps its `index_error`, and the timer's
+      // own run is what turns that into a failed unit and an alert.
+      console.error(`[watch] ${String(err instanceof Error ? err.message : err)}`);
+    } finally {
+      running = false;
+    }
+  };
+
+  const bump = (why: string) => {
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(() => void pass(why), SETTLE_MS);
+  };
+
+  const stop = await listen(CHANNEL, () => bump('saved'), {
+    // Anything committed while the socket was down was never announced. Sweep on reconnect rather
+    // than waiting up to ten minutes to discover it.
+    onReconnect: () => bump('reconnected'),
+  });
+  const sweep = setInterval(() => void pass('sweep'), SWEEP_MS);
+
+  for (const sig of ['SIGINT', 'SIGTERM']) {
+    process.on(sig, () => {
+      clearInterval(sweep);
+      if (timer) clearTimeout(timer);
+      void stop().then(closePool).then(() => process.exit(0));
+    });
+  }
+
+  console.log(
+    `watching ${CHANNEL} · indexing ${SETTLE_MS / 1000}s after a save, sweeping every ${SWEEP_MS / 60000}m`,
+  );
+  await pass('start');
+}
+
 async function main(): Promise<void> {
+  if (process.argv.includes('--watch')) return watch();
   const all = process.argv.includes('--all');
 
   const runId = await serviceTxn('system:index', async (c) => {
@@ -132,8 +224,10 @@ async function main(): Promise<void> {
 }
 
 // Guarded so a test can import `untilQueueEmpty` above without also running the job — same
-// pattern as db/migrate.ts's own `invokedDirectly` check, for the same reason.
-const invokedDirectly = process.argv[1] && import.meta.url.endsWith(process.argv[1].split('/').pop()!);
+// pattern as db/migrate.ts's own check, and compared as a whole path rather than a basename,
+// which `endsWith` made true for any module whose filename matched the entry point's.
+const invokedDirectly =
+  process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href;
 if (invokedDirectly) {
   main()
     .catch((err: unknown) => {

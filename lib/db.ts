@@ -18,6 +18,7 @@
  * Connection is over a unix socket, so Postgres needs no TCP listener on the VM.
  */
 
+import { randomBytes } from 'node:crypto';
 import pg from 'pg';
 
 /**
@@ -107,4 +108,98 @@ export function serviceTxn<T>(principal: ServicePrincipal, fn: (c: Client) => Pr
 export async function closePool(): Promise<void> {
   await pool?.end();
   pool = undefined;
+}
+
+/**
+ * Hold one connection open and call back on every `NOTIFY` on a channel. Returns the function that
+ * stops it.
+ *
+ * **Not from the pool, and it cannot be.** A pooled connection is handed back after the
+ * transaction that borrowed it; a `LISTEN` on one survives only until the next caller gets it, and
+ * then the notifications go to whoever holds it now. Worse, `LISTEN` holds the session for the life
+ * of the process, so taking one of ten pooled connections would leave nine — and the one thing a
+ * watcher does when it wakes is open transactions. That is the shape that produced seven stuck
+ * connections in this database on 17-Sep-2026. This opens its own `pg.Client`, which is the one
+ * place in this codebase that is true.
+ *
+ * No actor is set: `LISTEN` writes nothing, so there is nothing to attribute, and the handler does
+ * its own attributed work in its own transactions.
+ *
+ * **Handlers are serialised.** A handler here may be a backfill that takes minutes, and two of them
+ * racing on one notification storm is what the lease exists to stop — better to never start the
+ * second. Each notification waits for the one before it.
+ *
+ * Reconnects on its own. A notify listener that quietly dies after a database restart is worse than
+ * no listener, because the queue it was watching keeps filling and the screen keeps saying
+ * everything is indexed — indistinguishable from a quiet desk, which is the failure this system
+ * keeps paying for. It is still only ever a *nudge*: notifications sent while the socket was down
+ * are gone, which is exactly why the caller must also poll something durable, and why `onReconnect`
+ * exists. See `jobs/index-content.ts --watch` and `jobs/backfill-company.ts --watch`.
+ */
+export async function listen(
+  channel: string,
+  onNotify: (payload: string) => void | Promise<void>,
+  opts: { onReconnect?: () => void; onError?: (err: unknown) => void } = {},
+): Promise<() => Promise<void>> {
+  // Rejected rather than escaped. Every channel name in this tree is a constant, so anything that
+  // fails this is a bug at the call site and should say so there, not be quietly quoted into
+  // working. This also keeps the identifier out of the `LISTEN` string, which cannot be a parameter.
+  if (!/^[a-z_][a-z0-9_]*$/.test(channel)) throw new Error(`unsafe channel name ${channel}`);
+  const onError = opts.onError ?? ((e: unknown) => console.error(String(e)));
+  let client: pg.Client | undefined;
+  let stopped = false;
+  // Spans reconnects deliberately: a handler still running when the socket drops must finish before
+  // the one the reconnect sweep queues behind it.
+  let working: Promise<void> = Promise.resolve();
+
+  const connect = async (): Promise<void> => {
+    if (stopped) return;
+    client = new pg.Client({ connectionString: process.env.DATABASE_URL });
+    client.on('notification', (n) => {
+      if (n.channel !== channel) return;
+      working = working.then(() => onNotify(n.payload ?? '')).catch(onError);
+    });
+    client.on('error', () => { void reconnect(); });
+    client.on('end', () => { void reconnect(); });
+    await client.connect();
+    await client.query(`LISTEN ${channel}`);
+  };
+
+  const reconnect = async (): Promise<void> => {
+    if (stopped || client === undefined) return;
+    client.removeAllListeners();
+    client = undefined;
+    // A fixed second, not a backoff: the thing being waited on is a local Postgres coming back,
+    // and a backoff that reached minutes would leave the queue unwatched long after it had.
+    await new Promise((r) => setTimeout(r, 1000));
+    await connect().then(() => opts.onReconnect?.()).catch(() => void reconnect());
+  };
+
+  await connect();
+  return async () => {
+    stopped = true;
+    const c = client;
+    client = undefined;
+    c?.removeAllListeners();
+    await c?.end().catch(() => { /* closing a dead socket is not an error worth raising */ });
+    // A stop that returned while a backfill was mid-write would let the caller close the pool under
+    // it. Wait for the chain to drain.
+    await working.catch(() => { /* already reported through onError */ });
+  };
+}
+
+/**
+ * An id for a new row.
+ *
+ * Seventeen call sites spelled `randomBytes(16).toString('hex')` for themselves, five of them
+ * wrapped in a local `const id = () => …` and one exported from `lib/agents/queue.ts`, which meant
+ * `lib/book.ts` reaching into the agent queue for a random string. Every one of them is making a
+ * primary key for a row it is about to write, and every one already imports this module to write
+ * it — so the id belongs beside the transaction helpers.
+ *
+ * 128 bits of hex, not `crypto.randomUUID()`: the stored format is 32 hex characters with no
+ * dashes and changing it would not be a refactor, it would be a migration.
+ */
+export function rowId(): string {
+  return randomBytes(16).toString('hex');
 }

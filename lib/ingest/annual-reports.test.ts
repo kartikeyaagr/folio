@@ -1,13 +1,11 @@
 import { test, before, after, mock } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { migrate } from '../../db/migrate.ts';
-import { closePool, serviceTxn } from '../db.ts';
+import { serviceTxn } from '../db.ts';
 import { pathFor } from './attachments.ts';
 import { NseSession } from './nse.ts';
 import {
@@ -17,6 +15,7 @@ import {
   storeAnnualReport,
   type AnnualReport,
 } from './annual-reports.ts';
+import { createTestDatabase, dropTestDatabase } from '../../db/testing.ts';
 
 test('the symbol comes from the request, never from the row', () => {
   // SME rows carry a `symbol` field and mainboard rows do not. Reading it from the row gives
@@ -66,21 +65,22 @@ test('a zip yields the report, not the FormA cover', () => {
   // 3 of 12 readable PRAJIND zips hold two PDFs. FormA_2015_2016.pdf is a 2-page scan that
   // extracts 0 chars, so "extract every PDF" reports a scan failure on a document that is not
   // the report.
-  const zip = new Map([
-    ['FormA_2015_2016.pdf', Buffer.from('%PDF- tiny')],
-    ['AR_2015_2016.pdf', Buffer.alloc(2_000_000, 1)],
-  ]);
-  assert.equal(pickReport(zip), 'AR_2015_2016.pdf');
+  assert.equal(
+    pickReport([
+      { name: 'FormA_2015_2016.pdf', bytes: 10 },
+      { name: 'AR_2015_2016.pdf', bytes: 2_000_000 },
+    ]),
+    'AR_2015_2016.pdf',
+  );
 });
 
 test('a single-entry zip has nothing to weigh against', () => {
   // 9 of 12 readable PRAJIND zips hold exactly one entry — the ordinary case, no FormA cover.
-  const zip = new Map([['AR_2020_2021.pdf', Buffer.alloc(500_000, 1)]]);
-  assert.equal(pickReport(zip), 'AR_2020_2021.pdf');
+  assert.equal(pickReport([{ name: 'AR_2020_2021.pdf', bytes: 500_000 }]), 'AR_2020_2021.pdf');
 });
 
 test('an empty zip has no report to pick', () => {
-  assert.equal(pickReport(new Map()), null);
+  assert.equal(pickReport([]), null);
 });
 
 // ---------------------------------------------------------------------------------------------
@@ -109,9 +109,7 @@ before(async () => {
   attachDir = mkdtempSync(join(tmpdir(), 'trisula-annual-reports-test-'));
   process.env['ATTACHMENT_DIR'] = attachDir;
 
-  execFileSync('createdb', [DB]);
-  process.env.DATABASE_URL = `postgres:///${DB}`;
-  await migrate();
+  await createTestDatabase(DB);
 
   await serviceTxn('system:index', async (c) => {
     await c.query("INSERT INTO companies (id, symbol, name) VALUES ($1,'PRAJIND','Praj Industries Limited')", [CO]);
@@ -119,8 +117,7 @@ before(async () => {
 });
 
 after(async () => {
-  await closePool();
-  execFileSync('dropdb', ['--if-exists', DB]);
+  await dropTestDatabase(DB);
   rmSync(attachDir, { recursive: true, force: true });
 });
 

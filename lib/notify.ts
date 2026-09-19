@@ -9,15 +9,23 @@
  * row that has exhausted its attempts stays in the table rather than disappearing — an
  * undeliverable notification is something a person should be able to find.
  *
- * SMTP is spoken directly. The alternative is a mail library, and for one plain-text message to
- * three colleagues on one relay that is a dependency, a supply chain and a configuration surface
- * for about eighty lines of protocol that has not changed since 1982.
+ * SMTP was spoken directly until 18-Sep-2026 — "a dependency, a supply chain and a configuration
+ * surface for about eighty lines of protocol that has not changed since 1982". The argument was
+ * sound and the eighty lines did not hold up their end of it: nothing could settle a pending
+ * `expect()` once the socket was connected, because the reply waiters resolved only from `data`
+ * and no `error` or `close` handler was ever attached. A relay that accepted the connection and
+ * then went quiet left the send pending for the life of the process — inside the claim
+ * transaction, holding one of the pool's ten connections and a row lock, indefinitely. It was
+ * also the only outbound call in the tree with no timeout; the other seven all carry one.
+ *
+ * `nodemailer` has no runtime dependencies of its own and no native build step, and it owns the
+ * three timeouts, STARTTLS negotiation from the EHLO capability list, and RFC 2047 header
+ * encoding — the subject was being interpolated into a header raw, so a newline in one injected
+ * headers.
  */
 
-import { randomBytes } from 'node:crypto';
-import { createConnection, type Socket } from 'node:net';
-import { connect as tlsConnect, type TLSSocket } from 'node:tls';
-import { serviceTxn } from './db.ts';
+import { createTransport } from 'nodemailer';
+import { rowId, serviceTxn } from './db.ts';
 
 export const MAX_SEND_ATTEMPTS = 5;
 
@@ -33,6 +41,14 @@ export interface SmtpConfig {
   user?: string;
   password?: string;
   from: string;
+  /**
+   * How long a send may take before it is abandoned. Defaults to `SEND_TIMEOUT_MS`.
+   *
+   * Overridable because a bound that cannot be exercised is a bound nobody knows works — the
+   * regression test for the hang this module was rewritten to fix points a sender at a relay that
+   * accepts and then says nothing, and has to do it in less than twenty seconds.
+   */
+  timeoutMs?: number;
 }
 
 export function smtpFromEnv(): SmtpConfig | null {
@@ -57,94 +73,39 @@ export type Sender = (mail: Mail) => Promise<void>;
 // SMTP
 // ------------------------------------------------------------------------------------------------
 
-class SmtpError extends Error {}
-
-function dialogue(socket: Socket | TLSSocket) {
-  let buffer = '';
-  const waiters: { want: number; resolve: (line: string) => void; reject: (e: Error) => void }[] = [];
-
-  socket.on('data', (chunk: Buffer) => {
-    buffer += chunk.toString('utf8');
-    let idx: number;
-    while ((idx = buffer.indexOf('\r\n')) !== -1) {
-      const line = buffer.slice(0, idx);
-      buffer = buffer.slice(idx + 2);
-      // A multi-line reply has a hyphen after the code; only the last line counts.
-      if (/^\d{3}-/.test(line)) continue;
-      const w = waiters.shift();
-      if (!w) continue;
-      const code = Number(line.slice(0, 3));
-      if (code === w.want) w.resolve(line);
-      else w.reject(new SmtpError(`expected ${w.want}, got: ${line}`));
-    }
-  });
-
-  return {
-    expect: (want: number): Promise<string> =>
-      new Promise((resolve, reject) => waiters.push({ want, resolve, reject })),
-    send: (line: string): void => void socket.write(`${line}\r\n`),
-  };
-}
-
-/** Dot-stuffing: a line that is just "." would otherwise end the message early. */
-const stuff = (body: string): string =>
-  body.replace(/\r?\n/g, '\r\n').replace(/^\./gm, '..');
+/**
+ * A send is bounded, and the bound is what this module exists to guarantee.
+ *
+ * Generous, because a relay under load is slow rather than broken, and this is a bound on a hang
+ * rather than a latency budget — the same reasoning `lib/ingest/nse.ts` records for its own.
+ */
+const SEND_TIMEOUT_MS = 20_000;
 
 export function smtpSender(cfg: SmtpConfig): Sender {
+  // Built once per sender rather than per message, so the drain does not reconstruct it fifty
+  // times. Not pooled: these jobs are one-shot, and a pool holds sockets open past the last send
+  // and delays the process exiting.
+  const transport = createTransport({
+    host: cfg.host,
+    port: cfg.port,
+    // Implicit TLS on 465, STARTTLS everywhere else. `requireTLS` is what keeps the original
+    // promise that credentials never cross an unencrypted socket: without it a relay that does
+    // not advertise STARTTLS would be talked to in the clear.
+    secure: cfg.port === 465,
+    requireTLS: cfg.port !== 465,
+    auth: cfg.user && cfg.password ? { user: cfg.user, pass: cfg.password } : undefined,
+    connectionTimeout: cfg.timeoutMs ?? SEND_TIMEOUT_MS,
+    greetingTimeout: cfg.timeoutMs ?? SEND_TIMEOUT_MS,
+    socketTimeout: cfg.timeoutMs ?? SEND_TIMEOUT_MS,
+  });
+
   return async (mail) => {
-    const plain = createConnection({ host: cfg.host, port: cfg.port });
-    await new Promise<void>((res, rej) => {
-      plain.once('connect', res);
-      plain.once('error', rej);
+    await transport.sendMail({
+      from: cfg.from,
+      to: mail.to,
+      subject: mail.subject,
+      text: mail.body,
     });
-
-    let d = dialogue(plain);
-    await d.expect(220);
-    d.send('EHLO trisula');
-    await d.expect(250);
-
-    // STARTTLS on 587. Credentials must never cross an unencrypted socket.
-    d.send('STARTTLS');
-    await d.expect(220);
-    const secure = tlsConnect({ socket: plain, servername: cfg.host });
-    await new Promise<void>((res, rej) => {
-      secure.once('secureConnect', res);
-      secure.once('error', rej);
-    });
-    d = dialogue(secure);
-    d.send('EHLO trisula');
-    await d.expect(250);
-
-    if (cfg.user && cfg.password) {
-      d.send('AUTH LOGIN');
-      await d.expect(334);
-      d.send(Buffer.from(cfg.user).toString('base64'));
-      await d.expect(334);
-      d.send(Buffer.from(cfg.password).toString('base64'));
-      await d.expect(235);
-    }
-
-    d.send(`MAIL FROM:<${cfg.from}>`);
-    await d.expect(250);
-    d.send(`RCPT TO:<${mail.to}>`);
-    await d.expect(250);
-    d.send('DATA');
-    await d.expect(354);
-    secure.write(
-      [
-        `From: ${cfg.from}`,
-        `To: ${mail.to}`,
-        `Subject: ${mail.subject}`,
-        'Content-Type: text/plain; charset=utf-8',
-        '',
-        stuff(mail.body),
-        '.',
-        '',
-      ].join('\r\n'),
-    );
-    await d.expect(250);
-    d.send('QUIT');
-    secure.end();
   };
 }
 
@@ -163,6 +124,14 @@ export interface DrainResult {
  *
  * Claimed one at a time with SKIP LOCKED so two drains never send the same mail twice, which is
  * the one failure a person actually notices.
+ *
+ * **The send stays inside the claim transaction, deliberately.** `lib/agents/queue.ts` moved the
+ * other direction — claim, commit, then work — because a model call is minutes long and there is
+ * a `claimed_at` lease to hold the row in the meantime. There is no lease column here, so
+ * committing before the send would leave the row visible to a concurrent drain for exactly as
+ * long as the send takes, and duplicate mail is the outcome this function is shaped to prevent.
+ * What made holding the transaction dangerous was never its length but its *unboundedness*; the
+ * timeouts on the sender are that fix, and they cap the hold at `SEND_TIMEOUT_MS`.
  */
 export async function drainOutbox(sender: Sender | null, limit = 50): Promise<DrainResult> {
   const out: DrainResult = { sent: 0, failed: 0, skipped: 0 };
@@ -267,7 +236,7 @@ export async function recordUnitFailure(unit: string): Promise<number> {
         `INSERT INTO notification_outbox (id, kind, recipient, subject, body)
          VALUES ($1, 'unit_failure', $2, $3, $4)`,
         [
-          randomBytes(16).toString('hex'),
+          rowId(),
           u.id,
           `${unit} failed`,
           `${unit} exited non-zero.\n\n` +

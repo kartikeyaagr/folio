@@ -56,14 +56,16 @@ enum. There is no build step and that is the trade.
 
 ## Getting started
 
-Requires Node 22+, pnpm 9, and Postgres 18 with the `vector` extension available.
+Requires Node 22.18+ — the release that made the type stripping above default — and Postgres 18
+with the `vector` extension available. pnpm is pinned by `packageManager` in `package.json`, so
+`corepack enable` gets you the right one.
 
 ```bash
 export DATABASE_URL=postgres:///trisula_v3_dev
 pnpm install
 pnpm fetch-model                 # ~130 MB embedding model, validated on download
 pnpm exec tsx db/migrate.ts      # migrations are one transaction each, checksummed
-pnpm check                       # lint + typecheck + 619 tests
+pnpm check                       # lint + typecheck + 814 tests
 pnpm dev                         # port 3100
 ```
 

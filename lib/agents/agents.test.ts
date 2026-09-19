@@ -1,21 +1,23 @@
 /**
- * Agents 1 and 7, and specifically their verifiers.
+ * Agents 1 and 7, and specifically their verifiers — plus the two readings of the queue those
+ * verifiers' output waits in.
  *
  * The verifier is the whole reason either agent is safe to run unattended, so it gets more
- * attention here than the prompt does.
+ * attention here than the prompt does. A verifier whose finding never reaches the screen is the
+ * same as no verifier, which is why the last section here follows agent 7's structural check all
+ * the way out to what `/review` reads.
  */
 
 import { test, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
-import { migrate } from '../../db/migrate.ts';
-import { closePool, readTxn, serviceTxn } from '../db.ts';
+import { readTxn, serviceTxn } from '../db.ts';
 import { scriptedModel, scriptedOk } from './model.ts';
 import { drain } from './runner.ts';
 import { enqueue } from './queue.ts';
-import { pendingDrafts, acceptDraft } from './review.ts';
+import { pendingDraftCount, pendingDrafts, acceptDraft } from './review.ts';
 import * as results from './results.ts';
 import * as forensics from './forensics.ts';
+import { createTestDatabase, dropTestDatabase } from '../../db/testing.ts';
 
 const DB = `trisula_ag2_${process.pid}`;
 const ME = 'p1';
@@ -23,9 +25,7 @@ const CO = 'c1';
 const CRORE = 10_000_000;
 
 before(async () => {
-  execFileSync('createdb', [DB]);
-  process.env.DATABASE_URL = `postgres:///${DB}`;
-  await migrate();
+  await createTestDatabase(DB);
   await serviceTxn('system:auth', async (c) => {
     await c.query("INSERT INTO actors (id,kind,label) VALUES ($1,'person','T')", [ME]);
     await c.query("INSERT INTO users (id,email,name) VALUES ($1,'t@x.com','T')", [ME]);
@@ -48,8 +48,7 @@ before(async () => {
 });
 
 after(async () => {
-  await closePool();
-  execFileSync('dropdb', ['--if-exists', DB]);
+  await dropTestDatabase(DB);
 });
 
 beforeEach(async () => {
@@ -189,4 +188,64 @@ test('accepting a forensic draft lands a versioned checklist', async () => {
   assert.equal(landed.version, 1, 'answers point at the version they were answered under');
   assert.equal(landed.n, '14');
   assert.equal(landed.unanswerable, '3');
+});
+
+// ---- what the review screen actually receives -----------------------------------------------------
+
+test("agent 7's structural finding survives the round trip to the review queue", async () => {
+  // The bug this closes was not in `verifyStructure` — the tests above show it works. It was that
+  // `/review` read `verification` as a type naming only agent 1's `checks`, so a forensic draft
+  // showed a red "disagrees" chip with nothing behind it: a verdict with its evidence withheld.
+  // The renderer reads `missing` and `overconfident`, so those two keys have to be here, by name,
+  // after a real run and a real jsonb round trip.
+  await enqueue({ agentKey: forensics.KEY, subjectRef: 'y1', companyId: CO });
+  const answers = fullAnswers()
+    .filter((a) => a.item !== 5)
+    .map((a) => (a.item === 10 ? { ...a, verdict: 'clear' } : a));
+  await drain(1, scriptedModel([scriptedOk({ version: 1, answers })]));
+
+  const d = (await pendingDrafts())[0];
+  assert.ok(d, 'expected a draft');
+  const v = d.verification as { agreed: boolean; missing: number[]; overconfident: number[]; note: string };
+
+  assert.equal(v.agreed, false);
+  assert.deepEqual(v.missing, [5], 'the item numbers, not a count — a count says something is wrong, not where');
+  assert.deepEqual(v.overconfident, [10]);
+  assert.ok(v.note, 'the sentence under them');
+});
+
+// ---- the queue as a number ------------------------------------------------------------------------
+
+test('the count of what is waiting is not the length of a page of it', async () => {
+  // `/agents` and `/review` both stated `pendingDrafts().length` as "N waiting", which is the
+  // number *or fifty, whichever is smaller*, while the rail badge beside them counted with no
+  // limit. Above fifty the same screen disagreed with itself, and the headline was the wrong one.
+  const N = 55;
+  await serviceTxn('system:agents', async (c) => {
+    await c.query(
+      `INSERT INTO agent_runs (id, agent_key, company_id, status)
+       SELECT 'r' || i, $1, $2, 'done' FROM generate_series(1, $3) AS i`,
+      [results.KEY, CO, N],
+    );
+    await c.query(
+      `INSERT INTO ai_drafts (id, run_id, agent_key, company_id, content, sources, model, status)
+       SELECT 'd' || i, 'r' || i, $1, $2, '{}'::jsonb, '[]'::jsonb, 'claude-opus-5', 'pending'
+         FROM generate_series(1, $3) AS i`,
+      [results.KEY, CO, N],
+    );
+  });
+
+  assert.equal(await pendingDraftCount(), N, 'the count is uncapped');
+  assert.equal((await pendingDrafts()).length, 50, 'the page is not');
+  assert.equal((await pendingDrafts(10)).length, 10, 'and its cap is the caller\'s');
+});
+
+test('a decided draft leaves the count, so the two readings stay one queue', async () => {
+  await enqueue({ agentKey: forensics.KEY, subjectRef: 'y1', companyId: CO });
+  await drain(1, scriptedModel([scriptedOk({ version: 1, answers: fullAnswers() })]));
+  assert.equal(await pendingDraftCount(), 1);
+
+  const d = (await pendingDrafts())[0]!;
+  await acceptDraft(d.id, null, ME);
+  assert.equal(await pendingDraftCount(), 0, 'accepted is not waiting');
 });

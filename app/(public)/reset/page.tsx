@@ -135,14 +135,14 @@ export default async function ResetPage({
             />
           </label>
           <button type="submit" className="btn btn-primary btn-lg">
-            Set the password <span aria-hidden="true">→</span>
+            Set <span aria-hidden="true">→</span>
           </button>
           {/* Said before it happens rather than after. Somebody resetting a password because it may
               be known to someone else needs to know that this ends every session, including theirs
               on another machine. */}
           <p className="hint">
-            This uses the code up and signs out every session. No codes left? Ask someone with VM
-            access. <Link href="/login">Back to sign in</Link>.
+            This uses the code up and signs out every session. If none are left, ask someone with
+            VM access. <Link href="/login">Back to sign in</Link>.
           </p>
         </form>
       </section>

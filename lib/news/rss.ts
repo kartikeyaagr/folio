@@ -8,6 +8,8 @@
  * use for "when".
  */
 
+import { decodeHTML } from 'entities';
+
 export interface FeedItem {
   guid: string;
   url: string;
@@ -18,21 +20,18 @@ export interface FeedItem {
 
 export class NotAFeed extends Error {}
 
-const ENTITIES: Record<string, string> = {
-  amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ', '#39': "'", '#8217': '’',
-  '#8216': '‘', '#8220': '“', '#8221': '”', '#8211': '–', '#8212': '—',
-};
-
+/**
+ * CDATA out, entities in.
+ *
+ * The named entities were a table of thirteen until 18-Sep-2026. Numeric references were already
+ * general, so what fell through were the named ones HTML5 defines and this table did not — and
+ * the fallthrough returned the reference verbatim, so `&rsquo;` and `&hellip;` were stored into
+ * `news_items.title` as themselves and rendered to a reader that way. Indian business press uses
+ * both heavily. `entities` carries the whole HTML5 table, has no dependencies, and is by the
+ * author of the parser `fast-xml-parser` competes with.
+ */
 function decode(text: string): string {
-  return text
-    .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1')
-    .replace(/&(#x[0-9a-fA-F]+|#\d+|[a-zA-Z]+);/g, (whole, name: string) => {
-      if (name.startsWith('#x')) return String.fromCodePoint(parseInt(name.slice(2), 16));
-      if (ENTITIES[name] !== undefined) return ENTITIES[name];
-      if (name.startsWith('#')) return String.fromCodePoint(Number(name.slice(1)));
-      return whole;
-    })
-    .trim();
+  return decodeHTML(text.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1')).trim();
 }
 
 /** Strip markup from a summary. Publishers put whole articles, images and trackers in there. */

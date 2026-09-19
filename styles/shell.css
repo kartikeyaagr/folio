@@ -30,7 +30,9 @@
   gap: 4px;
   padding: 16px 0 14px;
   background: var(--rail);
-  color: #fff;
+  color: var(--rail-on);
+  /* shadcn's sidebar is held by a border, not by contrast against the page. */
+  border-right: 1px solid var(--rail-line);
 }
 .rail-brand {
   width: 32px;
@@ -38,16 +40,16 @@
   margin-bottom: 14px;
   display: grid;
   place-items: center;
-  border-radius: 9px;
-  background: rgba(255, 255, 255, 0.14);
-  color: #fff;
-  font-weight: 800;
+  border-radius: var(--r-md);
+  background: var(--navy);
+  color: var(--on-navy);
+  font-weight: 700;
   font-size: 14px;
   text-decoration: none;
 }
 .rail-brand:hover {
-  background: rgba(255, 255, 255, 0.24);
-  color: #fff;
+  background: var(--navy-2);
+  color: var(--on-navy);
 }
 .rail-hub {
   position: relative;
@@ -58,9 +60,9 @@
   gap: 3px;
   padding: 6px 0 4px;
   border: 0;
-  border-radius: 10px;
+  border-radius: var(--r-md);
   background: transparent;
-  color: rgba(255, 255, 255, 0.62);
+  color: var(--rail-ink);
   font-size: 10px;
   font-weight: 600;
   letter-spacing: 0.02em;
@@ -71,12 +73,12 @@
     color 140ms var(--ease);
 }
 .rail-hub:hover {
-  background: rgba(255, 255, 255, 0.1);
-  color: #fff;
+  background: var(--navy-soft);
+  color: var(--rail-on);
 }
 .rail-hub[aria-current='page'] {
-  background: rgba(255, 255, 255, 0.16);
-  color: #fff;
+  background: var(--navy-soft);
+  color: var(--rail-on);
 }
 .rail-hub svg {
   display: block;
@@ -89,8 +91,10 @@
   height: 16px;
   padding: 0 4px;
   border-radius: 999px;
-  background: #4fb695;
-  color: #0f2440;
+  /* Tokenised: this pair was literal `#4fb695` on `#0f2440`, which survived the rail going from
+     navy to ink by not noticing. `--rail` is the ground it actually sits on. */
+  background: var(--teal);
+  color: var(--rail);
   font-size: 10px;
   font-weight: 800;
   line-height: 16px;
@@ -105,20 +109,20 @@
   display: grid;
   place-items: center;
   border: 0;
-  border-radius: 10px;
+  border-radius: var(--r-md);
   background: transparent;
-  color: rgba(255, 255, 255, 0.65);
+  color: var(--rail-ink);
   cursor: pointer;
   transition:
     background-color 140ms var(--ease),
     color 140ms var(--ease);
 }
 .rail-icon:hover {
-  background: rgba(255, 255, 255, 0.1);
-  color: #fff;
+  background: var(--navy-soft);
+  color: var(--rail-on);
 }
 .rail-icon:focus-visible {
-  outline-color: #fff;
+  outline-color: var(--ring);
 }
 
 /* The avatar and its menu. A <details>, so it needs no script and closes on the next click. */
@@ -132,10 +136,10 @@
   height: 34px;
   display: grid;
   place-items: center;
-  border: 1px solid rgba(255, 255, 255, 0.25);
+  border: 1px solid var(--line-2);
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.08);
-  color: #fff;
+  background: var(--surface-2);
+  color: var(--rail-on);
   font-weight: 700;
   font-size: 12px;
   cursor: pointer;
@@ -144,10 +148,10 @@
   display: none;
 }
 .rail-menu > summary:hover {
-  background: rgba(255, 255, 255, 0.18);
+  background: var(--navy-soft);
 }
 .rail-menu[open] > summary {
-  background: rgba(255, 255, 255, 0.22);
+  background: var(--navy-soft);
 }
 .rail-menu-pop {
   position: absolute;
@@ -193,6 +197,14 @@
   margin-bottom: 8px;
 }
 
+/* Sign out is the last thing in the popover, so it carries no gap under it. */
+.rail-menu-out {
+  margin: 0;
+}
+.rail-menu-out .btn-link {
+  margin-bottom: 0;
+}
+
 /* --- Header ---------------------------------------------------------------------------------- */
 
 .app-head {
@@ -226,11 +238,48 @@
 }
 .app-title {
   font-size: 18px;
-  font-weight: 700;
+  font-weight: 600;
   letter-spacing: -0.01em;
   white-space: nowrap;
   margin: 0;
 }
+/* The title, renamed where it is written. A button until it is clicked, so a stray keystroke
+   cannot land in the one field a document is found by — `components/TitleEdit.tsx` has the rest. */
+.app-title-edit {
+  padding: 2px 6px;
+  margin: 0 -6px;
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: text;
+  transition:
+    background-color 120ms var(--ease),
+    border-color 120ms var(--ease);
+}
+.app-title-edit:hover:not(:disabled) {
+  border-color: var(--line);
+  background: var(--surface-2);
+}
+.app-title-edit:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.app-title-input {
+  min-width: 320px;
+  max-width: 46vw;
+  padding: 2px 6px;
+  margin: 0 -6px;
+  border: 1px solid var(--navy);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  color: inherit;
+  font: inherit;
+  outline: none;
+}
+
 .app-sub {
   flex: 1 1 0;
   min-width: 0;
@@ -339,15 +388,6 @@
   color: var(--muted);
 }
 
-/* --- Editor shell (full-bleed, no rail) ---------------------------------------------------- */
-
-.editor-shell {
-  display: flex;
-  flex-direction: column;
-  min-height: 100vh;
-  background: var(--bg);
-}
-
 /* --- Login ----------------------------------------------------------------------------------- */
 
 .login {
@@ -376,12 +416,12 @@
   place-items: center;
   border-radius: 8px;
   background: var(--rail);
-  color: #fff;
+  color: var(--rail-on);
   font-weight: 800;
   font-size: 13px;
 }
 .login-copy h1 {
-  font-family: var(--serif);
+  font-family: var(--font);
   font-weight: 500;
   font-size: 56px;
   line-height: 1.05;

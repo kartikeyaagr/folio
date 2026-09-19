@@ -6,22 +6,25 @@
  * so the fund kept its notes in Google Docs and its models in Excel — the two things
  * `docs/specs/v2-system-map.md` says in its first paragraph that this system replaces.
  *
- * **A spreadsheet is a document whose body is a grid.** Same table, same versioning, same
- * attribution, same archive. Every save is a new `document_versions` row, so a model's history is
- * kept for the same reason a memo's is: a number in an investment case is worth little without
- * being able to see what it was last quarter and who changed it.
+ * **A spreadsheet is a document whose body is a workbook.** Same table, same versioning, same
+ * attribution, same archive — and tabs, because a model keeps its assumptions on one and its
+ * output on another, and `lib/sheet/book.ts` says what happened when those arrived as two
+ * documents. Every save is a new `document_versions` row, so a model's history is kept for the
+ * same reason a memo's is: a number in an investment case is worth little without being able to
+ * see what it was last quarter and who changed it.
  *
  * **Archived, not deleted.** `archived_at` is the delete, and the rows stay. A note somebody wrote
  * about a company they then passed on is exactly the note worth finding two years later, and A8's
  * graveyard rests on the same argument.
  */
 
-import { createHash, randomBytes } from 'node:crypto';
+import { createHash } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 
-import { readTxn, writeTxn, type Client } from './db.ts';
+import { readTxn, rowId, type Client, writeTxn } from './db.ts';
 import { pathFor } from './ingest/attachments.ts';
+import { bodyOf, DEFAULT_SHEET_NAME } from './sheet/book.ts';
 
 export type DocKind = 'note' | 'memo' | 'meeting' | 'checklist' | 'sheet';
 
@@ -59,14 +62,49 @@ export interface DocSummary {
   kind: string;
   companyId: string | null;
   symbol: string | null;
+  /**
+   * When the ROW was last touched, which is not when the document was last written in.
+   *
+   * **Do not date a document with this.** Nothing maintains it on every save path: "Praj model —
+   * Model" has eight versions, the last written 16-Sep-2026, and this column says 9-Sep. It also
+   * moves when a backfill re-promotes a transcript, which is how all 35 of them came to be dated
+   * the afternoon they were fetched. `documentDate` is the field every screen uses; this one is
+   * kept because the column is real and its two writers are real, and is read by nothing.
+   */
   updatedAt: Date;
   archivedAt: Date | null;
   updatedByName: string | null;
   versions: number;
+  /**
+   * **The date the document itself carries, which means two different things on purpose.**
+   *
+   * For a document the exchange published, it is when the company released it: `0042` made
+   * `promoteTranscript` stamp the linking filing's `announced_at` rather than taking the column's
+   * `now()` default, precisely so a 2022 transcript is dated 2022. For a document written here, it
+   * is the last save — the same statement, since a note's current version is its last one.
+   *
+   * Not `documents.updated_at`, which is on the row and moves whenever the row is touched. Every
+   * ingested document read "17 Sept 2026" under it, because the backfill re-promoted them that
+   * afternoon; a list of filings dated by when this system happened to fetch them is sorted by
+   * nothing. The screens label the column `Date` and say which it is per row, because a header
+   * reading "Released" over a note somebody saved this morning is the same lie in the other
+   * direction.
+   */
+  documentDate: Date;
+  /**
+   * The attachment this document is a reading of, for a transcript `extractPending` promoted.
+   *
+   * Set means **there is a PDF behind this and the PDF is the thing to show**. A company page that
+   * listed the document and not the file handed the desk a machine's extraction of a filing while
+   * the filing itself was unreachable — and listed both once `lib/files.ts` arrived, which is the
+   * same document twice. `filedFor` lists these; this column is how the written list leaves them out.
+   */
+  fromAttachment: string | null;
 }
 
 export interface DocDetail extends DocSummary {
-  /** `{text}` for prose, `{cells}` for a sheet. Whatever the last save wrote. */
+  /** `{text}` for prose, `{sheets}` for a spreadsheet. Whatever the last save wrote — read a
+   *  spreadsheet's through `lib/sheet/book.ts`, which also understands the older `{cells}`. */
   body: Record<string, unknown>;
   createdByName: string | null;
 }
@@ -154,7 +192,10 @@ const SELECT = `
          d.updated_at AS "updatedAt", d.archived_at AS "archivedAt",
          (SELECT a.label FROM document_versions v JOIN actors a ON a.id = v.written_by
            WHERE v.document_id = d.id ORDER BY v.written_at DESC LIMIT 1) AS "updatedByName",
-         (SELECT count(*)::int FROM document_versions v WHERE v.document_id = d.id) AS versions
+         (SELECT count(*)::int FROM document_versions v WHERE v.document_id = d.id) AS versions,
+         (SELECT v.written_at FROM document_versions v
+           WHERE v.document_id = d.id ORDER BY v.written_at DESC, v.id DESC LIMIT 1) AS "documentDate",
+         d.from_attachment AS "fromAttachment"
     FROM documents d
     LEFT JOIN companies co ON co.id = d.company_id`;
 
@@ -167,7 +208,7 @@ export async function documentsFor(
     const { rows } = await c.query<DocSummary>(
       `${SELECT} WHERE d.company_id = $1
          AND (d.archived_at IS NULL OR $2)
-       ORDER BY d.archived_at IS NOT NULL, d.updated_at DESC`,
+       ORDER BY d.archived_at IS NOT NULL, "documentDate" DESC`,
       [companyId, opts.archived ?? false],
     );
     return rows;
@@ -186,7 +227,9 @@ export async function allDocuments(opts: { archived?: boolean } = {}): Promise<D
   return readTxn(async (c) => {
     const { rows } = await c.query<DocSummary>(
       `${SELECT} WHERE d.archived_at IS NULL OR $1
-       ORDER BY d.archived_at IS NOT NULL, d.updated_at DESC
+       -- On the date the document carries. Ordering on d.updated_at put a 2022 transcript above a
+       -- 2025 one because the backfill happened to re-promote it a second later.
+       ORDER BY d.archived_at IS NOT NULL, "documentDate" DESC
        LIMIT 500`,
       [opts.archived ?? false],
     );
@@ -202,6 +245,15 @@ export async function getDocument(id: string): Promise<DocDetail | null> {
               (SELECT a.label FROM document_versions v JOIN actors a ON a.id = v.written_by
                 WHERE v.document_id = d.id ORDER BY v.written_at DESC LIMIT 1) AS "updatedByName",
               (SELECT count(*)::int FROM document_versions v WHERE v.document_id = d.id) AS versions,
+              -- Repeated from SELECT above rather than shared, and that is why this was missing
+              -- until the page was loaded: query<DocDetail> is a cast, so a column absent from the
+              -- SQL is undefined at runtime and DocDetail at compile time. Section 14's finding 23
+              -- is the same trap from the other direction. The page renders the PDF only when this
+              -- is set, so omitting it fell back silently to the extracted text — the exact thing
+              -- being fixed.
+              (SELECT v.written_at FROM document_versions v
+                WHERE v.document_id = d.id ORDER BY v.written_at DESC, v.id DESC LIMIT 1) AS "documentDate",
+              d.from_attachment AS "fromAttachment",
               (SELECT a.label FROM actors a WHERE a.id = d.created_by) AS "createdByName",
               COALESCE(
                 (SELECT v.body FROM document_versions v
@@ -230,8 +282,11 @@ export async function createDocument(
 ): Promise<string> {
   const title = input.title.trim();
   if (!title) throw new TitleRequired('A document needs a title.');
-  const id = randomBytes(16).toString('hex');
-  const body = input.kind === 'sheet' ? { cells: {} } : { text: '' };
+  const id = rowId();
+  // A new spreadsheet opens on one empty tab, named as Excel names it. Never `{cells}`: that
+  // shape is read for the rows that already have it and written by nothing.
+  const body =
+    input.kind === 'sheet' ? bodyOf([{ name: DEFAULT_SHEET_NAME, cells: {} }]) : { text: '' };
 
   await writeTxn(actorId, async (c) => {
     await c.query(
@@ -280,7 +335,7 @@ export async function renameDocument(id: string, title: string, actorId: string)
   });
 }
 
-/** The delete. Reversible on purpose — see the note at the top of this file. */
+/** The everyday delete. Reversible on purpose — see the note at the top of this file. */
 export async function archiveDocument(id: string, actorId: string, archived = true): Promise<void> {
   await writeTxn(actorId, async (c) => {
     const { rowCount } = await c.query(
@@ -288,6 +343,43 @@ export async function archiveDocument(id: string, actorId: string, archived = tr
       [id, archived],
     );
     if (!rowCount) throw new NoSuchDocument('That document no longer exists.');
+  });
+}
+
+/**
+ * The real delete: the row, every version of it, and its place in search.
+ *
+ * Archiving is still what the desk should reach for, and it stays the default action on both
+ * screens — the argument at the top of this file has not changed, and a note about a company the
+ * fund passed on is still the note worth finding in two years. This exists because that argument
+ * covers *writing*, and an import that went wrong is not writing. A workbook that arrived as
+ * eleven documents, a file uploaded against the wrong company, a test model: archiving those does
+ * not tidy the record, it files clutter under a heading that says it was worth keeping.
+ *
+ * **Out of search in the same transaction it leaves the table.** `sources` has no foreign key to
+ * `documents` — it is keyed `(kind, ref_id)` across five unrelated kinds — so nothing removes it
+ * automatically. `lib/retrieval/reap.ts` would catch it on its next run, because a deleted document
+ * stops satisfying `DOCUMENTS_SELECT`, but "on its next run" is a window in which a deleted
+ * document is still answering questions. Its chunks go with it, cascading from `sources.id`.
+ *
+ * What is deliberately left behind: the uploaded file itself. `attachments` is content-addressed,
+ * so the same bytes uploaded twice are one row that more than one document may point at, and
+ * deleting it here could empty a document nobody asked about. The screens say so before you commit.
+ *
+ * **Irreversible from the app, not from the database.** The audit trigger writes the deleted row to
+ * `audit_log.before` — body and all, attributed — for the document and for every version cascaded
+ * with it, verified on a real delete 16-Sep-2026. So this is recoverable by hand and by somebody
+ * who means it, which is the right amount of recoverable; what the dialog must not do is claim it
+ * is gone forever, because that would be the one kind of inaccuracy this system exists to refuse.
+ */
+export async function deleteDocument(id: string, actorId: string): Promise<void> {
+  await writeTxn(actorId, async (c) => {
+    const { rowCount } = await c.query('SELECT 1 FROM documents WHERE id = $1', [id]);
+    if (!rowCount) throw new NoSuchDocument('That document no longer exists.');
+
+    await c.query("DELETE FROM sources WHERE kind = 'document_version' AND ref_id = $1", [id]);
+    // document_versions cascades from here (0011's FK), so the history goes with the document.
+    await c.query('DELETE FROM documents WHERE id = $1', [id]);
   });
 }
 

@@ -7,6 +7,7 @@ import { AppHeader, Card, Empty, Seg, Stat, StatRow } from '@/components/ui.tsx'
 
 import { markNews } from '../../_lib/actions/news.ts';
 import { requireUser } from '../../_lib/session.ts';
+import { dayMonth } from '@/components/ui';
 
 /**
  * C4 — news on our names, with the reason it matched.
@@ -21,12 +22,8 @@ import { requireUser } from '../../_lib/session.ts';
 
 export const dynamic = 'force-dynamic';
 
-function when(at: Date | null): string {
-  if (!at) return 'undated';
-  return new Intl.DateTimeFormat('en-GB', {
-    timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short',
-  }).format(at);
-}
+/** "undated" rather than a dash: a feed item with no date is a fact about the feed. */
+const when = (at: Date | null): string => (at ? dayMonth(at) : 'undated');
 
 export default async function NewsPage({
   searchParams,
@@ -102,7 +99,7 @@ export default async function NewsPage({
           {visible.length === 0 ? (
             <Empty>
               {showDismissed
-                ? 'Nothing has been dismissed. What you dismiss is kept, because it says which kind of match is not earning its place.'
+                ? 'Nothing has been dismissed. Dismissed items are kept.'
                 : 'No news has been matched to a followed name in the last 30 days. Only stories the gate could state a mechanism for appear here.'}
             </Empty>
           ) : (
@@ -145,7 +142,7 @@ export default async function NewsPage({
                       <input type="hidden" name="id" value={n.id} />
                       <input type="hidden" name="state" value={n.state === 'dismissed' ? 'clear' : 'dismissed'} />
                       <button type="submit" className="btn btn-quiet btn-sm">
-                        {n.state === 'dismissed' ? 'Bring back' : 'Not relevant'}
+                        {n.state === 'dismissed' ? 'Restore' : 'Dismiss'}
                       </button>
                     </form>
                   </div>

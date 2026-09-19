@@ -13,15 +13,11 @@
  * one until this is run against it.
  */
 import { closePool, readTxn, serviceTxn } from '../lib/db.ts';
-
-function arg(flag: string): string | undefined {
-  const i = process.argv.indexOf(flag);
-  return i >= 0 ? process.argv[i + 1] : undefined;
-}
-const has = (flag: string): boolean => process.argv.includes(flag);
+import { readFlags } from './_args.ts';
 
 async function main(): Promise<void> {
-  if (has('--list')) {
+  const flags = readFlags(['email'], ['list', 'revoke']);
+  if (flags.bool('list')) {
     const rows = await readTxn(async (c) => {
       const { rows } = await c.query<{ email: string; name: string; is_admin: boolean }>(
         'SELECT email, name, is_admin FROM users WHERE disabled_at IS NULL ORDER BY email',
@@ -39,14 +35,14 @@ async function main(): Promise<void> {
     return;
   }
 
-  const email = arg('--email');
+  const email = flags.str('email');
   if (!email) {
     console.error('usage: tsx jobs/set-admin.ts --email <email> [--revoke]   |   --list');
     process.exitCode = 2;
     return;
   }
 
-  const grant = !has('--revoke');
+  const grant = !flags.bool('revoke');
   // Matched case-insensitively and gated on disabled_at, the same way login() reads it: granting
   // admin to a disabled account would be a live permission on a dead login.
   const updated = await serviceTxn('system:auth', async (c) => {

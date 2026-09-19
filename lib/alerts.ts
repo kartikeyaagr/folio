@@ -14,12 +14,10 @@
  * nothing twice and the evaluator needs no memory of what it last looked at.
  */
 
-import { randomBytes } from 'node:crypto';
-import { readTxn, serviceTxn, writeTxn, type Client } from './db.ts';
+import { readTxn, rowId, serviceTxn, type Client, writeTxn } from './db.ts';
 
 export type Severity = 'critical' | 'high' | 'normal' | 'low';
 
-const id = (): string => randomBytes(16).toString('hex');
 
 export interface RaiseInput {
   ruleKey: string;
@@ -39,7 +37,7 @@ export interface RaiseInput {
  * Returns false when the alert already existed, which is the ordinary case on a re-run.
  */
 export async function raiseAlert(c: Client, input: RaiseInput): Promise<boolean> {
-  const alertId = id();
+  const alertId = rowId();
   const { rows } = await c.query<{ id: string }>(
     `INSERT INTO alerts (id, rule_key, company_id, severity, title, detail, subject_ref)
      VALUES ($1,$2,$3,$4,$5,$6,$7)
@@ -53,7 +51,7 @@ export async function raiseAlert(c: Client, input: RaiseInput): Promise<boolean>
     await c.query(
       `INSERT INTO notification_outbox (id, kind, recipient, subject, body, alert_id)
        VALUES ($1,'alert',$2,$3,$4,$5)`,
-      [id(), userId, input.title, input.detail ?? input.title, alertId],
+      [rowId(), userId, input.title, input.detail ?? input.title, alertId],
     );
   }
   return true;

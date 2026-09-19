@@ -20,9 +20,10 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 
 import type { Client } from '../db.ts';
-import { unzip, UnreadableZip } from '../import/zip.ts';
+import { UnreadableZip, unzipListing, unzipOne } from '../import/zip.ts';
 import { pathFor } from './attachments.ts';
 import { NseError, NseSession } from './nse.ts';
+import { nseTimestamp } from './dates.ts';
 
 export interface AnnualReport {
   symbol: string;
@@ -44,14 +45,7 @@ const clean = (v: unknown): string => (typeof v === 'string' ? v.trim() : '');
 function asDissemination(value: string): string | null {
   const v = value.trim();
   if (!v || v === '-') return null;
-  const m = /^(\d{2})-([A-Za-z]{3})-(\d{4})\s+(\d{2}):(\d{2}):(\d{2})$/.exec(v);
-  if (!m) return null;
-  const months = 'janfebmaraprmayjunjulaugsepoctnovdec';
-  const mon = months.indexOf(m[2]!.toLowerCase()) / 3;
-  if (!Number.isInteger(mon) || mon < 0) return null;
-  return new Date(
-    `${m[3]}-${String(mon + 1).padStart(2, '0')}-${m[1]}T${m[4]}:${m[5]}:${m[6]}+05:30`,
-  ).toISOString();
+  return nseTimestamp(v)?.toISOString() ?? null;
 }
 
 /** `attFileSize` is null on 15 of PRAJIND's 16 rows; NSE mostly does not declare it up front. */
@@ -123,16 +117,19 @@ export async function fetchAnnualReports(
  * cover that is a scan and extracts nothing. Picked by size, not name: the report is a whole
  * annual report and the cover is a couple of scanned pages, an order of magnitude smaller in every
  * case checked, and NSE's own naming is not consistent enough across companies to match by
- * convention. `null` only for an empty map, which `unzip` never actually returns — a zip with a
- * central directory but zero entries — but the type stays honest about it.
+ * convention.
+ *
+ * Weighed from the archive's index rather than from its contents: `unzipListing` reads each
+ * member's uncompressed size off the central directory, so choosing between a report and its
+ * cover no longer inflates both to throw one away. `null` only for an archive with no entries.
  */
-export function pickReport(zip: Map<string, Buffer>): string | null {
+export function pickReport(entries: { name: string; bytes: number }[]): string | null {
   let best: string | null = null;
   let bestBytes = -1;
-  for (const [name, buf] of zip) {
-    if (buf.length > bestBytes) {
-      best = name;
-      bestBytes = buf.length;
+  for (const e of entries) {
+    if (e.bytes > bestBytes) {
+      best = e.name;
+      bestBytes = e.bytes;
     }
   }
   return best;
@@ -205,9 +202,11 @@ export async function storeAnnualReport(
   let pdf: Buffer;
   let filename: string;
   if (r.isZip) {
-    let zip: Map<string, Buffer>;
+    let name: string | null;
+    let body: Buffer | null;
     try {
-      zip = unzip(raw);
+      name = pickReport(unzipListing(raw));
+      body = name === null ? null : unzipOne(raw, name);
     } catch (err) {
       if (err instanceof UnreadableZip) {
         await recordAttempt(c, companyId, r.fromYr, 'unavailable', null, `unreadable zip: ${err.message}`);
@@ -215,12 +214,11 @@ export async function storeAnnualReport(
       }
       throw err;
     }
-    const name = pickReport(zip);
-    if (!name) {
+    if (name === null || body === null) {
       await recordAttempt(c, companyId, r.fromYr, 'unavailable', null, 'zip held no entries');
       return 'unavailable';
     }
-    pdf = zip.get(name)!;
+    pdf = body;
     filename = name;
   } else {
     pdf = raw;

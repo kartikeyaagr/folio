@@ -1,9 +1,9 @@
 # Architecture
 
 How Trisula is put together, and why it is put together that way. Accurate against the tree at the
-time of writing: **51 migrations, 50 tables, 7 agents, 24 job entry points, 19 systemd timers, 18
-routes, 619 tests.** Every number here was counted, not remembered; if you change the shape, count
-again rather than editing around it.
+time of writing: **62 migrations, 50 tables, 6 agents, 25 job entry points, 19 systemd timers, two
+long-running watchers, 18 routes, 814 tests.** Every number here was counted, not remembered; if you
+change the shape, count again rather than editing around it.
 
 For the product argument — what was built, what was deliberately cut, and on whose authority — see
 the private `docs/specs/`. This file describes the machine.
@@ -50,11 +50,13 @@ no build step, and that is the trade.
 
 ## 2. The data model
 
-50 tables, none ever dropped. Grouped by what they are for:
+47 tables. None was ever dropped until `0053` took the three that were chat's and nothing else's;
+the rule it replaces — "none ever dropped" — held for fifty migrations and is worth keeping as the
+default. Grouped by what they are for:
 
 ```
 IDENTITY & AUDIT   actors · users · sessions · recovery_codes · audit_log
-                   access_requests · ingestion_runs
+                   access_requests · ingestion_runs · mailboxes
 COMPANIES          securities · companies · company_aliases · sector_terms
                    documents · document_versions · attachments
 FORENSICS          forensics_templates · forensics_template_items
@@ -67,7 +69,6 @@ WHAT HAPPENED      alerts · alert_rules · calendar_events · engagement
 AGENTS             agents · agent_runs · ai_drafts
 NOTIFY             reminders · notification_outbox
 RETRIEVAL          sources · chunks
-CHAT               chat_threads · chat_messages · chat_tool_calls
 LEARNING           exemplars · prompt_rules · rule_observations
 ```
 
@@ -93,8 +94,16 @@ saying who did it, which is why `audit_log` can be trusted rather than hoped at.
 Fourteen sources behind nine ingest jobs, all writing through `lib/ingest/*`:
 
 securities master · exchange filings and announcements · attachments and their extracted PDF text ·
-bhavcopy EOD prices · XBRL fundamentals · shareholding patterns and holders · insider transactions ·
-corporate actions · the calendar · annual reports.
+bhavcopy EOD prices · **index closes** · XBRL fundamentals · shareholding patterns and holders ·
+insider transactions · corporate actions · the calendar · annual reports.
+
+**Index closes ride with the bhavcopy**, in the same loop of the same job from the same archive
+host. NSE's per-index history endpoint answers 503 — measured 17-Sep-2026, the same answer every
+per-symbol historical endpoint gives — but `ind_close_all_DDMMYYYY.csv` carries all 166 indices for
+one trading day, so the walk that fetches a day's prices fetches its index levels in one more
+request. Four are kept (`lib/ingest/indices.ts`): Smallcap 250, Midcap 150, Nifty 500, Nifty 50.
+`index_levels` is its own table because an index is not a security — no ISIN, no symbol, and not
+filtered against `companies` — and carries no audit trigger for the reason `prices` carries none.
 
 Two rules govern all of them.
 
@@ -111,7 +120,46 @@ cost this system two real alerts.
 
 `companies` is the universe. Nearly every ingest job filters to followed names, so adding a company
 is what makes the machine fetch its history — `companies.backfilled_at` is a queue drained by
-`jobs/backfill-company.ts` on a timer.
+`jobs/backfill-company.ts`. **Eight steps, all per-symbol**: the announcement history, the annual
+reports, the documents those filings point at and the text inside them, the results (both the old
+feed and Integrated Filing), the corporate actions, the shareholding pattern, the insider and pledge
+disclosures back to 2015, and the price series.
+
+`addCompany` announces on `trisula_backfill` inside the transaction that inserts the row, so
+`trisula-backfill-watch.service` starts the fetch in about a second. The ten-minute timer stays
+enabled and remains the guarantee: a `NOTIFY` with nobody listening is discarded, and the watcher
+being down is exactly when that matters. The watcher drains the whole queue on every wake and never
+trusts the symbol in the payload.
+
+**A step ends three ways, not two** (`lib/ingest/backfill.ts`). `gap` is the exchange having nothing
+for this name — a company listed in 2021 has no sixteen years of annual reports — and does not hold
+the queue. `error` is the box or the feed, and the name stays queued: it is the same line
+`lib/agents/queue.ts` draws between a model refusing a subject and a machine with no credential. An
+exception is always `error`, because a step that threw does not know what the exchange holds. Only
+when nothing broke is `backfilled_at` written, which is what the column says it means. Three
+attempts, then the name leaves the queue by that bound rather than by being called finished, and
+`/companies` shows where every name has got to. `backfill_started_at` is the lease, so two passes
+never run over one name.
+
+**The offer document is the one thing no feed serves.** NSE has no endpoint for an RHP or DRHP and
+SEBI's draft index holds 2.3% of NSE Emerge names; both were probed live, in Sep 2026, twice. They
+arrive through the import dialog, which takes 32MB PDFs and keeps the bytes.
+
+**A filed document is read as the PDF it is.** `lib/files.ts` lists what the company published —
+one row per document, named for its period and its type (`Sept 2026 Transcript`, `Aug 2026 PPT`),
+with the exchange's own date beside it — and the link opens the original through
+`app/api/attachment/[sha]`. The name is composed at render, not stored: `to_char(…, 'Mon')` gives
+`Sep` where `Intl` under `en-IN` gives `Sept`, so a title written by SQL and one written by
+TypeScript would disagree for one month a year. The extracted text is not a second document: it is what the
+agents read and what retrieval searches, and nothing else. Until 17-Sep-2026 a transcript existed
+twice, as the PDF and as a `documents` row holding its text, and the page showed the second while
+the first was unreachable from any screen.
+
+Three layers of deduplication, because bytes, text and rows fail differently. The store is
+content-addressed, so identical bytes are one file. `register.ts` collapses the filing fan-out by
+sha and then again by the hash of the text, so a corrected re-filing — new signature, same words —
+is indexed once, keeping the earliest. And a document promoted from an attachment is not indexed at
+all, because the attachment already carries those words: 35 transcripts, 2,063 duplicate chunks.
 
 ### News
 
@@ -145,10 +193,12 @@ them returns plausible numbers with meaningless neighbours, which is the worst a
 because it has no symptom.
 
 **Chunking** is 1000 characters target, 150 overlap, 100 minimum, breaking at paragraph → sentence →
-whitespace → hard cut. A spreadsheet chunks by **row block**, never mid-row: a grid cut mid-row
-retrieves as noise — a number with no idea which line it belonged to. The invariant that makes a
-citation work is `source.slice(char_from, char_to) === chunk.text`, where `source` means exactly what
-`textFor` returns.
+whitespace → hard cut. A spreadsheet chunks by **row block**, never mid-row and never across two
+tabs: a grid cut mid-row retrieves as noise — a number with no idea which line it belonged to — and
+a block ending in one tab and opening in the next is a passage nobody wrote. A workbook of more than
+one tab names each tab on a line of its own, so a retrieved block says what it is a block of. The
+invariant that makes a citation work is `source.slice(char_from, char_to) === chunk.text`, where
+`source` means exactly what `textFor` returns.
 
 **Search is hybrid** — vector and full-text, merged by reciprocal rank fusion at k=60, then collapsed
 to at most three chunks per source. Full-text terms are OR-ed, not AND-ed: *"what has management said
@@ -161,11 +211,26 @@ judgement moved into the chat tool loop instead.
 `jobs/index-content.ts` drains two queues in one run — unindexed sources and unembedded exemplars —
 because both are the same operation against the same loaded 130 MB model.
 
+**Re-indexing is driven by content, not by a clock.** `registerAll` recomputes each source's
+`content_hash`; the upsert clears `indexed_at` *only* when that hash moved, and `indexOne` deletes a
+source's chunks before writing the new ones. A memo saved six times in an afternoon costs one embed;
+a memo actually edited costs one re-embed and its stale vectors are gone in the same transaction.
+`reap.ts` retracts a source that no longer qualifies, and `chunks` cascade from `sources.id`.
+
+What tells it to look is a statement-level trigger (`0052`) on `documents`, `document_versions` and
+`attachments`, which `pg_notify`s a constant payload on `trisula_content` — constant so an
+eleven-tab import is one notification rather than twenty-two. `jobs/index-content.ts --watch`
+listens and indexes seconds after a save; `trisula-index-watch.service` runs it. **The notification
+is a nudge and never the record**: one sent with no listener attached is gone, so the durable queue
+is still `indexed_at IS NULL` and the ten-minute timer is still what guarantees it drains. Indexing
+deliberately does not happen on the write path — saving a memo must not block on a 130 MB model
+load, the same rule the accept gate follows for exemplars.
+
 ---
 
 ## 5. Agents
 
-Seven, as rows in `agents`. An agent absent from that table cannot be invoked.
+Six, as rows in `agents`. An agent absent from that table cannot be invoked.
 
 | key | trigger | what it does |
 |---|---|---|
@@ -173,7 +238,6 @@ Seven, as rows in `agents`. An agent absent from that table cannot be invoked.
 | `concall-insights` | event | reads a transcript against the previous one |
 | `forensics-review` | event | works the fund's own 14-item forensic checklist |
 | `news-brief` | prompt | the week's confirmed news, per company |
-| `desk-analyst` | prompt (chat) | the whole-company read, with tools |
 | `email-workflow` | schedule | drains `notification_outbox` |
 | `reminders` | schedule | what is due |
 
@@ -181,11 +245,25 @@ Everything funnels through the `agent_runs` queue, drained by one timer every fi
 uses `FOR UPDATE SKIP LOCKED` with a 30-minute lease. "Event" agents are not push-driven: they are
 `NOT EXISTS` sweeps against `agent_runs`, per the house rule.
 
+**Two of the seven can be asked for work by hand**, and `lib/agents/invocable.ts` is the single list
+of which — read by `/agents`' form, by chat's `run_agent`, and by the server action behind the form.
+Membership is a property of the handler, not of the `trigger` column: an agent belongs there iff
+everything it reads off the run can be picked from a dropdown. A company can be; a `subject_ref`
+cannot, which is what excludes agents 1, 2 and 8. `invocable.test.ts` runs the claim rather than
+asserting the list — every member must produce a draft with `subject_ref = NULL`, and every
+model-calling non-member must fail without one.
+
 Failures are typed — `refusal`, `truncated`, `unparseable`, `schema_mismatch`, `too_large`, `error` —
 and the distinction is load-bearing. The first five are properties of *this content* and fail the
 same way every time, so the subject is correctly retired. `error` is the catch-all a box with no
 credential produces, and those are requeued after six hours: without that, an hour of the timer
 running without an API key would have permanently retired every eligible subject.
+
+`failRun` only retires a run on its **last** attempt; below `MAX_ATTEMPTS` it puts the row back as
+`queued` with the kind and the error still on it. So "what has failed" is `failure_kind IS NOT NULL
+AND status IN ('failed','queued')`, never `status = 'failed'` alone, and `/agents` shows the two
+apart — *out of attempts* needs a person, *will be tried again* needs whatever broke the box fixed.
+`running` is excluded because a claim does not clear the previous attempt's kind.
 
 **Nothing an agent writes enters the record without a person accepting it.** A run produces an
 `ai_drafts` row; `/review` shows its sources *before* its content, the deterministic checks, and
@@ -197,32 +275,38 @@ Accept or Reject-with-a-required-reason. Accepting lands it in `documents`/`docu
 
 ---
 
-## 6. Chat
+## 6. Ask — the request desk
 
-`/chat` is the sixth rail hub and the only free-text way into the system. A thread is
-`chat_threads` → `chat_messages` → `chat_tool_calls`.
+`/chat` is where a person asks an agent for work. It is **not** the chat that used to be there:
+agent 8 and its tool loop were cut on 17-Sep-2026 (`0053`), and there is no model to converse with.
+You pick a company, you pick an agent, you pick what it should read, and it queues. The draft lands
+in `/review` like every other agent's.
 
-`chat_messages.role` is `person`, `agent` or `system` — **never `assistant`**. A model's answer is a
-draft in the review queue, not a message in a conversation, and blurring that is how AI text ends up
-read as settled.
+All four model-calling agents are askable, which needed `lib/agents/subjects.ts`: agents 1 and 2
+take a `subject_ref` — one filed period, one transcript — that no plain form could supply, so the
+desk offers the same rows their sweeps read, filtered the same way. A superseded period or a
+transcript under `MIN_TRANSCRIPT_CHARS` is never offered, because the handler would refuse it
+*after* the run had been claimed. A subject already read is offered and labelled rather than hidden:
+the sweeps skip those because they must not spend twice unasked, but a person asking again has asked
+on purpose.
 
-The desk analyst runs a tool loop bounded at **8 API round trips** with six tools:
+`askAgent` re-checks all of it server-side — the agent is invocable, the subject it declares is
+present, and the `subject_ref` is one this agent could be pointed at — because a `<select>` is a
+suggestion and the value posted back is whatever the browser sent.
 
-`search_corpus` · `get_financials` · `get_position` · `list_filings` · `run_agent` · `draft_document`
+The page is a card per agent; `?agent=` opens one into its form and **its history**. A person sees
+what they asked that agent for; an admin sees everybody's. That rule is a `WHERE` clause in
+`lib/agents/history.ts`, not a filter in the page — a page that fetched everything and rendered some
+of it has still sent the rest to the browser — and the card counts obey the same clause, so a card
+cannot say "2 requests" over a page that shows none. **Sweep runs are not history**: 79 of 88 rows
+were enqueued unattended when this was written, and those are the registry's subject, not a record
+of somebody asking. The history closes the loop rather than stopping at a status — a row links to
+the draft waiting in `/review`, or to the document an accepted one became.
 
-Only two of those write, and both write to the same accept gate: `run_agent` enqueues an
-`agent_runs` row, `draft_document` writes a `pending` `ai_drafts` row. **Nothing in chat can write to
-the ledger.** A test asserts exactly that by enumerating the tools' write targets.
-
-History is bounded at 10 turns / 40,000 characters, oldest dropped first. When the cap is reached
-the turn closes on the history the runner already holds, with `tool_choice: none` and a plain
-instruction that the budget is spent — the model answers with what it has, or says what it could not
-find out.
-
-Delivery is server render plus a 3-second poll. The turn is a queued `agent_runs` row worked after
-the response, so closing the tab does not lose the answer.
-
----
+**`/agents` is admin-only** from the same day: what runs unattended, on what model, at what cost, and
+what failed is operating detail, the argument `0030` made for spend applied to the page it was on.
+The rail's fifth hub therefore changes destination by role — admins get the registry, everybody else
+gets `/review`, which is a prefix of that hub and is the one screen an analyst's job actually is.
 
 ## 7. Learning
 
@@ -241,8 +325,8 @@ generated paragraph reads better and cannot be checked. A rule enters a prompt o
 approves it on `/rules`, enforced by both code and schema check constraints, and can be retired but
 never deleted.
 
-The assembled system prompt is, in order: **purpose → approved rules → examples**. Four agents learn
-(`concall-insights`, `news-brief`, `forensics-review`, `desk-analyst`); the column is what gates it.
+The assembled system prompt is, in order: **purpose → approved rules → examples**. Three agents learn
+(`concall-insights`, `news-brief`, `forensics-review`); the column is what gates it.
 
 Mean edit distance per agent per week is rendered on `/agents`, which is the measurement that decides
 whether this loop survives.
@@ -261,24 +345,77 @@ so a job that dies tells somebody.
 
 `jobs/heartbeat.ts` is a dead-man's switch: it reports health by *arriving*.
 
+**Mail is one envelope a person a morning.** Producers write a `notification_outbox` row per person
+per event as they always did; `lib/digest.ts` gathers each person's unsent rows into one mail after
+07:00 IST and marks them sent together (`0054`). Per-event sending is gone — a person gets one mail
+a day and never more, and an urgent alert waits until morning, which was chosen over an inbox that
+interrupts. One instant governs a pass: the hour gate, the "already sent today" check and the
+`sent_at` stamp all read the same `now`, because two clocks deciding one thing answers "still today"
+and "already tomorrow" in the same run. No relay configured is a valid state — the outbox keeps
+queueing and the run says how many are waiting.
+
+**A person may link their own mailbox** (account menu → Link your mailbox, `0055`), and their digest
+then leaves from their own address rather than the shared relay. This is the schema's **first
+reversible secret**: everything else stored is one-way, and an SMTP password cannot be, because AUTH
+sends it. `lib/mailbox.ts` narrows the exception — AES-256-GCM under `MAILBOX_KEY` from the box's
+environment (never pgcrypto: a key beside the ciphertext is filing, not encryption), **no plaintext
+fallback** when the key is absent, and the web process seals but never opens. Credentials are proved
+by sending a real message before anything is stored, so a linked mailbox has carried something at
+least once. A mailbox that later stops working records why, falls back to the shared relay, and says
+so in that person's account menu — the failure it exists to prevent is one that still delivers.
+
+Linking is **prompted once and never required** (`0056`): a modal on first sign-in, answered by
+linking or by declining, and `users.mailbox_prompted_at` records that it was asked either way.
+Somebody who declines still gets their digest, through the shared relay. Gating it was considered
+and rejected — the two mail agents are shared by the whole desk, so a global gate would let one
+unlinked person stop everybody's mail.
+
 ---
 
 ## 9. The interface
 
-Six hubs, in the order of the working day: **Desk · News · Portfolio · Companies · Agents · Chat**.
-`components/Rail.tsx` is the single source of navigation. Chat is sixth and last on purpose — a chat
-box at the top of a research tool trains you to ask it things the screens answer better.
+Six hubs, in the order of the working day: **Desk · News · Portfolio · Companies · Agents · Ask**.
+`components/Rail.tsx` is the single source of navigation. Ask is last for the reason the cut chat
+box was — you read first and ask second — and carries no badge: what you asked for waits on a model,
+not on you. The Agents hub reads "Review" and points there for anybody who is not an admin.
 
 Three standing rules, all of which have cost something to learn:
 
 - **State lives in the URL.** `?tab=`, `?filter=`, `?scope=`, plain links. Pages stay server
   components and a refresh lands where you were.
+
+  **One exception, argued in `components/PriceChart.tsx`:** the price chart's range is component
+  state. It was `?range=` until 17-Sep-2026, so looking at five years and then at one month
+  re-rendered the whole company page twice — the documents panel, the shareholding, the coverage
+  form, none of which change — to redraw a line over closes the browser could already have had. The
+  page now loads the whole history once (`priceHistory`, ~270 closes a name today) and `windowOf`
+  slices it in the browser. What the rule protects is a deliberately-chosen filter surviving a
+  refresh; a chart zoom is a lens on data already on the page, costs one click to restore, and falls
+  back to the whole history rather than an arbitrary slice. `?archived=` on the same page still
+  lives in the URL and still should.
 - **Where the system declines to answer, render `<Blank why="…" />`.** Never a zero: an empty cell
   reads as broken, a dash reads as not-applicable, and a zero reads as a measured fact — the most
   dangerous of the three.
 - **Styling is by class, never inline `style` objects.** An inline style cannot express `:hover`,
   `:focus-visible`, `:active` or `:disabled`, and a control with no hover state is the fastest way to
   look unfinished.
+
+**Tailwind v4 is present and on a short leash.** `app/tailwind.css` imports `theme` and `utilities`
+only — the preflight would be a second reset competing with the one `globals.css` already has — and
+clears three token namespaces before declaring ours. Clearing `--color-*` is the load-bearing one:
+Tailwind's default palette is ~300 colours, the design system allows one accent and three meanings,
+and `bg-red-500` now fails to compile rather than relying on somebody remembering the rule. The
+`v4.md` constraint that forbade this is reversed there, with the reasoning, rather than edited away.
+
+`components/primitives/` holds vendored shadcn/Base UI components; `components/ui.tsx` composes them
+into the kit. Three shadcn components are refused on purpose — `Tabs`, `ToggleGroup` and `Select`
+are client-state and would convert server pages into client ones, and `Form` would do the same to
+all 41 forms. There are zero `'use client'` files in `app/` and that is the property being
+protected.
+
+`ops/measure-css.ts` is the census: it reports dead selectors, and fails on a class a component
+names that no stylesheet defines. `styles/unbuilt/` holds stylesheets for cut or unbuilt screens and
+is imported by nothing.
 
 Read `.interface-design/system.md` before adding any screen.
 
@@ -291,7 +428,7 @@ export DATABASE_URL=postgres:///trisula_v3_dev
 pnpm install
 pnpm fetch-model                 # ~130 MB, bge-small-en-v1.5, validated on download
 pnpm exec tsx db/migrate.ts      # one transaction each, checksummed
-pnpm check                       # lint + typecheck + 619 tests
+pnpm check                       # lint + typecheck + 814 tests
 pnpm dev                         # port 3100
 ```
 

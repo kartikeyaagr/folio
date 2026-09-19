@@ -36,6 +36,88 @@ export function todayLabel(now = new Date()): string {
 }
 
 /**
+ * Dates, in the fund's time zone and in one vocabulary.
+ *
+ * Every one of these reads its parts from `Intl` and then spells the month from `MONTHS` above,
+ * rather than letting `Intl` name it. That is not decoration: **en-GB renders September as
+ * "Sept"** — four letters where the other eleven months are three — which makes a column of dates
+ * ragged and is why `todayLabel` was written this way in the first place.
+ *
+ * Nine copies of this lived on the pages until 18-Sep-2026, and they had drifted: five formatted
+ * in en-GB, three in en-IN and one in en-CA, so the same instant read `09:30` on the filings
+ * screen and `9:30 am` on the document one. A date is chrome, and `.interface-design/system.md`
+ * puts chrome here.
+ */
+interface IstParts {
+  weekday: string;
+  /** Zero-padded, so a column of days lines up. */
+  day: string;
+  /** "Sep", never "Sept". */
+  mon: string;
+  month: string;
+  year: string;
+  hour: string;
+  minute: string;
+}
+
+function istParts(at: Date): IstParts {
+  const got: Record<string, string> = {};
+  for (const part of new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Kolkata',
+    weekday: 'short',
+    day: '2-digit',
+    month: 'numeric',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).formatToParts(at)) {
+    got[part.type] = part.value;
+  }
+  const month = got['month'] ?? '';
+  return {
+    weekday: got['weekday'] ?? '',
+    day: got['day'] ?? '',
+    mon: MONTHS[Number(month) - 1] ?? '',
+    month,
+    year: got['year'] ?? '',
+    hour: got['hour'] ?? '',
+    minute: got['minute'] ?? '',
+  };
+}
+
+/** "3 Sep" — a day, where the year is obvious from context. */
+export function dayMonth(at: Date): string {
+  const p = istParts(at);
+  return `${Number(p.day)} ${p.mon}`;
+}
+
+/** "08 Sep, 09:30" — a day and a time, in a column where the days line up. */
+export function dayMonthTime(at: Date): string {
+  const p = istParts(at);
+  return `${p.day} ${p.mon}, ${p.hour}:${p.minute}`;
+}
+
+/** "Thu 3 Sep, 09:30" — for a list read down, where the weekday is the thing you scan. */
+export function weekdayTime(at: Date): string {
+  const p = istParts(at);
+  return `${p.weekday} ${Number(p.day)} ${p.mon}, ${p.hour}:${p.minute}`;
+}
+
+/** "3 Sep 2026, 09:30" — a full timestamp. Em dash for nothing, which is what these sites showed. */
+export function stamp(at: Date | null): string {
+  if (at === null) return '—';
+  const p = istParts(at);
+  return `${Number(p.day)} ${p.mon} ${p.year}, ${p.hour}:${p.minute}`;
+}
+
+/** "2026-09-08" — not a label. The value a date input opens on, in the fund's day. */
+export function istDate(at = new Date()): string {
+  const p = istParts(at);
+  return `${p.year}-${p.month.padStart(2, '0')}-${p.day}`;
+}
+
+/**
  * The strip at the top of every page: what this is, one line of context, the ⌘K search, the date.
  *
  * A page states its name and shows its content. The subtitle is one line of figures — never a
@@ -71,7 +153,9 @@ export function AppHeader({
           </svg>
         </Link>
       )}
-      <h1 className="app-title">{title}</h1>
+      {/* A node, not a string: `/doc/[id]` hands this an editable title. Everything else hands it
+          the words, and gets the same heading it always had. */}
+      {typeof title === 'string' ? <h1 className="app-title">{title}</h1> : title}
       <span className="app-sub">{subtitle}</span>
       <CompanySearch search={searchCompanies} />
       <span className="app-date">{todayLabel()}</span>
@@ -167,26 +251,6 @@ export type Tone = 'neutral' | 'good' | 'bad' | 'warn' | 'navy';
 
 export function Chip({ children, tone = 'neutral' }: { children: ReactNode; tone?: Tone }) {
   return <span className={`chip chip-${tone}`}>{children}</span>;
-}
-
-/** A filter with a count. `<a>` so it stays URL-driven. */
-export function Pill({
-  href,
-  current,
-  children,
-  count,
-}: {
-  href: string;
-  current: boolean;
-  children: ReactNode;
-  count?: number | string;
-}) {
-  return (
-    <a href={href} className="pill" aria-current={current ? 'true' : undefined}>
-      {children}
-      {count !== undefined && <span className="pill-n">{count}</span>}
-    </a>
-  );
 }
 
 /** A segmented control of links, the value in the URL. */
@@ -345,32 +409,6 @@ export function Tabs({
   );
 }
 
-/** A twelve-segment progress line: teal behind, navy now, rule ahead. */
-export function Segs({
-  stage,
-  total = 12,
-  small,
-}: {
-  stage: number;
-  total?: number;
-  small?: boolean;
-}) {
-  return (
-    <div
-      className={small ? 'segs segs-sm' : 'segs'}
-      role="img"
-      aria-label={`Stage ${stage} of ${total}`}
-    >
-      {Array.from({ length: total }, (_, i) => (
-        <span
-          key={i}
-          className={i + 1 < stage ? 'is-past' : i + 1 === stage ? 'is-now' : undefined}
-        />
-      ))}
-    </div>
-  );
-}
-
 /* --------------------------------------------------------------------------------------------- */
 /* Tables and formatting                                                                           */
 /* --------------------------------------------------------------------------------------------- */
@@ -402,28 +440,6 @@ export function signedPct(value: number | string | null, dp = 1): string {
   const n = typeof value === 'string' ? Number(value) : value;
   if (!Number.isFinite(n)) return '—';
   return `${n > 0 ? '+' : n < 0 ? '−' : ''}${Math.abs(n).toFixed(dp)}%`;
-}
-
-/**
- * Shown when tax lots are behind the transaction log.
- *
- * Materialisation is asynchronous. Displaying stale positions silently would be worse than saying
- * so, because the number would look authoritative and be wrong.
- */
-export function StaleBanner({
-  logCount,
-  projectedCount,
-}: {
-  logCount: number;
-  projectedCount: number;
-}) {
-  return (
-    <p role="status" className="notice">
-      Positions are behind the transaction log ({projectedCount} of {logCount} replayed). The
-      portfolio worker may be stopped — run{' '}
-      <code>uv run python -m trisula_portfolio.materialise</code>.
-    </p>
-  );
 }
 
 export function Empty({ children }: { children: ReactNode }) {

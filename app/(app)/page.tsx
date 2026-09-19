@@ -108,7 +108,7 @@ export default async function DeskPage() {
         >
           {items.length === 0 ? (
             <Empty>
-              Nothing is waiting. Alerts arrive when a filing, a disclosure or a price move
+              Nothing is waiting. Alerts are raised when a filing, disclosure or price move
               matches a rule.
             </Empty>
           ) : (
@@ -123,8 +123,7 @@ export default async function DeskPage() {
         <Card title="Coming up">
           {soon.length === 0 ? (
             <Empty>
-              No board meetings or results dates are scheduled for a followed name in the next
-              fortnight.
+              No board meetings or results dates scheduled in the next fortnight.
             </Empty>
           ) : (
             <ul className="desk-soon">

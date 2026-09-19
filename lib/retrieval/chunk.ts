@@ -18,6 +18,7 @@
  */
 
 import { columnIndex } from '../sheet/cells.ts';
+import type { Grid } from '../sheet/evaluate.ts';
 
 export interface Piece {
   text: string;
@@ -147,8 +148,45 @@ function sheetLines(cells: Record<string, string>): string[] {
     .map(([, cs]) => cs.sort((x, y) => x.col - y.col).map((c) => c.value).join('\t'));
 }
 
+/** One tab's rows, and where its first row starts in the workbook's rendered text. */
+interface Block {
+  lines: string[];
+  base: number;
+}
+
 /**
- * The row-packed text a sheet renders to — tab between cells, newline between rows, formulas and
+ * A workbook's tabs, rendered to lines, with each tab's offset into the joined text.
+ *
+ * **A tab's name is a line of its own, and only when there is more than one tab.** It is content:
+ * a retrieved block of numbers headed `Segment revenue` is answerable and the same block headed
+ * nothing is not. The condition is what keeps this change from re-chunking the whole corpus — a
+ * body saved before tabs existed reads back as exactly one tab (`lib/sheet/book.ts`), takes no
+ * header, and renders to the byte-identical string it rendered to before, so its `content_hash`
+ * does not move and `GRID_RENDERER` does not need to. That is the one exemption to the rule stated
+ * beside `GRID_RENDERER` in register.ts, and it holds only because the new output differs solely
+ * for inputs — multi-tab bodies — that no version row in the table can yet have.
+ *
+ * A tab with nothing in it contributes nothing, header included: there is no passage to retrieve.
+ */
+function bookBlocks(sheets: readonly Grid[]): { blocks: Block[]; text: string } {
+  const named = sheets.length > 1;
+  const blocks: Block[] = [];
+  const all: string[] = [];
+  let base = 0;
+  for (const sheet of sheets) {
+    const rows = sheetLines(sheet.cells);
+    if (rows.length === 0) continue;
+    const lines = named ? [sheet.name, ...rows] : rows;
+    blocks.push({ lines, base });
+    all.push(...lines);
+    // Every line plus the '\n' that follows it, which is where the next block's first line begins.
+    base += lines.reduce((n, l) => n + l.length + 1, 0);
+  }
+  return { blocks, text: all.join('\n') };
+}
+
+/**
+ * The row-packed text a workbook renders to — tab between cells, newline between rows, formulas and
  * empty cells dropped. `register.ts`'s `rawText` returns exactly this for a `document_version`
  * whose body is a sheet, so it is what `textFor` hands back too: the "invariant the citation link
  * depends on" (0041's own words on `chunks.char_from`) held only for prose until this function
@@ -157,8 +195,8 @@ function sheetLines(cells: Record<string, string>): string[] {
  * is the same fix `FILING_TEXT_SQL` and `CURRENT_VERSION_ORDER_SQL` already apply in register.ts:
  * one definition, not two that can drift.
  */
-export function sheetGridText(cells: Record<string, string>): string {
-  return sheetLines(cells).join('\n');
+export function sheetGridText(sheets: readonly Grid[]): string {
+  return bookBlocks(sheets).text;
 }
 
 /**
@@ -179,8 +217,14 @@ export function sheetGridText(cells: Record<string, string>): string {
  * Formula cells are skipped. A formula is not content — its *value* is, and the value lives in
  * the evaluated lookups rather than in `cells`.
  */
-export function chunkCells(cells: Record<string, string>): Piece[] {
-  const lines = sheetLines(cells);
+export function chunkCells(sheets: readonly Grid[]): Piece[] {
+  // Packed tab by tab, so a chunk never straddles two of them. A block ending in three rows of
+  // Inputs and opening with two of Model retrieves as a passage that was never written.
+  return bookBlocks(sheets).blocks.flatMap((b) => packRows(b.lines, b.base));
+}
+
+/** One tab's rows into chunks, offset by where that tab starts in the workbook's text. */
+function packRows(lines: string[], base: number): Piece[] {
   if (lines.length === 0) return [];
 
   const text = lines.join('\n');
@@ -206,8 +250,8 @@ export function chunkCells(cells: Record<string, string>): Piece[] {
 
     pieces.push({
       text: text.slice(starts[fromRow]!, ends[toRow]!),
-      charFrom: starts[fromRow]!,
-      charTo: ends[toRow]!,
+      charFrom: base + starts[fromRow]!,
+      charTo: base + ends[toRow]!,
     });
     if (toRow === lines.length - 1) break;
 
@@ -225,7 +269,8 @@ export function chunkCells(cells: Record<string, string>): Piece[] {
     if (lastPiece.text.length < MIN_CHARS) {
       const prevPiece = pieces[pieces.length - 2]!;
       pieces.splice(pieces.length - 2, 2, {
-        text: text.slice(prevPiece.charFrom, lastPiece.charTo),
+        // Sliced with local offsets; `base` is only ever added on the way out.
+        text: text.slice(prevPiece.charFrom - base, lastPiece.charTo - base),
         charFrom: prevPiece.charFrom,
         charTo: lastPiece.charTo,
       });

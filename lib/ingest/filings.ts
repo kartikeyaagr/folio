@@ -25,6 +25,7 @@
 
 import { NseSession } from './nse.ts';
 import { serviceTxn, type Client } from '../db.ts';
+import { nseTimestamp } from './dates.ts';
 
 export type Board = 'nse_equities' | 'nse_sme';
 
@@ -42,21 +43,18 @@ export interface Filing {
 
 const clean = (v: unknown): string => (typeof v === 'string' ? v.trim() : '');
 
-/** NSE writes announcement timestamps as `DD-MMM-YYYY HH:MM:SS`. */
+/**
+ * NSE writes announcement timestamps as `DD-MMM-YYYY HH:MM:SS`, in IST.
+ *
+ * The fallback is this reader's own: where the announcements feed has not used that shape it has
+ * used an ISO-ish one, which `Date` reads and which carries its own offset. Kept rather than
+ * folded into `nseDate`, because everywhere else a shape NSE did not promise should be null.
+ */
 function asTimestamp(value: string): Date | null {
-  const m = /^(\d{2})-([A-Za-z]{3})-(\d{4})\s+(\d{2}):(\d{2}):(\d{2})$/.exec(value.trim());
-  if (!m) {
-    const d = new Date(value);
-    return Number.isNaN(d.getTime()) ? null : d;
-  }
-  const months = 'janfebmaraprmayjunjulaugsepoctnovdec';
-  const mon = months.indexOf(m[2]!.toLowerCase()) / 3;
-  if (!Number.isInteger(mon) || mon < 0) return null;
-  // NSE publishes in IST and says so nowhere, so the offset is applied here rather than assumed
-  // by whatever timezone the box happens to run in.
-  return new Date(
-    `${m[3]}-${String(mon + 1).padStart(2, '0')}-${m[1]}T${m[4]}:${m[5]}:${m[6]}+05:30`,
-  );
+  const at = nseTimestamp(value);
+  if (at) return at;
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? null : d;
 }
 
 const ddmmyyyy = (d: Date): string =>

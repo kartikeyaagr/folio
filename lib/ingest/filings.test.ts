@@ -1,9 +1,8 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
-import { migrate } from '../../db/migrate.ts';
-import { closePool, readTxn, serviceTxn } from '../db.ts';
+import { readTxn, serviceTxn } from '../db.ts';
 import { linkFilingsForCompany, parseAnnouncements, storeFilings } from './filings.ts';
+import { createTestDatabase, dropTestDatabase } from '../../db/testing.ts';
 
 const DB = `trisula_fil_${process.pid}`;
 
@@ -51,9 +50,7 @@ const SME = [
 ];
 
 before(async () => {
-  execFileSync('createdb', [DB]);
-  process.env.DATABASE_URL = `postgres:///${DB}`;
-  await migrate();
+  await createTestDatabase(DB);
   await serviceTxn('system:ingest', async (c) => {
     await c.query(
       `INSERT INTO companies (id, symbol, isin, name) VALUES
@@ -63,8 +60,7 @@ before(async () => {
 });
 
 after(async () => {
-  await closePool();
-  execFileSync('dropdb', ['--if-exists', DB]);
+  await dropTestDatabase(DB);
 });
 
 test('NSE\u2019s bare hyphen placeholder is stored as no attachment', () => {

@@ -199,8 +199,8 @@ registerHandler(KEY, async (ctx: RunContext): Promise<HandlerResult> => {
         ...structure,
         note:
           structure.agreed
-            ? 'Every item answered, and nothing a filing cannot show was marked clear.'
-            : 'Shape problems above. The answers are unchanged; a reviewer decides what to do.',
+            ? 'Every item answered, and nothing was marked clear that a filing cannot show.'
+            : 'See the problems above. The answers themselves are unchanged.',
       },
       model: answer.model,
       inputTokens: answer.inputTokens,

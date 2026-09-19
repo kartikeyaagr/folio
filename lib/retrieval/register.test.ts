@@ -1,10 +1,9 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
-import { migrate } from '../../db/migrate.ts';
-import { closePool, serviceTxn, type Client } from '../db.ts';
+import { serviceTxn, type Client } from '../db.ts';
 import { contentHash, registerAll, textFor } from './register.ts';
 import { chunkCells } from './chunk.ts';
+import { createTestDatabase, dropTestDatabase } from '../../db/testing.ts';
 
 const DB = `trisula_reg_${process.pid}`;
 const CO = 'c1'; // Praj Industries Limited — the fund's own name
@@ -31,9 +30,7 @@ async function saveNewVersion(c: Client, docId: string, text: string): Promise<v
 }
 
 before(async () => {
-  execFileSync('createdb', [DB]);
-  process.env.DATABASE_URL = `postgres:///${DB}`;
-  await migrate();
+  await createTestDatabase(DB);
 
   await serviceTxn('system:index', async (c) => {
     await c.query("INSERT INTO companies (id, symbol, name) VALUES ($1,'PRAJIND','Praj Industries Limited')", [
@@ -138,8 +135,7 @@ before(async () => {
 });
 
 after(async () => {
-  await closePool();
-  execFileSync('dropdb', ['--if-exists', DB]);
+  await dropTestDatabase(DB);
 });
 
 test('only the current version of a document is registered', async () => {
@@ -356,9 +352,9 @@ test('a sheet document_version: chunkCells offsets slice back against textFor\'s
     );
     const indexable = await textFor(c, rows[0]!.id);
     assert.ok(indexable, 'the sheet must register and resolve');
-    assert.ok(indexable!.cells, 'a sheet body must come back with its parsed cells, not just text');
+    assert.ok(indexable!.sheets, 'a sheet body must come back with its parsed tabs, not just text');
 
-    const pieces = chunkCells(indexable!.cells!);
+    const pieces = chunkCells(indexable!.sheets!);
     assert.ok(pieces.length > 0);
     for (const p of pieces) {
       assert.equal(

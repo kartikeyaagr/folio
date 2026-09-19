@@ -1,19 +1,16 @@
 import { test, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
-import { migrate } from '../../db/migrate.ts';
-import { closePool, readTxn, serviceTxn } from '../db.ts';
+import { readTxn, serviceTxn } from '../db.ts';
 import { scriptedModel, scriptedOk } from '../agents/model.ts';
-import { confirmedNews, gatePrompt, MAX_GATE_ATTEMPTS, runGate, ungated } from './gate.ts';
+import { gatePrompt, MAX_GATE_ATTEMPTS, runGate, ungated } from './gate.ts';
 import { matchNewItems } from './match.ts';
+import { createTestDatabase, dropTestDatabase } from '../../db/testing.ts';
 
 const DB = `trisula_gate_${process.pid}`;
 const CO = 'c_praj';
 
 before(async () => {
-  execFileSync('createdb', [DB]);
-  process.env.DATABASE_URL = `postgres:///${DB}`;
-  await migrate();
+  await createTestDatabase(DB);
   await serviceTxn('system:auth', async (c) => {
     await c.query(
       "INSERT INTO companies (id,symbol,name,sector) VALUES ($1,'PRAJIND','Praj Industries Limited','bioenergy')",
@@ -29,8 +26,7 @@ before(async () => {
 });
 
 after(async () => {
-  await closePool();
-  execFileSync('dropdb', ['--if-exists', DB]);
+  await dropTestDatabase(DB);
 });
 
 beforeEach(async () => {
@@ -102,20 +98,6 @@ test('"related" with nothing behind it is not related', async () => {
   await runGate(scriptedModel([scriptedOk({ related: true, mechanism: '' }, 'claude-sonnet-5')]));
   assert.equal((await states())[0]?.state, 'rejected');
 });
-
-test('the desk only ever sees confirmed matches', async () => {
-  await candidate('Sugar mills asked to file sales data', 'a1');
-  await candidate('Ethanol blending target raised', 'a2');
-  await runGate(scriptedModel([
-    scriptedOk({ related: true, mechanism: 'It supplies those mills.' }, 'claude-sonnet-5'),
-    scriptedOk({ related: false, mechanism: null }, 'claude-sonnet-5'),
-  ]));
-  const shown = await confirmedNews();
-  assert.equal(shown.length, 1);
-  assert.match(shown[0]!.mechanism, /supplies those mills/);
-});
-
-// ---- failure ------------------------------------------------------------------------------------
 
 test('a transport failure is retried, then the row stops', async () => {
   await candidate('Sugar mills asked to file sales data');

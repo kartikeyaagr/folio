@@ -11,6 +11,10 @@ import type { CompanyHit } from '@/app/_lib/actions/search.ts';
  * Debounced, because a keystroke is not a question. Enter opens the highlighted hit; Escape
  * clears. The list shows the stage so a killed name is not opened by mistake.
  */
+/** Stable ids, so the input can point at the option the arrow keys have landed on. */
+const LIST_ID = 'company-search-list';
+const optionId = (i: number): string => `${LIST_ID}-${i}`;
+
 export function CompanySearch({ search }: { search: (query: string) => Promise<CompanyHit[]> }) {
   const router = useRouter();
   const input = useRef<HTMLInputElement>(null);
@@ -108,17 +112,29 @@ export function CompanySearch({ search }: { search: (query: string) => Promise<C
           placeholder="Jump to a company…"
           aria-label="Jump to a company"
           autoComplete="off"
+          // The arrow keys move a highlight through the list below. Without these the highlight is
+          // visible and announced to nobody: the option carried `aria-selected` and the input said
+          // nothing about owning a list, so a screen reader read the typing and not the result.
+          role="combobox"
+          aria-expanded={open}
+          aria-controls={LIST_ID}
+          aria-autocomplete="list"
+          aria-activedescendant={open && hits[sel] ? optionId(sel) : undefined}
         />
         <kbd aria-hidden="true">⌘K</kbd>
       </label>
       {open && (
-        <div className="search-pop" role="listbox">
+        <div className="search-pop" role="listbox" id={LIST_ID}>
           {hits.map((hit, i) => (
             <button
               key={hit.symbol}
+              id={optionId(i)}
               type="button"
               role="option"
               aria-selected={i === sel}
+              // Not a tab stop: the input keeps the keyboard and points at the active option with
+              // `aria-activedescendant`, which is the pattern that makes the highlight audible.
+              tabIndex={-1}
               className="search-hit"
               onMouseEnter={() => setSel(i)}
               onClick={() => go(hit)}

@@ -106,7 +106,7 @@ export function Brief({ content, editing = false }: { content: BriefContent; edi
   const period = typeof content.period === 'string' ? content.period : null;
 
   if (covered.length === 0 && quiet.length === 0 && coming.length === 0) {
-    return <Empty>This brief has no content. That is worth rejecting rather than accepting.</Empty>;
+    return <Empty>This brief has no content.</Empty>;
   }
 
   return (
@@ -134,7 +134,7 @@ export function Brief({ content, editing = false }: { content: BriefContent; edi
           </h3>
           {s.what_happened.length === 0 ? (
             <p className="brief-none">
-              <Blank why="This name was given a section with nothing in it" />
+              <Blank why="This section was left empty" />
             </p>
           ) : (
             <ul>

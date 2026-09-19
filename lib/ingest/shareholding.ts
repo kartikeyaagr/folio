@@ -24,9 +24,11 @@
  * own XBRL says INE074A01025 — the feed carries a stale identifier, so an ISIN join drops the name.
  */
 
-import { createHash, randomBytes } from 'node:crypto';
-import { serviceTxn } from '../db.ts';
+import { createHash } from 'node:crypto';
+import { rowId, serviceTxn } from '../db.ts';
+import { readFacts, type Facts } from './facts.ts';
 import { NseSession } from './nse.ts';
+import { nseDate } from './dates.ts';
 
 /** XBRL contexts, one per shareholder category. These names are the taxonomy's, not ours. */
 const PROMOTER = 'ShareholdingOfPromoterAndPromoterGroup_ContextI';
@@ -50,15 +52,9 @@ export interface Shareholding {
   encumberedPct: number | null;
 }
 
-const MONTHS = 'janfebmaraprmayjunjulaugsepoctnovdec';
-
 /** The index writes DD-MMM-YYYY, in caps. */
 export function shpDate(value: unknown): string | null {
-  const m = /^(\d{2})-([A-Za-z]{3})-(\d{4})$/.exec(String(value ?? '').trim());
-  if (!m) return null;
-  const i = MONTHS.indexOf(m[2]!.toLowerCase());
-  if (i < 0 || i % 3 !== 0) return null;
-  return `${m[3]}-${String(i / 3 + 1).padStart(2, '0')}-${m[1]}`;
+  return nseDate(value);
 }
 
 export function parseIndex(rows: Record<string, unknown>[]): Submission[] {
@@ -83,23 +79,16 @@ export async function fetchIndex(session?: NseSession): Promise<Submission[]> {
   return parseIndex(rows);
 }
 
-function fact(xml: string, name: string, context: string): string | null {
-  const m = new RegExp(
-    `<[A-Za-z0-9_-]+:${name}[^>]*contextRef="${context}"[^>]*>([^<]*)<`,
-  ).exec(xml);
-  return m ? m[1]!.trim() : null;
-}
-
 /** Percentages are written as fractions: 0.3281 is 32.81%. */
-function pct(xml: string, name: string, context: string): number | null {
-  const v = fact(xml, name, context);
+function pct(f: Facts, name: string, context: string): number | null {
+  const v = f.get(name, context);
   if (v === null || v === '') return null;
   const n = Number(v);
   return Number.isFinite(n) ? Math.round(n * 1_000_000) / 10_000 : null;
 }
 
-const flag = (xml: string, name: string): boolean | null => {
-  const v = fact(xml, name, 'MainI');
+const flag = (f: Facts, name: string): boolean | null => {
+  const v = f.get(name, 'MainI');
   return v === null ? null : v.toLowerCase() === 'true';
 };
 
@@ -141,26 +130,24 @@ function categoryOf(context: string, isPromoter: boolean): Holder['category'] {
  */
 export function parseHolders(xml: string): Holder[] {
   const out: Holder[] = [];
+  const f = readFacts(xml);
 
-  for (const m of xml.matchAll(
-    /<[A-Za-z0-9_-]+:NameOfTheShareholder[^>]*contextRef="(D_[^"]+)"[^>]*>([^<]*)</g,
-  )) {
-    const [, context, raw] = m;
-    const name = (raw ?? '').trim();
+  for (const context of f.contexts('NameOfTheShareholder')) {
+    if (!context.startsWith('D_')) continue;
+    const name = (f.get('NameOfTheShareholder', context) ?? '').trim();
     if (!name) continue;
 
-    const paired = context!.slice(2);
-    const isPromoter =
-      new RegExp(`<[A-Za-z0-9_-]+:TypeOfPromoterShareholding[^>]*contextRef="${context}"`).test(xml);
+    const paired = context.slice(2);
+    const isPromoter = f.has('TypeOfPromoterShareholding', context);
 
-    const shares = fact(xml, 'NumberOfShares', paired);
+    const shares = f.get('NumberOfShares', paired);
     out.push({
       name,
       category: categoryOf(paired, isPromoter),
       shares: shares !== null && Number.isFinite(Number(shares)) ? Number(shares) : null,
       // The same helper the totals use, so the fraction-to-percentage conversion lives in one place
       // rather than being repeated with a chance of being repeated differently.
-      pct: pct(xml, 'ShareholdingAsAPercentageOfTotalNumberOfShares', paired),
+      pct: pct(f, 'ShareholdingAsAPercentageOfTotalNumberOfShares', paired),
     });
   }
 
@@ -178,24 +165,25 @@ export function parseHolders(xml: string): Holder[] {
  * is not.
  */
 export function parseShareholding(xml: string): Shareholding | null {
-  const asOf = fact(xml, 'DateOfReport', 'MainI') ?? fact(xml, 'DateOfReport', 'MainD');
+  const f = readFacts(xml);
+  const asOf = f.get('DateOfReport', 'MainI') ?? f.get('DateOfReport', 'MainD');
   if (!asOf || !/^\d{4}-\d{2}-\d{2}$/.test(asOf)) return null;
 
-  const anyPledge = flag(xml, 'WhetherAnySharesHeldByPromotersAreEncumberedUnderPledged');
+  const anyPledge = flag(f, 'WhetherAnySharesHeldByPromotersAreEncumberedUnderPledged');
   const anyEncumbrance =
     anyPledge === true ||
-    flag(xml, 'WhetherAnySharesHeldByPromotersAreEncumberedUnderNonDisposalUndertaking') === true ||
-    flag(xml, 'WhetherAnySharesHeldByPromotersAreEncumberedOtherThanByWayOfPledgeOrNDU') === true;
+    flag(f, 'WhetherAnySharesHeldByPromotersAreEncumberedUnderNonDisposalUndertaking') === true ||
+    flag(f, 'WhetherAnySharesHeldByPromotersAreEncumberedOtherThanByWayOfPledgeOrNDU') === true;
 
   const read = (declared: boolean, name: string): number | null =>
-    declared ? pct(xml, name, PROMOTER) : 0;
+    declared ? pct(f, name, PROMOTER) : 0;
 
   return {
     asOf,
-    promoterPct: pct(xml, 'ShareholdingAsAPercentageOfTotalNumberOfShares', PROMOTER),
-    publicPct: pct(xml, 'ShareholdingAsAPercentageOfTotalNumberOfShares', PUBLIC),
-    fiiPct: pct(xml, 'ShareholdingAsAPercentageOfTotalNumberOfShares', FOREIGN),
-    diiPct: pct(xml, 'ShareholdingAsAPercentageOfTotalNumberOfShares', DOMESTIC),
+    promoterPct: pct(f, 'ShareholdingAsAPercentageOfTotalNumberOfShares', PROMOTER),
+    publicPct: pct(f, 'ShareholdingAsAPercentageOfTotalNumberOfShares', PUBLIC),
+    fiiPct: pct(f, 'ShareholdingAsAPercentageOfTotalNumberOfShares', FOREIGN),
+    diiPct: pct(f, 'ShareholdingAsAPercentageOfTotalNumberOfShares', DOMESTIC),
     pledgePct: read(anyPledge === true, 'EncumberedShareUnderPledgedAsPercentageOfTotalNumberOfShares'),
     encumberedPct: read(anyEncumbrance, 'EncumberedSharesHeldAsPercentageOfTotalNumberOfShares'),
   };
@@ -233,6 +221,8 @@ export interface ShareholdingResult {
   submissions: number;
   ours: number;
   stored: number;
+  /** Filings that could not be read. Counted rather than thrown, and never silently zero. */
+  failed: number;
 }
 
 /** Fetch the index, then one XBRL per followed name that filed. */
@@ -253,7 +243,7 @@ export async function storeHolders(companyId: string, asOf: string, holders: Hol
          VALUES ($1,$2,$3,$4,$5,$6,$7)
          ON CONFLICT (company_id, as_of, name) DO UPDATE
             SET category = EXCLUDED.category, shares = EXCLUDED.shares, pct = EXCLUDED.pct`,
-        [randomBytes(16).toString('hex'), companyId, asOf, h.name, h.category, h.shares, h.pct],
+        [rowId(), companyId, asOf, h.name, h.category, h.shares, h.pct],
       );
     }
     return holders.length;
@@ -273,16 +263,25 @@ export async function ingestShareholding(): Promise<ShareholdingResult> {
   const mine = index.filter((s) => bySymbol.has(s.symbol));
   let stored = 0;
   let named = 0;
+  let failed = 0;
   for (const sub of mine) {
-    const xml = await session.text(sub.xbrlUrl);
-    const parsed = parseShareholding(xml);
-    if (!parsed) continue;
-    const companyId = bySymbol.get(sub.symbol)!;
-    await storeShareholding(companyId, parsed);
-    // The names in the same pass, from the same bytes. Fetching this file twice to read two halves
-    // of it would be two chances for the two halves to disagree about which quarter they describe.
-    named += await storeHolders(companyId, parsed.asOf, parseHolders(xml));
-    stored++;
+    // One unreadable filing costs that filing, not the rest of the run. It is counted rather than
+    // swallowed: the caller fails the run on a non-zero count, so a corrupt download is loud
+    // without letting every company after it in the index go unfetched.
+    try {
+      const xml = await session.text(sub.xbrlUrl);
+      const parsed = parseShareholding(xml);
+      if (!parsed) continue;
+      const companyId = bySymbol.get(sub.symbol)!;
+      await storeShareholding(companyId, parsed);
+      // The names in the same pass, from the same bytes. Fetching this file twice to read two
+      // halves of it would be two chances for them to disagree about which quarter they describe.
+      named += await storeHolders(companyId, parsed.asOf, parseHolders(xml));
+      stored++;
+    } catch (err) {
+      failed++;
+      console.error(`${sub.symbol} ${sub.asOf}: ${err instanceof Error ? err.message : err}`);
+    }
   }
-  return { submissions: index.length, ours: mine.length, stored, named };
+  return { submissions: index.length, ours: mine.length, stored, named, failed };
 }

@@ -9,8 +9,7 @@
  *
  * **This is not the model's output schema, and it must not import one.** Two reasons, both real.
  * The stored content differs: `forensics.ts` writes `{version, answers}` and the model never emits
- * `version`; agent 8 has no output schema at all, its content being assembled from a tool's input
- * at `tools/draft.ts`. And every handler module calls `registerHandler` at import and reaches
+ * `version`. And every handler module calls `registerHandler` at import and reaches
  * `prompt.ts` → `exemplars.ts` → the 130MB ONNX embedder, so importing one from a page would drag
  * the embedder into the web build — the shape of `v4.md §15` finding 15, which cost a `next build`.
  *
@@ -29,7 +28,11 @@ export type Field =
    * `enforced` says whether a value outside the list is refused at acceptance. It is true wherever
    * the database is the next thing to see the value — `forensics_answers_verdict_check` raises
    * 23514 *inside* the acceptance transaction — and false where the code downstream already copes
-   * and says so, which is exactly `chosenKind`'s documented fallback for agent 8's `kind`.
+   * and says so.
+   *
+   * **Nothing declares a loose choice today.** The only one was agent 8's `kind`, cut on
+   * 19-Sep-2026 with the agent; the flag and `review.ts`'s check on it are kept because the next
+   * agent whose downstream copes should say so here rather than rediscover the argument.
    */
   | { kind: 'choice'; options: readonly string[]; enforced: boolean }
   /** A figure, a flag, or an identity. Shown, never edited. */
@@ -40,12 +43,11 @@ export type Field =
 const text: Field = { kind: 'text' };
 const fixed: Field = { kind: 'fixed' };
 const choice = (...options: string[]): Field => ({ kind: 'choice', options, enforced: true });
-const loose = (...options: string[]): Field => ({ kind: 'choice', options, enforced: false });
 const list = (of: Field, removable = true): Field => ({ kind: 'list', of, removable });
 const group = (...fields: (readonly [string, Field])[]): Field => ({ kind: 'group', fields });
 
 /**
- * The five, in the order each agent declares its fields.
+ * The four, in the order each agent declares its fields.
  *
  * Nested order has to come from here: `ai_drafts.field_order` is written as
  * `Object.keys(d.content)` and is top-level only, so without this a forensic answer renders
@@ -53,16 +55,6 @@ const group = (...fields: (readonly [string, Field])[]): Field => ({ kind: 'grou
  * verdict it justifies.
  */
 export const CONTENT: Record<string, Field> = {
-  'desk-analyst': group(
-    ['headline', text],
-    // A select makes the two real options visible rather than guessable, but it is not enforced:
-    // `chosenKind` in review.ts already argues the other way for this one field — "a draft is not
-    // worth refusing at the moment of acceptance over a field the reviewer can see and the agent
-    // can get wrong" — and quietly falls back to the per-agent default.
-    ['kind', loose('note', 'memo')],
-    ['body', text],
-  ),
-
   'results-figures': group(
     ['headline', text],
     // Not editable, and this is the screen's own principle rather than a limitation: "the model

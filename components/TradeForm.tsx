@@ -52,7 +52,7 @@ export function TradeForm({
             </p>
             <div className="form-actions">
               <button type="button" className="btn btn-link" onClick={() => setPicked(null)}>
-                Pick a different name
+                Change
               </button>
             </div>
           </>
@@ -147,14 +147,14 @@ export function TradeForm({
             genuine second fill on the same day at the same price is routine enough to need a way
             through. */}
         <p className="picker-none">
-          An identical fill on the same day is refused as a double submission. For a genuine second
-          fill, put 2 here.
+          An identical fill on the same day is refused as a duplicate. For a real second fill,
+          put 2 here.
         </p>
       </details>
 
       <div className="pf-decide">
         <button type="submit" className="btn btn-primary" disabled={picked === null}>
-          Record the trade
+          Record
         </button>
       </div>
     </form>

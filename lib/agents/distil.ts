@@ -20,8 +20,7 @@
  */
 
 import { fieldDistance } from './distance.ts';
-import { serviceTxn, type Client } from '../db.ts';
-import { randomBytes } from 'node:crypto';
+import { rowId, serviceTxn, type Client } from '../db.ts';
 
 /**
  * v2's measured defaults, carried unchanged.
@@ -34,7 +33,6 @@ import { randomBytes } from 'node:crypto';
 export const MIN_OBSERVATIONS = 3;
 export const MIN_DISTANCE = 0.25;
 
-const id = (): string => randomBytes(16).toString('hex');
 
 /**
  * The grouping key for one `(agent, field)` pair.
@@ -164,7 +162,7 @@ export async function distil(): Promise<Distillation> {
       // same person the same question twice, and the second would be answered by the first.
       if (open.has(k)) continue;
 
-      const ruleId = id();
+      const ruleId = rowId();
       await c.query(
         `INSERT INTO prompt_rules (id, agent_id, origin, finding, status)
          VALUES ($1, $2, 'distilled', $3, 'candidate')`,

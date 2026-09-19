@@ -4,6 +4,8 @@ import { AvatarMenu } from '@/components/AvatarMenu.tsx';
 import { Rail } from '@/components/Rail.tsx';
 import { ThemeToggle } from '@/components/ThemeToggle.tsx';
 import { Toast } from '@/components/Toast.tsx';
+import { MailboxPrompt } from '@/components/MailboxPrompt.tsx';
+import { mailboxFor, shouldPromptForMailbox } from '@/lib/mailbox.ts';
 
 import { setTheme } from '../_lib/actions/theme.ts';
 import { readFlash } from '../_lib/flash.ts';
@@ -23,21 +25,28 @@ import { currentTheme } from '../_lib/theme.ts';
  */
 export default async function AppLayout({ children }: { children: ReactNode }) {
   const user = await requireUser();
-  const [shell, theme, message] = await Promise.all([
+  const [shell, theme, message, mailbox, askAboutMailbox] = await Promise.all([
     railData(user.userId),
     currentTheme(),
     readFlash(),
+    // In the layout because the avatar menu is in the layout, and because the one thing this is
+    // for — noticing that your own mailbox stopped working — is only useful if it is on the screen
+    // you are already looking at rather than one you have to go to.
+    mailboxFor(user.userId),
+    shouldPromptForMailbox(user.userId),
   ]);
 
   return (
     <div className="app-shell">
       <Rail
         badges={shell.badges}
+        isAdmin={user.isAdmin}
         themeToggle={<ThemeToggle theme={theme} action={setTheme} />}
-        menu={<AvatarMenu email={user.email} name={shell.name} isAdmin={user.isAdmin} />}
+        menu={<AvatarMenu email={user.email} name={shell.name} isAdmin={user.isAdmin} mailbox={mailbox} />}
       />
       <div className="app-main">{children}</div>
       <Toast message={message} />
+      {askAboutMailbox && <MailboxPrompt email={user.email} />}
     </div>
   );
 }

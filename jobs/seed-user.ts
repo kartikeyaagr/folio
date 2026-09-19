@@ -19,27 +19,25 @@
  */
 
 import { randomBytes } from 'node:crypto';
-import { closePool, serviceTxn } from '../lib/db.ts';
+import { closePool, rowId, serviceTxn } from '../lib/db.ts';
 import { approvedRequest } from '../lib/access-requests.ts';
 import { issueRecoveryCodes, setPassword } from '../lib/auth.ts';
+import { readFlags } from './_args.ts';
 
-function arg(flag: string): string | undefined {
-  const i = process.argv.indexOf(flag);
-  return i >= 0 ? process.argv[i + 1] : undefined;
-}
 
 async function main(): Promise<void> {
-  const requestId = arg('--request');
+  const flags = readFlags(['request', 'email', 'name']);
+  const requestId = flags.str('request');
   const from = requestId ? await approvedRequest(requestId) : null;
-  const email = from?.email ?? arg('--email');
-  const name = from?.name ?? arg('--name');
+  const email = from?.email ?? flags.str('email');
+  const name = from?.name ?? flags.str('name');
   if (!email || !name) {
     console.error('usage: tsx jobs/seed-user.ts --request <id>');
     console.error('   or: tsx jobs/seed-user.ts --email <email> --name <name>');
     process.exit(2);
   }
 
-  const id = randomBytes(16).toString('hex');
+  const id = rowId();
   // An account and its actor are one fact, so they are one transaction. A user row whose actor is
   // missing would fail its own foreign key; an actor with no user would be a principal nobody owns.
   await serviceTxn('system:auth', async (c) => {

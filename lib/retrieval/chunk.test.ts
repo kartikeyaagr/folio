@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { chunkText, chunkCells, sheetGridText, TARGET_CHARS, MIN_CHARS } from './chunk.ts';
+import type { Grid } from '../sheet/evaluate.ts';
 
 const para = (n: number, word = 'revenue'): string => Array(n).fill(word).join(' ');
 
@@ -88,10 +89,13 @@ test('a trailing fragment below the minimum is folded back, not emitted alone', 
   assert.ok(out.every((p) => p.text.length >= MIN_CHARS), 'no chunk below the floor');
 });
 
+/** One tab, named as a body saved before tabs existed reads back — see lib/sheet/book.ts. */
+const one = (cells: Record<string, string>) => [{ name: 'Sheet1', cells }];
+
 test('a sheet chunks by row, never mid-row', () => {
   // A grid split mid-row retrieves as noise: "1240" with no idea which line it was.
   const cells = { A1: 'Revenue', B1: '693.2', A2: 'EBITDA', B2: '112.4', A3: 'PAT', B3: '58.1' };
-  const out = chunkCells(cells);
+  const out = chunkCells(one(cells));
   assert.equal(out.length, 1);
   assert.match(out[0]!.text, /Revenue\s+693\.2/);
   assert.match(out[0]!.text, /PAT\s+58\.1/);
@@ -103,16 +107,74 @@ test('a sheet wider than 26 columns orders cells by column, not by letter', () =
   // that scrambled row. `lib/sheet/cells.ts` warns about exactly this case in its own header
   // ("shows up only at the 27th column") and exports `columnIndex`, which is the ordering to use.
   const cells = { A1: 'first', B1: 'second', Z1: 'twenty-sixth', AA1: 'twenty-seventh' };
-  assert.equal(sheetGridText(cells), 'first\tsecond\ttwenty-sixth\ttwenty-seventh');
+  assert.equal(sheetGridText(one(cells)), 'first\tsecond\ttwenty-sixth\ttwenty-seventh');
 });
 
 test('an empty sheet produces no chunks', () => {
-  assert.deepEqual(chunkCells({}), []);
+  assert.deepEqual(chunkCells(one({})), []);
 });
 
 test('a sheet of only formulas produces no chunks', () => {
   // A formula is not content. Its VALUE is content, and the value is not in `cells`.
-  assert.deepEqual(chunkCells({ A1: '=SUM(B1:B3)', A2: '=A1*2' }), []);
+  assert.deepEqual(chunkCells(one({ A1: '=SUM(B1:B3)', A2: '=A1*2' })), []);
+});
+
+test('a one-tab workbook renders exactly as it did before tabs existed', () => {
+  // The reason GRID_RENDERER is NOT bumped by this change. Every sheet body already in the table
+  // is `{cells}`, which reads back as one tab; if that rendered differently now, every stored
+  // char_from/char_to would index a string textFor no longer returns — the divergence this file's
+  // header records as having happened once already. One tab takes no header line, so it does not.
+  assert.equal(sheetGridText(one({ A1: 'Revenue', B1: '693.2' })), 'Revenue\t693.2');
+});
+
+test('a tab is named in the text, so a retrieved block says what it is a block of', () => {
+  const book = [
+    { name: 'Inputs', cells: { A1: 'Growth', B1: '0.12' } },
+    { name: 'Model', cells: { A1: 'Revenue', B1: '693.2' } },
+  ];
+  assert.equal(sheetGridText(book), 'Inputs\nGrowth\t0.12\nModel\nRevenue\t693.2');
+});
+
+test('a chunk never straddles two tabs, and its offsets hold across the whole workbook', () => {
+  // A block closing with three rows of Inputs and opening with two of Model is a passage nobody
+  // wrote. Packing per tab makes that impossible by construction rather than by chunk size.
+  const book = [
+    { name: 'Inputs', cells: { A1: 'Growth', B1: '0.12', A2: 'Margin', B2: '0.18' } },
+    { name: 'Model', cells: { A1: 'Revenue', B1: '693.2', A2: 'PAT', B2: '58.1' } },
+  ];
+  const text = sheetGridText(book);
+  const out = chunkCells(book);
+
+  assert.equal(out.length, 2, 'one chunk per tab, not one spanning both');
+  for (const p of out) {
+    assert.equal(text.slice(p.charFrom, p.charTo), p.text, 'offsets must slice the workbook text back');
+  }
+  assert.match(out[0]!.text, /^Inputs\n/);
+  assert.match(out[1]!.text, /^Model\n/);
+});
+
+test('formatting a cell changes nothing about what is indexed', () => {
+  // The separation `lib/sheet/format.ts` rests on, checked from the other side. A tab carries its
+  // formats as a sibling of its cells, and the chunker reads `cells` — so `₹2,58,59,40,000` on the
+  // screen is `2585940000` in the index, which is the number somebody searching would type.
+  const plain: Grid[] = [{ name: 'Model', cells: { A1: 'Revenue', B1: '2585940000' } }];
+  const formatted = [{
+    ...plain[0]!,
+    formats: { A1: { bold: true }, B1: { style: 'inr', dp: 0, ink: 'red' } },
+  }];
+  assert.equal(sheetGridText(formatted), sheetGridText(plain));
+  assert.equal(sheetGridText(formatted), 'Revenue\t2585940000');
+  assert.deepEqual(chunkCells(formatted), chunkCells(plain));
+});
+
+test('an empty tab contributes nothing, not even its name', () => {
+  // There is no passage to retrieve, and a lone heading retrieves as an answer that is not one.
+  const book: Grid[] = [
+    { name: 'Model', cells: { A1: 'Revenue', B1: '693.2' } },
+    { name: 'Scratch', cells: {} },
+  ];
+  assert.equal(sheetGridText(book), 'Model\nRevenue\t693.2');
+  assert.equal(chunkCells(book).length, 1);
 });
 
 test('a wide sheet packs multiple chunks, and every chunk starts and ends at a row boundary', () => {
@@ -130,7 +192,7 @@ test('a wide sheet packs multiple chunks, and every chunk starts and ends at a r
     rows.push(`LineItem${r}\t${value}\tFY20${r % 25}`);
   }
   const joined = rows.join('\n');
-  const out = chunkCells(cells);
+  const out = chunkCells(one(cells));
 
   assert.ok(out.length > 1, 'expected more than one chunk from 80 rows');
   const rowPattern = /^LineItem\d+\t[\d.]+\tFY20\d+$/;

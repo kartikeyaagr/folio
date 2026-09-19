@@ -12,14 +12,12 @@
 import { randomBytes } from 'node:crypto';
 import { closePool, readTxn } from '../lib/db.ts';
 import { setPassword } from '../lib/auth.ts';
+import { readFlags } from './_args.ts';
 
-function arg(flag: string): string | undefined {
-  const i = process.argv.indexOf(flag);
-  return i >= 0 ? process.argv[i + 1] : undefined;
-}
 
 async function main(): Promise<void> {
-  const email = arg('--email');
+  const flags = readFlags(['email']);
+  const email = flags.str('email');
   if (!email) {
     console.error('usage: tsx jobs/reset-password.ts --email <email>');
     process.exit(2);

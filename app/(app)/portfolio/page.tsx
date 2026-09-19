@@ -17,6 +17,7 @@ import {
   reverseTradeAction,
 } from '../../_lib/actions/book.ts';
 import { requireUser } from '../../_lib/session.ts';
+import { istDate } from '@/components/ui';
 
 /**
  * The book.
@@ -66,7 +67,7 @@ export default async function PortfolioPage({
 
   // The date the form opens on. Not a default the action would apply — the field is required and
   // checked server-side — just the day somebody recording a trade almost always means.
-  const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
+  const today = istDate();
 
   const tradeForm = <TradeForm names={names} today={today} action={recordTradeAction} />;
 
@@ -95,10 +96,10 @@ export default async function PortfolioPage({
       </label>
       {/* The sign comes from the direction, never from the number: a negative in the "money out"
           box would otherwise be money in, which is the wrong way to find a typo. */}
-      <p className="picker-none">Enter a positive amount; the direction above decides the sign.</p>
+      <p className="picker-none">Enter a positive amount. The direction above sets the sign.</p>
       <div className="form-actions">
         <button type="submit" className="btn btn-primary">
-          Record it
+          Record
         </button>
       </div>
     </form>
@@ -137,8 +138,8 @@ export default async function PortfolioPage({
         <Card title="Corporate actions to confirm" padded={actions.length === 0}>
           {actions.length === 0 ? (
             <Empty>
-              Nothing is waiting. Bonuses, splits and dividends announced for names in the book
-              appear here, and none of them touches a position until somebody confirms it.
+              Nothing is waiting. Bonuses, splits and dividends appear here and change no position
+              until confirmed.
             </Empty>
           ) : (
             <div className="tbl-scroll">
@@ -187,7 +188,7 @@ export default async function PortfolioPage({
                               </p>
                               <div className="form-actions">
                                 <button type="submit" className="btn btn-primary">
-                                  Confirm it
+                                  Confirm
                                 </button>
                               </div>
                             </form>
@@ -218,11 +219,11 @@ export default async function PortfolioPage({
                   where the ledger is, rather than scattered across the screens that show its
                   consequences. Cash gets its own on the cash view for the same reason. */}
               {view === 'cash' ? (
-                <DialogButton label="Money in or out" title="Record a cash movement" className="btn btn-primary btn-sm">
+                <DialogButton label="Cash" title="Record a cash movement" className="btn btn-primary btn-sm">
                   {capitalForm}
                 </DialogButton>
               ) : (
-                <DialogButton label="Record a trade" title="Record a trade" className="btn btn-primary btn-sm">
+                <DialogButton label="Trade" title="Record a trade" className="btn btn-primary btn-sm">
                   {tradeForm}
                 </DialogButton>
               )}
@@ -233,8 +234,7 @@ export default async function PortfolioPage({
           {view === 'holdings' && (
             book.length === 0 ? (
               <Empty>
-                Nothing is held. Holdings are rebuilt from the transactions on every change, so a
-                position appears here the moment its first trade is recorded.
+                Nothing is held. A position appears here once its first trade is recorded.
               </Empty>
             ) : (
               <div className="tbl-scroll">
@@ -259,11 +259,11 @@ export default async function PortfolioPage({
                           <td className="num">{inr(h.quantity, 0)}</td>
                           <td className="num">{inr(h.avgCost)}</td>
                           <td className="num">
-                            {h.lastClose ? inr(h.lastClose) : <Blank why="No price row joins this name" />}
+                            {h.lastClose ? inr(h.lastClose) : <Blank why="No price held" />}
                           </td>
-                          <td className="num">{value !== null ? crore(value) : <Blank why="Not marked: no close held" />}</td>
+                          <td className="num">{value !== null ? crore(value) : <Blank why="No close held" />}</td>
                           <td className="num">
-                            {value !== null ? signedPct(((value - cost) / cost) * 100) : <Blank why="Not marked: no close held" />}
+                            {value !== null ? signedPct(((value - cost) / cost) * 100) : <Blank why="No close held" />}
                           </td>
                           <td className="num">{crore(h.realisedGain)}</td>
                         </tr>
@@ -333,7 +333,7 @@ export default async function PortfolioPage({
                                 </label>
                                 <div className="form-actions">
                                   <button type="submit" className="btn btn-danger">
-                                    Reverse it
+                                    Reverse
                                   </button>
                                 </div>
                               </form>

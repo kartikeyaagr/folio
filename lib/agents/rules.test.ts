@@ -11,9 +11,7 @@
 
 import { test, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
-import { migrate } from '../../db/migrate.ts';
-import { closePool, readTxn, serviceTxn } from '../db.ts';
+import { readTxn, serviceTxn } from '../db.ts';
 import { distil, MIN_DISTANCE, MIN_OBSERVATIONS } from './distil.ts';
 import {
   approvedRules,
@@ -28,6 +26,7 @@ import {
   standingRules,
   writeRule,
 } from './rules.ts';
+import { createTestDatabase, dropTestDatabase } from '../../db/testing.ts';
 
 const DB = `trisula_rules_${process.pid}`;
 const ME = 'p1';
@@ -39,9 +38,7 @@ const WROTE = 'Management guided to eighteen percent revenue growth for the full
 const SIGNED = 'Management guided to twelve percent revenue growth and flagged a weak first half';
 
 before(async () => {
-  execFileSync('createdb', [DB]);
-  process.env.DATABASE_URL = `postgres:///${DB}`;
-  await migrate();
+  await createTestDatabase(DB);
   await serviceTxn('system:auth', async (c) => {
     await c.query("INSERT INTO actors (id,kind,label) VALUES ($1,'person','Tester')", [ME]);
     await c.query("INSERT INTO users (id,email,name) VALUES ($1,'t@x.com','T')", [ME]);
@@ -50,8 +47,7 @@ before(async () => {
 });
 
 after(async () => {
-  await closePool();
-  execFileSync('dropdb', ['--if-exists', DB]);
+  await dropTestDatabase(DB);
 });
 
 beforeEach(async () => {

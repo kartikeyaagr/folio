@@ -1,9 +1,8 @@
 import { test, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
-import { migrate } from '../db/migrate.ts';
-import { closePool, serviceTxn } from './db.ts';
+import { serviceTxn } from './db.ts';
 import { clear, dismissalsByTier, mark, newsFor } from './engagement.ts';
+import { createTestDatabase, dropTestDatabase } from '../db/testing.ts';
 
 const DB = `trisula_eng_${process.pid}`;
 const ANA = 'u_a';
@@ -11,9 +10,7 @@ const BO = 'u_b';
 const CO = 'c1';
 
 before(async () => {
-  execFileSync('createdb', [DB]);
-  process.env.DATABASE_URL = `postgres:///${DB}`;
-  await migrate();
+  await createTestDatabase(DB);
   await serviceTxn('system:auth', async (c) => {
     for (const [id, name] of [[ANA, 'Ana'], [BO, 'Bo']]) {
       await c.query("INSERT INTO actors (id,kind,label) VALUES ($1,'person',$2)", [id, name]);
@@ -30,8 +27,7 @@ before(async () => {
 });
 
 after(async () => {
-  await closePool();
-  execFileSync('dropdb', ['--if-exists', DB]);
+  await dropTestDatabase(DB);
 });
 
 beforeEach(async () => {

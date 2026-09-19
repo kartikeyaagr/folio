@@ -7,8 +7,8 @@
  * exchange's, and every later match on that name drifts with it.
  */
 
-import { randomBytes } from 'node:crypto';
-import { readTxn, writeTxn, type Client } from './db.ts';
+import { readTxn, rowId, type Client, writeTxn } from './db.ts';
+import { announce } from './ingest/backfill.ts';
 import { linkFilingsIn } from './ingest/filings.ts';
 
 export const STATUSES = ['watching', 'working', 'holding', 'exited', 'passed'] as const;
@@ -120,7 +120,7 @@ export async function addCompany(symbol: string, actorId: string): Promise<Compa
     const { rows: existing } = await c.query('SELECT 1 FROM companies WHERE symbol = $1', [upper]);
     if (existing.length > 0) throw new AlreadyFollowed(`${upper} is already followed`);
 
-    const id = randomBytes(16).toString('hex');
+    const id = rowId();
     // `added_by` is recorded here and nowhere else: it is who the finished-backfill notice goes to,
     // and by the time the job runs, minutes later, there is nobody in the request to ask.
     // `backfilled_at` stays null, which is what puts the name in the backfill queue.
@@ -138,6 +138,12 @@ export async function addCompany(symbol: string, actorId: string): Promise<Compa
     // is a company whose history is attached — attributed to the person who added it, because they
     // are what caused the write.
     await linkFilingsIn(c, id);
+
+    // The row is the queue entry; this is only the doorbell. `jobs/backfill-company.ts --watch`
+    // starts the fetch in under a second instead of at the next ten-minute tick, and if nothing is
+    // listening the notification is discarded and the timer picks the name up exactly as before —
+    // which is the whole reason the queue is a column and not a message.
+    await announce(c, s.symbol);
 
     const { rows } = await c.query<Row>(`${SELECT_COMPANY} WHERE c.id = $1`, [id]);
     return toCompany(rows[0]!);

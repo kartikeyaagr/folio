@@ -1,0 +1,106 @@
+/*
+ * Tailwind, admitted deliberately and on a short leash.
+ *
+ * `docs/specs/v4.md` carried "No CSS framework" as a runtime constraint from the start. That line
+ * was a premise rather than a measurement — unlike the refusals beside it, which were each settled
+ * by counting something — and it is reversed here so the component layer can sit on shadcn/Base UI.
+ * What follows is the leash, and every clause of it is load-bearing.
+ *
+ * 1. NO PREFLIGHT. `@import "tailwindcss"` would pull 398 lines of reset into `@layer base`.
+ *    `globals.css` already has a reset, written for this app: 14px body, tabular figures on every
+ *    `td`/`th`, `text-wrap: balance` on headings, navy links. Two resets is one too many, so only
+ *    `theme` and `utilities` are imported here.
+ *
+ * 2. THE DEFAULT PALETTE IS CLEARED, not extended. `--color-*: initial` empties the namespace
+ *    before ours is declared, so `bg-red-500` and its ~300 siblings do not exist. This is
+ *    `.interface-design/system.md`'s "one accent, three meanings — never a fourth" made mechanical:
+ *    the rule used to depend on somebody remembering it, and now a fourth meaning fails to compile.
+ *
+ * 3. `--font-*` IS CLEARED because of a real collision. `next/font` injects `--font-sans` and
+ *    `--font-serif`; Tailwind's default theme declares `--font-sans` too, and which one wins comes
+ *    down to layer-versus-unlayered order rather than to intent. The two faces here are not
+ *    "sans and serif", they are chrome and document — so they are named that, and nothing shadows
+ *    anything.
+ *
+ * 4. `--shadow-*` IS CLEARED for the same reason: this file's `--shadow-sm` and Tailwind's are the
+ *    same name, and `--shadow-sm: var(--shadow-sm)` is a cycle, not a bridge.
+ *
+ * `inline` on the @theme block is required, not stylistic: these values reference other custom
+ * properties, and without it the utility would emit a reference to the theme variable rather than
+ * the value, so the dark theme would stop reaching them.
+ */
+
+/*
+ * KNOWN COLLISION, currently benign: `.grow`. Tailwind emits `.grow{flex-grow:1}` as a static
+ * utility; `globals.css` already defines `.grow{flex:1 1 0;min-width:0}`, and the `min-width:0` is
+ * what makes an ellipsis work in a flex child — `.app-sub` depends on it. Trisula's rule is
+ * unlayered and later in the sheet, so it wins on both counts and behaviour is unchanged. Verified
+ * in the built CSS, not assumed. It stays fragile until the Trisula classes move into
+ * `@layer components`, which is the re-skin's job, not this file's.
+ */
+@layer theme, base, components, utilities;
+
+@import 'tailwindcss/theme.css' layer(theme);
+@import 'tailwindcss/utilities.css' layer(utilities);
+
+/*
+ * The class scan. Stated rather than inferred, so moving this file cannot silently empty it — and
+ * narrowed to `.tsx`, because Tailwind treats every file it is pointed at as a bag of candidate
+ * class names. Pointed at a directory it reads the stylesheets too, finds the words `sticky`,
+ * `visible` and `collapse` sitting in ordinary declarations, and emits utilities nothing asked for.
+ */
+@source '../app/**/*.tsx';
+@source '../components/**/*.tsx';
+
+@theme inline {
+  /* Clear three namespaces before redeclaring. See 2, 3 and 4 above. */
+  --color-*: initial;
+  --font-*: initial;
+  --shadow-*: initial;
+
+  /* Surfaces */
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-line: var(--line);
+  --color-line-2: var(--line-2);
+
+  /* Ink — four levels. Fewer than four and the hierarchy goes flat. */
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-muted: var(--muted);
+  --color-ghost: var(--ghost);
+
+  /* One accent, three meanings. There is deliberately no fourth to reach for. */
+  --color-navy: var(--navy);
+  --color-navy-2: var(--navy-2);
+  --color-navy-soft: var(--navy-soft);
+  --color-on-navy: var(--on-navy);
+  --color-teal: var(--teal);
+  --color-teal-soft: var(--teal-soft);
+  --color-red: var(--red);
+  --color-red-soft: var(--red-soft);
+  --color-amber: var(--amber);
+  --color-amber-soft: var(--amber-soft);
+
+  /* The rail is navy in both themes — the one fixed point on the screen. */
+  --color-rail: var(--rail);
+  --color-ring: var(--ring);
+
+  /* Type. Chrome and document, because that is what the split means. */
+  --font-chrome: var(--font);
+  --font-document: var(--serif);
+
+  /* Radius */
+  --radius-sm: var(--r-sm);
+  --radius-md: var(--r-md);
+  --radius-lg: var(--r-lg);
+  --radius-xl: var(--r-xl);
+
+  /* Depth: a card, and a thing that has left the page. */
+  --shadow-card: var(--shadow-sm);
+  --shadow-float: var(--shadow-lg);
+
+  /* Motion. Ease-out only — ease-in delays the frame the user is watching. */
+  --ease-rise: var(--ease);
+}

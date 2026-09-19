@@ -18,8 +18,7 @@
  * crashed run is caught by the lease instead.
  */
 
-import { randomBytes } from 'node:crypto';
-import { readTxn, serviceTxn } from '../db.ts';
+import { readTxn, rowId, serviceTxn, type Client } from '../db.ts';
 
 /** Generous: a long annual report legitimately takes minutes, and re-running one costs money. */
 export const LEASE_MINUTES = 30;
@@ -38,7 +37,6 @@ export const RETRY_AFTER_HOURS = 6;
 /** Per pass. A broken box should not enqueue its whole backlog on every tick of a five-minute timer. */
 export const RETRY_BATCH = 25;
 
-export const id = (): string => randomBytes(16).toString('hex');
 
 export interface EnqueueInput {
   agentKey: string;
@@ -50,7 +48,7 @@ export interface EnqueueInput {
 
 /** Enqueue an intent, never a prompt. The worker builds the prompt when it picks the run up. */
 export async function enqueue(input: EnqueueInput): Promise<string> {
-  const runId = id();
+  const runId = rowId();
   await serviceTxn('system:agents', async (c) => {
     await c.query(
       `INSERT INTO agent_runs (id, agent_key, subject_ref, company_id, request, requested_by)
@@ -89,7 +87,7 @@ export async function sweepScheduled(): Promise<number> {
     for (const r of rows) {
       // Ids are generated here rather than in SQL, like every other id in this codebase.
       // gen_random_bytes lives in pgcrypto, which is one extension more than this needs.
-      await c.query('INSERT INTO agent_runs (id, agent_key) VALUES ($1, $2)', [id(), r.key]);
+      await c.query('INSERT INTO agent_runs (id, agent_key) VALUES ($1, $2)', [rowId(), r.key]);
     }
     return rows.length;
   });
@@ -171,14 +169,40 @@ export async function claimThisRun(runId: string): Promise<ClaimedRun | null> {
   });
 }
 
-/** A run that produced what it was asked for. `draftId` is null for the agents that write none. */
+/**
+ * A run that produced what it was asked for. `draftId` is null for the agents that write none.
+ *
+ * **The previous attempt's failure is cleared, and that is not tidiness.** `failRun` writes
+ * `failure_kind` and `error` on every attempt, so a run that failed once and succeeded on its
+ * retry ended up `status='done'` with a draft *and* `failure_kind='error'` carrying a stale
+ * `401 … API key is invalid`. Observed 16-Sep-2026, on the two runs that drafted the moment a
+ * working key arrived. Nothing rendered it wrong — `failedRuns` filters on status — but the
+ * obvious query, `WHERE failure_kind IS NOT NULL`, counts those rows as failures forever, and the
+ * row itself asserts two contradictory things about what happened.
+ *
+ * `attempts` is deliberately left alone: how many goes it took is true, and the only honest record
+ * of a box that was broken for a while.
+ */
 export async function finishRun(runId: string, draftId: string | null): Promise<void> {
-  await serviceTxn('system:agents', async (c) => {
-    await c.query(
-      "UPDATE agent_runs SET status='done', finished_at=now(), draft_id=$2 WHERE id=$1",
-      [runId, draftId],
-    );
-  });
+  await serviceTxn('system:agents', (c) => markDone(c, runId, draftId));
+}
+
+/**
+ * The same thing, on a caller's client, for the one path that must share a transaction.
+ *
+ * **There were two copies of this UPDATE and they drifted the day one of them was fixed.**
+ * `recordDraft` in `runner.ts` writes the draft and closes the run atomically — a draft whose run
+ * still reads `running` gets re-offered by `reclaim()` half an hour later and drafted again at full
+ * price — so it cannot call `finishRun`, which owns its own transaction. It can call this. What
+ * "done" means now lives in exactly one statement.
+ */
+export async function markDone(c: Client, runId: string, draftId: string | null): Promise<void> {
+  await c.query(
+    `UPDATE agent_runs
+        SET status='done', finished_at=now(), draft_id=$2, failure_kind=NULL, error=NULL
+      WHERE id=$1`,
+    [runId, draftId],
+  );
 }
 
 /**
@@ -208,21 +232,55 @@ export async function failRun(runId: string, kind: string, error: string): Promi
 // Visibility
 // ------------------------------------------------------------------------------------------------
 
+export interface FailedRun {
+  id: string;
+  agentKey: string;
+  failureKind: string | null;
+  error: string | null;
+  finishedAt: Date | null;
+  attempts: number;
+  /** When it will be offered again. Null once it is retired. */
+  nextAttemptAt: Date | null;
+  /** True when nothing will pick this up again without a person asking for it. */
+  retired: boolean;
+}
+
 /**
+ * Every run that has failed and is not currently in flight — retired *and* backing off.
+ *
  * Failed runs are never re-offered by the sweep, so they have to be visible somewhere or they are
  * simply lost. A remedy that requires already knowing what silently did not happen is no remedy.
+ *
+ * **`status = 'failed'` alone was not that set.** `failRun` only retires a run on its last attempt;
+ * below `MAX_ATTEMPTS` it puts the row back as `queued` with the `failure_kind` and the error still
+ * on it. So a run that had failed twice against a box with no API key was `queued`, and `/agents`
+ * — the page that answers "what has this system been doing" — read `0` and printed *"Nothing has
+ * failed."* Measured on the dev database when this was written: three runs holding
+ * `401 … API key is invalid`, and the screen said nothing had gone wrong. That is the zero this
+ * codebase keeps arguing about, in the place it does the most damage: an empty cell reads as
+ * broken and a dash as not-applicable, but a zero reads as a measured fact.
+ *
+ * A retrying run is not the same thing as a retired one and is not shown as one — the caller gets
+ * `retired` and acts on it. `running` is excluded: `claimRun` does not clear `failure_kind`, so a
+ * row being worked on right now still carries the last attempt's, and calling that a failure would
+ * report an in-flight run as a broken one.
+ *
+ * `requeue` and `requeueErrored` both null the `failure_kind` when they put a run back, so a run a
+ * person has already dealt with leaves this list rather than lingering in it.
  */
-export async function failedRuns(limit = 50): Promise<
-  { id: string; agentKey: string; failureKind: string | null; error: string | null; finishedAt: Date | null }[]
-> {
+export async function failedRuns(limit = 50): Promise<FailedRun[]> {
   return readTxn(async (c) => {
-    const { rows } = await c.query<{
-      id: string; agentKey: string; failureKind: string | null; error: string | null; finishedAt: Date | null;
-    }>(
+    const { rows } = await c.query<FailedRun>(
       `SELECT id, agent_key AS "agentKey", failure_kind AS "failureKind",
-              error, finished_at AS "finishedAt"
-         FROM agent_runs WHERE status = 'failed'
-        ORDER BY finished_at DESC NULLS LAST LIMIT $1`,
+              error, finished_at AS "finishedAt", attempts,
+              CASE WHEN status = 'failed' THEN NULL ELSE next_attempt_at END AS "nextAttemptAt",
+              status = 'failed' AS retired
+         FROM agent_runs
+        WHERE failure_kind IS NOT NULL AND status IN ('failed', 'queued')
+        -- Retired first: those are the ones that need a person, and a screen that buried them
+        -- under runs the machine will retry by itself would be back where it started.
+        ORDER BY retired DESC, finished_at DESC NULLS LAST, created_at DESC
+        LIMIT $1`,
       [limit],
     );
     return rows;

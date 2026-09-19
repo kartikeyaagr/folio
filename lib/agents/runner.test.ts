@@ -8,13 +8,12 @@
 
 import { test, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
-import { migrate } from '../../db/migrate.ts';
-import { closePool, readTxn, serviceTxn } from '../db.ts';
+import { readTxn, serviceTxn } from '../db.ts';
 import { costUsd, scriptedModel, scriptedOk, type Answer } from './model.ts';
 import { assertInScope, drain, HANDLERS, registerHandler, ScopeViolation, type AgentRow } from './runner.ts';
 import { enqueue, failedRuns, MAX_ATTEMPTS, requeue, requeueErrored, RETRY_AFTER_HOURS } from './queue.ts';
 import { acceptDraft, diffFields, pendingDrafts, ReasonRequired, rejectDraft } from './review.ts';
+import { createTestDatabase, dropTestDatabase } from '../../db/testing.ts';
 
 const DB = `trisula_agents_${process.pid}`;
 const ME = 'p1';
@@ -26,9 +25,7 @@ const agentRow = (scope: string[]): AgentRow => ({
 });
 
 before(async () => {
-  execFileSync('createdb', [DB]);
-  process.env.DATABASE_URL = `postgres:///${DB}`;
-  await migrate();
+  await createTestDatabase(DB);
   await serviceTxn('system:auth', async (c) => {
     await c.query("INSERT INTO actors (id,kind,label) VALUES ($1,'person','T')", [ME]);
     await c.query("INSERT INTO users (id,email,name) VALUES ($1,'t@x.com','T')", [ME]);
@@ -37,8 +34,7 @@ before(async () => {
 });
 
 after(async () => {
-  await closePool();
-  execFileSync('dropdb', ['--if-exists', DB]);
+  await dropTestDatabase(DB);
 });
 
 beforeEach(async () => {
@@ -134,6 +130,8 @@ test('a run gives up after MAX_ATTEMPTS and becomes visible as failed', async ()
   const failed = await failedRuns();
   assert.equal(failed.length, 1, 'a failed run must be findable; the sweep never re-offers it');
   assert.equal(failed[0]?.id, runId);
+  assert.equal(failed[0]?.retired, true, 'out of attempts: nothing will offer it again');
+  assert.equal(failed[0]?.nextAttemptAt, null, 'so there is no next attempt to name');
 
   assert.equal(await requeue(runId), true, 'and a person can put it back after looking');
   assert.equal((await failedRuns()).length, 0);

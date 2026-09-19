@@ -26,7 +26,7 @@ export async function askForBrief(form: FormData): Promise<void> {
   }
   const waiting = await pendingBrief();
   if (waiting) {
-    await flash('A brief is already written and waiting for someone to accept it.');
+    await flash('A brief is already waiting in Review.');
     revalidatePath('/news/brief');
     return;
   }

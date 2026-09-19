@@ -14,11 +14,9 @@
  * extension and nothing else.
  */
 
-import { randomBytes } from 'node:crypto';
-import { readTxn, serviceTxn, type Client } from '../db.ts';
+import { readTxn, rowId, serviceTxn, type Client } from '../db.ts';
 import { embed, EMBED_MODEL, toVector } from '../retrieval/embed.ts';
 
-const id = (): string => randomBytes(16).toString('hex');
 
 /** Just enough of the draft to write its exemplar. Shaped by `lockDraft` in `review.ts`. */
 export interface AcceptedDraft {
@@ -67,7 +65,7 @@ export async function recordExemplar(
     `INSERT INTO exemplars (id, agent_id, draft_id, situation, output, quality, vertical)
      VALUES ($1,$2,$3,$4,$5,$6,$7)`,
     [
-      id(), draft.agent_key, draft.id, draft.situation, JSON.stringify(final),
+      rowId(), draft.agent_key, draft.id, draft.situation, JSON.stringify(final),
       // A draft signed off untouched and one rewritten before signing are different evidence, and
       // the distance is the only thing that can tell them apart.
       distance > 0 ? 'edited' : 'accepted',

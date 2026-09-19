@@ -1,8 +1,6 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
-import { migrate } from '../db/migrate.ts';
-import { closePool, readTxn, serviceTxn } from './db.ts';
+import { readTxn, serviceTxn } from './db.ts';
 import {
   cashBalance,
   confirmAction,
@@ -14,6 +12,7 @@ import {
   replayCompany,
   reverseTrade,
 } from './book.ts';
+import { createTestDatabase, dropTestDatabase } from '../db/testing.ts';
 
 const DB = `trisula_book_${process.pid}`;
 const ME = 'p1';
@@ -37,9 +36,7 @@ const bonus = (date: string, from: number, to: number) => ({
 });
 
 before(async () => {
-  execFileSync('createdb', [DB]);
-  process.env.DATABASE_URL = `postgres:///${DB}`;
-  await migrate();
+  await createTestDatabase(DB);
   await serviceTxn('system:auth', async (c) => {
     await c.query("INSERT INTO actors (id,kind,label) VALUES ($1,'person','T')", [ME]);
     await c.query("INSERT INTO users (id,email,name) VALUES ($1,'t@x.com','T')", [ME]);
@@ -51,8 +48,7 @@ before(async () => {
 });
 
 after(async () => {
-  await closePool();
-  execFileSync('dropdb', ['--if-exists', DB]);
+  await dropTestDatabase(DB);
 });
 
 // ---- the arithmetic, with no database in the way ------------------------------------------------

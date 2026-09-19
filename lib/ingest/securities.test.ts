@@ -1,9 +1,8 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
-import { migrate } from '../../db/migrate.ts';
-import { closePool, readTxn } from '../db.ts';
+import { readTxn } from '../db.ts';
 import { parseMaster, refreshSecurities } from './securities.ts';
+import { createTestDatabase, dropTestDatabase } from '../../db/testing.ts';
 
 const DB = `trisula_sec_${process.pid}`;
 
@@ -23,14 +22,11 @@ const SME = [
 const feed = (mainboard: string, sme: string) => () => Promise.resolve({ mainboard, sme });
 
 before(async () => {
-  execFileSync('createdb', [DB]);
-  process.env.DATABASE_URL = `postgres:///${DB}`;
-  await migrate();
+  await createTestDatabase(DB);
 });
 
 after(async () => {
-  await closePool();
-  execFileSync('dropdb', ['--if-exists', DB]);
+  await dropTestDatabase(DB);
 });
 
 test('parses both spellings of the same columns', () => {

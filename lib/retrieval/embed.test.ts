@@ -19,6 +19,12 @@ before(() => {
   );
 });
 
+/** The real vocab. `encode` needs only this, so these checks cost no ONNX session. */
+function loadVocab(): Record<string, number> {
+  const at = path.join(process.env.EMBED_MODEL_DIR!, 'tokenizer.json');
+  return JSON.parse(readFileSync(at, 'utf8')).model.vocab as Record<string, number>;
+}
+
 test('the model constant is recorded, not assumed', () => {
   assert.equal(EMBED_MODEL, 'bge-small-en-v1.5');
   assert.equal(EMBED_DIM, 384);
@@ -92,8 +98,24 @@ test('WordPiece emits one [UNK] for a whole word that fails, not matched-pieces-
   // WordPiece as one word. The reference WordpieceTokenizer emits a single [UNK] for that word.
   // The pre-fix code instead committed "hello" to `ids` before discovering the emoji couldn't
   // match, yielding [hello, UNK] — two tokens where the reference tokenizer produces one.
-  const vocabPath = path.join(process.env.EMBED_MODEL_DIR!, 'tokenizer.json');
-  const vocab = JSON.parse(readFileSync(vocabPath, 'utf8')).model.vocab as Record<string, number>;
+  const vocab = loadVocab();
   const ids = encode(vocab, 'hello🎉');
   assert.deepEqual(ids, [vocab['[CLS]'], vocab['[UNK]'], vocab['[SEP]']]);
+});
+
+test('accents are stripped, as the model\u2019s own normalizer asks', () => {
+  // tokenizer.json: BertNormalizer{strip_accents:null, lowercase:true}, and HuggingFace defaults
+  // strip_accents to lowercase when null. Without this the accented form is one [UNK] here and a
+  // real word in the reference, and the resulting vector is valid, unit-length and slightly wrong.
+  const v = loadVocab();
+  const unk = [v['[CLS]'], v['[UNK]'], v['[SEP]']];
+  assert.deepEqual(encode(v, 'caf\u00e9'), encode(v, 'cafe'), 'the accent must not change the ids');
+  assert.notDeepEqual(encode(v, 'caf\u00e9'), unk, 'and the result must not simply be [UNK]');
+});
+
+test('a word past max_input_chars_per_word is one [UNK], not four hundred pieces', () => {
+  // tokenizer.json: model.max_input_chars_per_word = 100.
+  const v = loadVocab();
+  const long = 'a'.repeat(500);
+  assert.deepEqual(encode(v, long), [v['[CLS]'], v['[UNK]'], v['[SEP]']]);
 });

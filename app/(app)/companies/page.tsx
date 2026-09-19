@@ -26,6 +26,19 @@ const STATUS_LABEL: Record<string, string> = {
   holding: 'Holding', working: 'Working', watching: 'Watching', exited: 'Exited', passed: 'Passed',
 };
 
+/** `not filled in` is the one a person has to act on: nothing will retry it. */
+const BACKFILL_TONE: Record<string, Tone> = {
+  'filling in': 'navy', waiting: 'neutral',
+  'filled in, with gaps': 'warn', 'not filled in': 'bad',
+};
+
+function priceWhy(backfill: string | null): string {
+  if (backfill === 'waiting') return 'Queued for its history; prices arrive with it';
+  if (backfill === 'filling in') return 'Its history is being fetched now';
+  if (backfill === 'not filled in') return 'Its backfill gave up; re-run it by symbol';
+  return 'No price row joins this name yet';
+}
+
 export default async function CompaniesPage() {
   await requireUser();
   const rows = await companyList();
@@ -67,8 +80,8 @@ export default async function CompaniesPage() {
         <Card title="Followed names" padded={false}>
           {rows.length === 0 ? (
             <Empty>
-              No names yet. Following a company is what starts everything else: its filings, its
-              results and its calendar arrive from the next run onwards.
+              No names yet. Following a company starts its filings, results and calendar from the
+              next run.
             </Empty>
           ) : (
             <div className="tbl-scroll">
@@ -99,9 +112,18 @@ export default async function CompaniesPage() {
                         <Chip tone={STATUS_TONE[r.status] ?? 'neutral'}>
                           {STATUS_LABEL[r.status] ?? r.status}
                         </Chip>
+                        {/* Where the name is in the backfill queue, beside where a person has put
+                            it. Absent once its history has arrived clean, which is most names most
+                            of the time — this is the row that would otherwise look identical to a
+                            company with nothing to say. */}
+                        {r.backfill && (
+                          <span title={r.backfillNote ?? undefined}>
+                            <Chip tone={BACKFILL_TONE[r.backfill] ?? 'neutral'}>{r.backfill}</Chip>
+                          </span>
+                        )}
                       </td>
                       <td>
-                        {r.sector ?? <Blank why="No sector set. Without one this name matches no trade press." />}
+                        {r.sector ?? <Blank why="No sector set" />}
                       </td>
                       <td>
                         {r.coveredByName ?? (
@@ -115,7 +137,10 @@ export default async function CompaniesPage() {
                       </td>
                       <td className="num">{r.avgCost ? inr(r.avgCost) : ''}</td>
                       <td className="num">
-                        {r.lastClose ? inr(r.lastClose) : <Blank why="No price row joins this name yet" />}
+                        {/* The `why` has to name the cause, not the symptom. "No price row joins
+                            this name yet" is true of a name queued an hour ago and of one whose
+                            backfill gave up, and those want different things from the reader. */}
+                        {r.lastClose ? inr(r.lastClose) : <Blank why={priceWhy(r.backfill)} />}
                       </td>
                       <td className="num">{r.filings30 || ''}</td>
                       <td className="num">{r.news30 || ''}</td>

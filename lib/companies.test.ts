@@ -1,8 +1,6 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
-import { migrate } from '../db/migrate.ts';
-import { closePool, serviceTxn } from './db.ts';
+import { serviceTxn } from './db.ts';
 import {
   addAlias,
   addCompany,
@@ -16,14 +14,15 @@ import {
   searchSecurities,
   UnknownSymbol,
 } from './companies.ts';
+import { CHANNEL } from './ingest/backfill.ts';
+import pg from 'pg';
+import { createTestDatabase, dropTestDatabase } from '../db/testing.ts';
 
 const DB = `trisula_co_${process.pid}`;
 const ME = 'p1';
 
 before(async () => {
-  execFileSync('createdb', [DB]);
-  process.env.DATABASE_URL = `postgres:///${DB}`;
-  await migrate();
+  await createTestDatabase(DB);
   await serviceTxn('system:auth', async (c) => {
     await c.query("INSERT INTO actors (id, kind, label) VALUES ($1, 'person', 'Tester')", [ME]);
     await c.query("INSERT INTO users (id, email, name) VALUES ($1, 't@x.com', 'Tester')", [ME]);
@@ -33,15 +32,15 @@ before(async () => {
       `INSERT INTO securities (symbol, isin, name) VALUES
          ('TEGA', 'INE011A01019', 'Tega Industries Limited'),
          ('PRAJIND', 'INE074A01025', 'Praj Industries Limited'),
-         ('GONE', 'INE999A01011', 'Delisted Ltd')`,
+         ('GONE', 'INE999A01011', 'Delisted Ltd'),
+         ('DOORBELL', 'INE100A01010', 'Doorbell Industries Limited')`,
     );
     await c.query("UPDATE securities SET delisted_at = now() WHERE symbol = 'GONE'");
   });
 });
 
 after(async () => {
-  await closePool();
-  execFileSync('dropdb', ['--if-exists', DB]);
+  await dropTestDatabase(DB);
 });
 
 test('identity comes from the master, not from what was typed', async () => {
@@ -179,4 +178,26 @@ test('every write landed in the audit log under the right actor', async () => {
     { actor_id: ME, table_name: 'company_aliases' },
     { actor_id: 'system:ingest', table_name: 'securities' },
   ]);
+});
+
+/**
+ * The wiring, not the helper.
+ *
+ * `backfill.test.ts` proves `announce` sends on the channel. This proves `addCompany` calls it —
+ * the distinction §14's finding 20 paid for: *"a green suite says nothing about whether the wiring
+ * is connected"*, where every unit test passed against a form missing its hidden input.
+ */
+test('following a name rings the backfill doorbell, so the work starts now rather than at the next tick', async () => {
+  const heard: string[] = [];
+  const client = new pg.Client({ connectionString: process.env['DATABASE_URL'] });
+  await client.connect();
+  try {
+    client.on('notification', (n) => heard.push(n.payload ?? ''));
+    await client.query(`LISTEN "${CHANNEL}"`);
+    await addCompany('DOORBELL', ME);
+    await client.query('SELECT 1'); // one round trip: pg delivers on the next exchange
+    assert.deepEqual(heard, ['DOORBELL']);
+  } finally {
+    await client.end();
+  }
 });

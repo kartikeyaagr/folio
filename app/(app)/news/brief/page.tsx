@@ -6,6 +6,7 @@ import { AppHeader, Card, Empty, Eyebrow } from '@/components/ui.tsx';
 
 import { askForBrief } from '../../../_lib/actions/brief.ts';
 import { requireUser } from '../../../_lib/session.ts';
+import { weekdayTime } from '@/components/ui';
 
 /**
  * Agent 6's output, where somebody reads it.
@@ -21,13 +22,6 @@ import { requireUser } from '../../../_lib/session.ts';
 
 export const dynamic = 'force-dynamic';
 
-function ist(at: Date): string {
-  return new Intl.DateTimeFormat('en-GB', {
-    timeZone: 'Asia/Kolkata', weekday: 'short', day: 'numeric', month: 'short',
-    hour: '2-digit', minute: '2-digit', hour12: false,
-  }).format(at);
-}
-
 export default async function BriefsPage() {
   await requireUser();
   const [list, waiting, inFlight] = await Promise.all([
@@ -40,7 +34,7 @@ export default async function BriefsPage() {
       <AppHeader
         title="Brief"
         subtitle={
-          latest ? `Last written ${ist(latest.writtenAt)}` : 'No brief has been written yet'
+          latest ? `Last written ${weekdayTime(latest.writtenAt)}` : 'No brief has been written yet'
         }
         back="/news"
         backTitle="News"
@@ -61,8 +55,8 @@ export default async function BriefsPage() {
             </button>
           </form>
           <p className="hint">
-            Every followed name, filings first. Only news that cleared the mechanism gate is used.
-            The brief lands in Review, and nothing reaches this page until a person accepts it.
+            Every followed name, filings first, using only confirmed news. The brief waits in
+            Review until someone accepts it.
           </p>
         </Card>
 
@@ -75,7 +69,7 @@ export default async function BriefsPage() {
 
         {waiting && (
           <p className="notice">
-            A brief was written {ist(waiting.createdAt)} and is waiting for somebody to accept it in{' '}
+            A brief was written {weekdayTime(waiting.createdAt)} and is waiting for somebody to accept it in{' '}
             <Link href="/review">Review</Link>. It is not shown here until then.
           </p>
         )}
@@ -85,7 +79,7 @@ export default async function BriefsPage() {
             title={latest.title}
             action={
               <span className="draft-meta">
-                accepted by {latest.acceptedBy ?? 'somebody'} · {ist(latest.writtenAt)}
+                accepted by {latest.acceptedBy ?? 'somebody'} · {weekdayTime(latest.writtenAt)}
               </span>
             }
           >
@@ -94,9 +88,8 @@ export default async function BriefsPage() {
         ) : (
           <Card title="No brief yet">
             <Empty>
-              Nobody has asked for one. A brief gathers what every followed name has filed, what
-              cleared the news gate, and what is scheduled — and names the companies that had
-              nothing, which is the half a press summary leaves out.
+              Nobody has asked for one. A brief covers what each followed name filed, what news was
+              confirmed, and what is scheduled, including the names that had nothing.
             </Empty>
           </Card>
         )}
@@ -107,7 +100,7 @@ export default async function BriefsPage() {
             <ul className="item-plain">
               {list.slice(1).map((b) => (
                 <li key={b.id}>
-                  <span className="num">{ist(b.writtenAt)}</span>
+                  <span className="num">{weekdayTime(b.writtenAt)}</span>
                   <b>
                     <Link href={`/news/brief/${b.id}`}>{b.title}</Link>
                   </b>

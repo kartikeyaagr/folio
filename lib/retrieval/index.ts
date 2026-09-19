@@ -36,15 +36,17 @@ import { registerAll, textFor, type Indexable } from './register.ts';
 /**
  * Which chunker applies is decided by content, not by kind. Every kind but `document_version` is
  * always prose (news, filings and fundamentals are all rendered to plain text in register.ts;
- * attachments are extracted PDF text). A `document_version` is prose or a grid depending on what
- * the desk saved — `lib/workspace.ts`: `{"text": …}` for prose, `{"cells": …}` for a sheet.
- * `textFor` already did the detection (it has to, to decide what `text` itself even means for a
- * sheet — see register.ts's `rawText`) and hands the parsed cells straight through on `source.cells`,
- * so this is a lookup, not a second detection: re-sniffing `source.text`'s shape here was the bug
- * (chunk.ts's file header has the full story) and is exactly what this file no longer does.
+ * attachments are extracted PDF text). A `document_version` is prose or a workbook depending on
+ * what the desk saved — `lib/workspace.ts`: `{"text": …}` for prose, `{"sheets": …}` for a
+ * spreadsheet, and `{"cells": …}` for one saved before a document could hold tabs, which
+ * `lib/sheet/book.ts` reads as a workbook of one. `textFor` already did the detection (it has to,
+ * to decide what `text` itself even means for a sheet — see register.ts's `rawText`) and hands the
+ * parsed tabs straight through on `source.sheets`, so this is a lookup, not a second detection:
+ * re-sniffing `source.text`'s shape here was the bug (chunk.ts's file header has the full story)
+ * and is exactly what this file no longer does.
  */
 function piecesFor(source: Indexable): Piece[] {
-  return source.cells ? chunkCells(source.cells) : chunkText(source.text);
+  return source.sheets ? chunkCells(source.sheets) : chunkText(source.text);
 }
 
 /**
