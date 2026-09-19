@@ -102,9 +102,8 @@ export default async function RulesPage() {
         {candidates.length === 0 ? (
           <Card title="Waiting on a decision">
             <Empty>
-              Nothing is waiting. A field has to be corrected {MIN_OBSERVATIONS} times, by{' '}
-              {MIN_DISTANCE} or more each, before it raises a candidate — and you can write a rule
-              below without waiting for that.
+              Nothing is waiting. A field raises a candidate after {MIN_OBSERVATIONS} corrections
+              of {MIN_DISTANCE} or more. You can also write a rule below.
             </Empty>
           </Card>
         ) : (
@@ -190,21 +189,19 @@ export default async function RulesPage() {
               required
             />
             <button type="submit" className="btn">
-              Write it
+              Write
             </button>
           </form>
           <p className="hint">
-            It lands above as a candidate, not in the prompt. Approving is a second act on purpose —
-            that is what puts a name and a date against a rule an agent is about to be given, and
-            with three of you that name can be your own.
+            It lands above as a candidate, not in the prompt. Approving it is a separate step, and
+            records who approved it and when.
           </p>
         </Card>
 
         <Card title="In force" padded={false}>
           {inForce.length === 0 ? (
             <Empty>
-              No rule has been approved yet, so every agent is running on its purpose and its
-              examples alone.
+              No rule has been approved. Agents are running on their purpose and examples alone.
             </Empty>
           ) : (
             <div className="tbl-scroll">

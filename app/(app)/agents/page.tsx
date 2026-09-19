@@ -1,16 +1,15 @@
 import Link from 'next/link';
 
 import { readTxn } from '@/lib/db.ts';
-import { failedRuns } from '@/lib/agents/queue.ts';
-import { pendingDrafts } from '@/lib/agents/review.ts';
+import { failedRuns, MAX_ATTEMPTS } from '@/lib/agents/queue.ts';
+import { pendingDraftCount } from '@/lib/agents/review.ts';
 import { coverage, fieldHotspots, weeklyDistance } from '@/lib/agents/learning.ts';
 import { pendingRules } from '@/lib/agents/rules.ts';
 import { label } from '@/lib/agents/paths.ts';
-import { listCompanies } from '@/lib/companies.ts';
 import { AppHeader, Blank, Card, Chip, Empty, Stat, StatRow, type Tone } from '@/components/ui.tsx';
 
-import { askAgent, retryRun } from '../../_lib/actions/review.ts';
-import { requireUser } from '../../_lib/session.ts';
+import { retryRun } from '../../_lib/actions/review.ts';
+import { requireAdmin } from '../../_lib/session.ts';
 
 /**
  * The registry, and what it has been doing.
@@ -54,12 +53,31 @@ const TRIGGER_TONE: Record<string, Tone> = {
   event: 'navy', schedule: 'neutral', prompt: 'good',
 };
 
+/**
+ * A timestamp as "due now" or a wall-clock time, because that is the only thing anybody does with
+ * one here: decide whether to wait or to go and look at the box.
+ *
+ * IST, like every other date in this application. The column this replaced printed
+ * `toISOString().slice(0, 16)` — UTC, unlabelled, five and a half hours behind the desk reading
+ * it, which for a "will be tried again at" is the difference between waiting and not.
+ */
+const IST = new Intl.DateTimeFormat('en-IN', {
+  timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
+});
+const when = (at: Date): string => (at.getTime() <= Date.now() ? 'due now' : IST.format(at));
+
 export default async function AgentsPage() {
-  // Kept rather than discarded: model, effort and spend are admin-only. Everything else on this
-  // page is what an agent is and what it has done, which is research context anybody needs.
-  const user = await requireUser();
-  const [agents, drafts, failed, names, learned, weeks, hotspots, candidates] = await Promise.all([
-    registry(), pendingDrafts(), failedRuns(), listCompanies(),
+  // **The whole page is admin-only now**, not just its spend column. What runs unattended, on what
+  // model, at what cost, and what failed is operating detail about how the system is run — the same
+  // argument migration `0030` made for the spend figures, applied to the page they were on. Asking
+  // an agent for a piece of work is not operating detail, and it moved to `/chat` so an analyst who
+  // cannot open this page can still ask.
+  //
+  // `requireAdmin` redirects rather than 404s: a person who follows a stale link should land
+  // somewhere, and which pages exist is not a secret from somebody already signed in.
+  await requireAdmin();
+  const [agents, waiting, failed, learned, weeks, hotspots, candidates] = await Promise.all([
+    registry(), pendingDraftCount(), failedRuns(),
     coverage(), weeklyDistance(), fieldHotspots(), pendingRules(),
   ]);
 
@@ -69,13 +87,18 @@ export default async function AgentsPage() {
   const priced = agents.filter((a) => a.model !== 'none' && a.spend !== null);
   const unpriced = agents.filter((a) => a.model !== 'none' && a.spend === null);
   const totalSpend = priced.reduce((n, a) => n + Number(a.spend), 0);
-  const prompted = agents.filter((a) => a.trigger === 'prompt' && a.enabled);
+
+  // Two different asks, so two different lists. A retired run needs somebody; a retrying one needs
+  // whatever broke the box fixed, and then nothing. Collapsing them would put the first behind the
+  // second exactly when a person is scanning for the first.
+  const retired = failed.filter((r) => r.retired);
+  const retrying = failed.filter((r) => !r.retired);
 
   return (
     <>
       <AppHeader
         title="Agents"
-        subtitle={`${agents.length} registered · ${drafts.length} drafts waiting`}
+        subtitle={`${agents.length} registered · ${waiting} draft${waiting === 1 ? '' : 's'} waiting`}
       />
 
       <div className="page">
@@ -83,15 +106,30 @@ export default async function AgentsPage() {
           <Stat label="Registered" value={String(agents.length)} />
           <Stat
             label="Waiting for review"
-            value={String(drafts.length)}
-            sub={drafts.length > 0 ? <Link href="/review">Open the queue →</Link> : 'nothing to accept'}
+            value={String(waiting)}
+            sub={waiting > 0 ? <Link href="/review">Open the queue →</Link> : 'nothing to accept'}
           />
+          {/*
+            The total, not the retired count. Until `failedRuns` was widened this read
+            `status = 'failed'` only, so three runs holding `401 … API key is invalid` and waiting
+            on their next attempt showed here as **0** — the zero this codebase keeps arguing
+            about, on the screen that answers "is anything broken".
+          */}
           <Stat
             label="Failed runs"
             value={String(failed.length)}
             tone={failed.length > 0 ? 'bad' : undefined}
+            sub={
+              failed.length === 0
+                ? 'nothing has failed'
+                : retired.length === 0
+                  ? `all waiting to be tried again`
+                  : retrying.length === 0
+                    ? `${retired.length} out of attempts`
+                    : `${retired.length} out of attempts, ${retrying.length} waiting to be tried again`
+            }
           />
-          {user.isAdmin && (
+          {(
             <Stat
               label="Spend to date"
               value={priced.length === 0 ? '—' : `$${totalSpend.toFixed(4)}`}
@@ -112,9 +150,9 @@ export default async function AgentsPage() {
               <thead>
                 <tr>
                   <th>Agent</th><th>Fires</th>
-                  {user.isAdmin && <><th>Model</th><th>Effort</th></>}
+                  {<><th>Model</th><th>Effort</th></>}
                   <th>Reads</th><th className="num">Runs</th><th className="num">Failed</th>
-                  {user.isAdmin && <th className="num">Spend</th>}
+                  {<th className="num">Spend</th>}
                 </tr>
               </thead>
               <tbody>
@@ -128,7 +166,7 @@ export default async function AgentsPage() {
                       <Chip tone={TRIGGER_TONE[a.trigger] ?? 'neutral'}>{a.trigger}</Chip>
                       {a.minInterval && <span className="cell-sub">every {a.minInterval}m</span>}
                     </td>
-                    {user.isAdmin && (
+                    {(
                       <>
                         <td>{a.model === 'none' ? <span className="muted">no model</span> : a.model}</td>
                         <td>{a.effort ?? <span className="muted">—</span>}</td>
@@ -139,13 +177,13 @@ export default async function AgentsPage() {
                     </td>
                     <td className="num">{a.runs || ''}</td>
                     <td className="num">{a.failures || ''}</td>
-                    {user.isAdmin && (
+                    {(
                       <td className="num">
                         {a.model === 'none'
                           ? ''
                           : a.spend
                             ? `$${Number(a.spend).toFixed(4)}`
-                            : <Blank why="No draft from this agent has recorded a cost yet" />}
+                            : <Blank why="No draft from this agent has recorded a cost" />}
                       </td>
                     )}
                   </tr>
@@ -185,7 +223,7 @@ export default async function AgentsPage() {
                       {a.learning ? (
                         a.retrievable
                       ) : (
-                        <Blank why="This agent does not retrieve examples; acceptance still keeps them, so turning it on later starts from a corpus rather than from nothing" />
+                        <Blank why="This agent does not retrieve examples. They are still kept." />
                       )}
                     </td>
                     <td>{a.model}</td>
@@ -198,7 +236,7 @@ export default async function AgentsPage() {
 
         <Card title="Accepted, edited, rejected" padded={false}>
           {weeks.length === 0 ? (
-            <Empty>Nothing has been decided yet. The measure needs decisions before it means anything.</Empty>
+            <Empty>No draft has been accepted or rejected yet.</Empty>
           ) : (
             <div className="tbl-scroll">
               <table className="tbl">
@@ -249,8 +287,8 @@ export default async function AgentsPage() {
                           <Blank
                             why={
                               w.accepted === 0
-                                ? 'Nothing was accepted in this week, so there is no distance to average'
-                                : 'These were accepted before edit distance was recorded, so there is no figure for them'
+                                ? 'Nothing was accepted this week'
+                                : 'Accepted before edit distance was recorded'
                             }
                           />
                         ) : (
@@ -282,10 +320,7 @@ export default async function AgentsPage() {
           }
         >
           {hotspots.length === 0 ? (
-            <Empty>
-              No field has been corrected yet. Either the drafts have been right, or nobody has
-              changed one — the counts above say which.
-            </Empty>
+            <Empty>No field has been corrected yet.</Empty>
           ) : (
             <div className="tbl-scroll">
               <table className="tbl">
@@ -306,34 +341,11 @@ export default async function AgentsPage() {
           )}
         </Card>
 
-        <Card title="Ask an agent">
-          {prompted.length === 0 ? (
-            <Empty>No prompted agents are enabled.</Empty>
-          ) : (
-            <div className="ask-grid">
-              {prompted.map((a) => (
-                <form key={a.key} action={askAgent} className="ask-form">
-                  <input type="hidden" name="agent" value={a.key} />
-                  <span className="ask-label">{a.label}</span>
-                  <select className="field" name="company" defaultValue="" aria-label="Company">
-                    <option value="">
-                      {a.key === 'news-brief' ? 'Every followed name' : 'Pick a company'}
-                    </option>
-                    {names.map((n) => (
-                      <option key={n.id} value={n.id}>{n.symbol} — {n.name}</option>
-                    ))}
-                  </select>
-                  <button type="submit" className="btn">Ask</button>
-                </form>
-              ))}
-            </div>
-          )}
-          <p className="hint">
-            A prompted agent is queued here and runs on the next sweep. Its draft lands in Review,
-            like every other agent&rsquo;s.
-          </p>
-        </Card>
-
+        {/*
+          "Ask an agent" used to be here and is now `/chat`, the request desk. It left with the
+          page's audience: this is the registry, which is admin-only, and an analyst still has to
+          be able to ask for a forensic review without being able to read what the desk spends.
+        */}
         <Card title="Failed runs">
           {failed.length === 0 ? (
             <Empty>Nothing has failed.</Empty>
@@ -341,7 +353,10 @@ export default async function AgentsPage() {
             <div className="tbl-scroll">
               <table className="tbl">
                 <thead>
-                  <tr><th>Agent</th><th>Kind</th><th>Error</th><th>When</th><th /></tr>
+                  <tr>
+                    <th>Agent</th><th>Kind</th><th>Error</th>
+                    <th className="num">Attempt</th><th>What happens next</th><th />
+                  </tr>
                 </thead>
                 <tbody>
                   {failed.map((r) => (
@@ -349,20 +364,43 @@ export default async function AgentsPage() {
                       <td>{r.agentKey}</td>
                       <td>
                         {/*
-                          The four named failure states. "error" is the only one that means an
-                          unknown cause; the rest say exactly what went wrong.
+                          The six named failure states. "error" is the only one that means an
+                          unknown cause; the rest say exactly what went wrong, and are properties
+                          of the subject rather than of the box — which is why only `error` is ever
+                          put back automatically.
                         */}
                         <Chip tone={r.failureKind === 'refusal' ? 'warn' : 'bad'}>
                           {r.failureKind ?? 'unknown'}
                         </Chip>
                       </td>
-                      <td className="cell-wrap">{r.error ?? <Blank why="Failed with no error recorded" />}</td>
-                      <td className="num">{r.finishedAt ? r.finishedAt.toISOString().slice(0, 16).replace('T', ' ') : ''}</td>
+                      <td className="cell-wrap">{r.error ?? <Blank why="No error recorded" />}</td>
+                      <td className="num">{r.attempts} of {MAX_ATTEMPTS}</td>
+                      {/*
+                        The column that was missing. A run below MAX_ATTEMPTS is `queued` with its
+                        error still on it and the machine will come back to it; a retired one will
+                        not be offered again by anything, and saying so is the difference between
+                        a list somebody works through and a list somebody scrolls past.
+                      */}
+                      <td className="cell-wrap">
+                        {r.retired ? (
+                          <Chip tone="bad">out of attempts</Chip>
+                        ) : (
+                          <>
+                            <Chip tone="warn">will be tried again</Chip>
+                            {r.nextAttemptAt && (
+                              <span className="cell-sub">{when(r.nextAttemptAt)}</span>
+                            )}
+                          </>
+                        )}
+                      </td>
                       <td>
-                        <form action={retryRun}>
-                          <input type="hidden" name="id" value={r.id} />
-                          <button type="submit" className="btn btn-quiet btn-sm">Run again</button>
-                        </form>
+                        {/* `requeue` only matches a retired row, so the button only appears on one. */}
+                        {r.retired && (
+                          <form action={retryRun}>
+                            <input type="hidden" name="id" value={r.id} />
+                            <button type="submit" className="btn btn-quiet btn-sm">Retry</button>
+                          </form>
+                        )}
                       </td>
                     </tr>
                   ))}

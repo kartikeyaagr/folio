@@ -65,7 +65,7 @@ export DATABASE_URL=postgres:///trisula_v3_dev
 pnpm install
 pnpm fetch-model                 # ~130 MB embedding model, validated on download
 pnpm exec tsx db/migrate.ts      # migrations are one transaction each, checksummed
-pnpm check                       # lint + typecheck + 619 tests
+pnpm check                       # lint + typecheck + 642 tests
 pnpm dev                         # port 3100
 ```
 

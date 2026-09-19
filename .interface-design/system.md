@@ -55,6 +55,17 @@ everything else. On a phone both stack and the rail becomes a bottom bar.
    a `Facts` grid at the top, leading by weight.
 4. **Copy says what actually happened.** A toast names what was recorded and as whom. A button
    that trains a classifier says so only if it does.
+5. **A button is one word.** The verb, and nothing else — "Record", not "Record the trade";
+   "Retry", not "Run again"; "Show", not "Show what can be asked". The row or the dialog already
+   says what the verb applies to, so the second word was repeating it. Applied 17-Sep-2026 across
+   every button in the tree. Where a label carried state ("Your mailbox · linked") that state moves
+   to the `title`, not into a second word.
+6. **State it and stop.** The copy had drifted into explaining itself — *"No field has been
+   corrected yet. Either the drafts have been right, or nobody has changed one — the counts above
+   say which."* Every clause after the first was the screen arguing with the reader. Rewritten
+   17-Sep-2026 across 36 files: one sentence where one will do, two at most, and a justifying
+   clause only where it tells somebody what to do next. A `<Blank why>` still says why — that is
+   the whole point of it — but in the fewest words that are true.
 
 ## The signature — `<Blank why="…" />`
 

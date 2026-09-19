@@ -44,8 +44,30 @@ export interface PendingDraft {
   createdAt: Date;
   /** The order the agent wrote its fields in; jsonb does not keep it. Null on older drafts. */
   fieldOrder: string[] | null;
-  /** The conversation this was proposed in, or null when it came from a sweep. R4. */
-  threadId: string | null;
+}
+
+/**
+ * How many drafts are waiting — all of them, not a page of them.
+ *
+ * Separate from `pendingDrafts` because **a count and a page are different questions and only one
+ * of them has a limit.** `/agents` wanted the number and was reading `pendingDrafts().length`,
+ * which is the number *or fifty, whichever is smaller*, while the rail badge beside it counted with
+ * no limit at all. Above fifty pending the two disagreed on the same screen, and the one stated as
+ * a headline — "52 drafts waiting" against a badge reading 63 — was the wrong one.
+ *
+ * It also drops a 50-row read of `content`, `sources` and `verification` from a page that rendered
+ * none of it.
+ *
+ * The predicate is `status = 'pending'` and must stay the same as the one below; they are two
+ * readings of one queue.
+ */
+export async function pendingDraftCount(): Promise<number> {
+  return readTxn(async (c) => {
+    const { rows } = await c.query<{ n: number }>(
+      "SELECT count(*)::int AS n FROM ai_drafts WHERE status = 'pending'",
+    );
+    return rows[0]?.n ?? 0;
+  });
 }
 
 /**
@@ -53,13 +75,15 @@ export interface PendingDraft {
  *
  * Provenance comes back with every draft, deliberately. A queue that hides where its items came
  * from trains people to wave them through, which turns the gate into a formality.
+ *
+ * **Capped, and the caller has to say so.** `pendingDraftCount()` is the uncapped number; a screen
+ * rendering `drafts.length` as "N waiting" is stating a fact it did not measure.
  */
 export async function pendingDrafts(limit = 50): Promise<PendingDraft[]> {
   return readTxn(async (c) => {
     const { rows } = await c.query<PendingDraft>(
       `SELECT d.id, d.agent_key AS "agentKey", a.label AS "agentLabel",
               d.company_id AS "companyId", co.symbol, d.field_order AS "fieldOrder",
-              d.thread_id AS "threadId",
               d.content, d.sources, d.verification, d.model,
               d.cost_usd::text AS "costUsd", d.created_at AS "createdAt"
          FROM ai_drafts d

@@ -91,8 +91,7 @@ export default async function FilingsPage({
 
           {rows.length === 0 ? (
             <Empty>
-              No filings in this window. The announcements job runs through the day; a company
-              added today arrives with its history already present.
+              No filings in this window. Announcements are fetched through the day.
             </Empty>
           ) : (
             <div className="tbl-scroll">

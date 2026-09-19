@@ -115,7 +115,7 @@ export default async function LoginPage({
             />
           </label>
           <button type="submit" className="btn btn-primary btn-lg">
-            Sign in <span aria-hidden="true">→</span>
+            Login <span aria-hidden="true">→</span>
           </button>
           <p className="hint">
             Lost your password? <Link href="/reset">Use a recovery code</Link>. No account?{' '}

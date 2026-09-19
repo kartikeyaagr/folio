@@ -282,6 +282,21 @@ sudo systemctl enable --now \
 systemctl list-timers 'trisula-*'
 ```
 
+One unit is not a timer and is enabled separately, because it stays up:
+
+```bash
+sudo systemctl enable --now trisula-index-watch.service
+systemctl status trisula-index-watch
+```
+
+It listens on the `trisula_content` channel that migration `0052` makes `documents`,
+`document_versions` and `attachments` announce on, and indexes within seconds of a save rather than
+within ten minutes of one. **It does not replace `trisula-index-content.timer` and enabling it is
+not a reason to disable that.** A `NOTIFY` with no listener attached is dropped and nothing replays
+it, so the watcher is a latency improvement and never the guarantee; the durable queue is
+`sources.indexed_at IS NULL` and the timer is what promises it drains. Skipping the watcher costs
+ten minutes of staleness. Skipping the timer eventually costs a document.
+
 **Three of those were unit files nobody enabled**, found on 11-Sep-2026 while adding the third.
 `index-content` shipped with R1 and `backfill-company` with `676b375` — the commit that *fixed*
 `v4.md`'s opening audit finding, which was a queue with a correct drainer and no timer. The timer
@@ -292,6 +307,79 @@ schedule.
 Every unit carries `TZ=Asia/Kolkata`. Every time in this system is IST and every date it computes
 is an Indian trading date; inheriting the box's timezone is how a reporting period silently moves
 a day.
+
+## 9a. Mail (the daily digest)
+
+Everybody signed in gets **one email a morning** at their own address — alerts, reminders, job
+failures and what is waiting in the review queue, gathered into one envelope by `lib/digest.ts` and
+sent by agent 4 shortly after 07:00 IST. Per-event mail was dropped on 17-Sep-2026 (`0054`): a
+person gets one envelope a day and never more.
+
+The fund's mail is on **Hostinger**, which speaks SMTP with STARTTLS on 587 and AUTH LOGIN — which
+is exactly what `smtpSender` in `lib/notify.ts` already does, so there is nothing to build. Five
+variables in `/etc/trisula/trisula.env`:
+
+```bash
+SMTP_HOST=smtp.hostinger.com
+SMTP_PORT=587
+SMTP_USER=desk@trisulacapital.com      # a real mailbox, not an alias
+SMTP_PASSWORD=…                        # that mailbox's password
+SMTP_FROM=desk@trisulacapital.com      # Hostinger rejects a From: that is not the authenticated box
+```
+
+`SMTP_FROM` must be the authenticated mailbox. Hostinger refuses to relay for any other sender, and
+the refusal arrives as a 5xx on `MAIL FROM` — which lands in `notification_outbox.last_error`
+rather than anywhere obvious, so check there first if nothing arrives.
+
+**No relay configured is a valid state and not a failure.** `smtpFromEnv()` returns null without
+`SMTP_HOST` and `SMTP_FROM`, the outbox keeps queueing, and the run says how many digests are
+waiting. Nothing is lost by leaving this unset; mail simply starts flowing the day it is set.
+
+Check it end to end without waiting for 07:00:
+
+```bash
+sudo -u trisula bash -c 'set -a; . /etc/trisula/trisula.env; set +a; \
+  pnpm exec tsx jobs/agents.ts 1'
+psql -d trisula -c "select kind, recipient, sent_at, attempts, last_error from notification_outbox
+                     order by queued_at desc limit 10"
+```
+
+A row with `sent_at` set went out. A row with `attempts` climbing and a `last_error` did not, and
+the error is the relay's own words.
+
+### 9b. `MAILBOX_KEY` — a person's own mailbox
+
+A person can link their own mailbox from the account menu, and their daily update then leaves from
+their own company address instead of the shared relay. It passes their domain's SPF and DKIM, and
+there is no shared `desk@` box whose password three people know.
+
+That means storing an SMTP password that can be turned back into what was typed — **the first
+reversible secret in this system**, against `password_hash` (Argon2id) and session tokens (sha256),
+neither of which can be. `lib/mailbox.ts` keeps the exception narrow, and the key is the part that
+lives here:
+
+```bash
+MAILBOX_KEY=$(openssl rand -base64 32)    # 32 bytes, base64. Put the value in trisula.env.
+```
+
+Four things worth knowing before you set it:
+
+- **Without it, linking refuses.** There is no path that stores a mailbox password in the clear.
+  The feature is simply unavailable until the key exists, which is the correct failure.
+- **It is not in a database backup.** `ops/backup.sh` dumps Postgres; the key is in
+  `/etc/trisula/trisula.env`. Restoring a dump onto a box with a different key leaves every stored
+  mailbox unopenable — which is the point, and why the env file belongs in whatever holds
+  `BACKUP_AGE_RECIPIENT`.
+- **Rotating it orphans every linked mailbox.** They are not lost silently: `open()` raises,
+  `lib/digest.ts` records the reason against the mailbox, falls back to the shared relay, and each
+  person sees "the last send through it failed" in their account menu with a re-link button. Plan a
+  rotation as "everybody re-links", not as a migration.
+- **Nothing reads mail.** There is no IMAP here. The credential is used for exactly one thing —
+  sending that person their own digest — and `lib/digest.ts` is its only reader.
+
+A person links it themselves at **account menu → Link your mailbox**. Saving sends a real test
+message to the address and stores nothing unless it arrives, so a mailbox that is listed as linked
+has carried something at least once.
 
 ## 10. The model credential (the agents)
 

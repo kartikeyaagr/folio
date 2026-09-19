@@ -30,7 +30,9 @@ const fields = (edits: Record<string, unknown>): number =>
   new Set(Object.keys(edits).map(shape)).size;
 
 export default async function OneBriefPage({ params }: { params: Promise<{ id: string }> }) {
-  await requireUser();
+  // Kept rather than discarded, for migration `0030`'s reason: the model and what the brief cost
+  // are operating detail, and this page is the one an analyst reads to do their job.
+  const user = await requireUser();
   const { id } = await params;
   const b = await brief(id);
   if (!b) notFound();
@@ -48,10 +50,12 @@ export default async function OneBriefPage({ params }: { params: Promise<{ id: s
         <Card
           title={b.title}
           action={
-            <span className="draft-meta">
-              {b.model ?? 'model not recorded'}
-              {b.costUsd ? ` · $${Number(b.costUsd).toFixed(4)}` : ''}
-            </span>
+            user.isAdmin ? (
+              <span className="draft-meta">
+                {b.model ?? 'model not recorded'}
+                {b.costUsd ? ` · $${Number(b.costUsd).toFixed(4)}` : ''}
+              </span>
+            ) : undefined
           }
         >
           <Brief content={b.content} />
@@ -74,9 +78,9 @@ export default async function OneBriefPage({ params }: { params: Promise<{ id: s
               ))}
             </ul>
             <p className="hint">
-              A brief somebody corrected is the only evidence there is about where this agent is
-              weak. <Link href="/agents">The registry</Link> counts the runs; this says what was
-              wrong with them.
+              Corrections are the evidence of where this agent is weak.{' '}
+              <Link href="/agents">The registry</Link> counts the runs; this says what was wrong
+              with them.
             </p>
           </Card>
         )}

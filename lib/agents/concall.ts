@@ -202,8 +202,8 @@ registerHandler(KEY, async (ctx: RunContext): Promise<HandlerResult> => {
       verification: {
         agreed: null,
         note: prior
-          ? 'No deterministic check applies. The prior call was supplied for comparison.'
-          : 'No deterministic check applies, and no prior call was held to compare against.',
+          ? 'No automatic check applies. The previous call was supplied for comparison.'
+          : 'No automatic check applies, and no previous call was held to compare against.',
       },
       model: answer.model,
       inputTokens: answer.inputTokens,

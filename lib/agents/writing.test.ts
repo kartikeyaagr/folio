@@ -152,7 +152,7 @@ test('the draft records that nothing checked it', async () => {
     return rows[0]?.verification;
   });
   assert.equal(v?.agreed, null, 'null, not true: nothing verified this');
-  assert.match(String(v?.note), /no prior call was held/);
+  assert.match(String(v?.note), /no previous call was held/);
 });
 
 // ---- agent 3 ------------------------------------------------------------------------------------

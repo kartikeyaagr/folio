@@ -97,13 +97,13 @@ export function FollowPicker({
             is still asking teaches you to distrust it. */}
         {query.trim() === '' ? (
           <p className="picker-none">
-            The master holds every listed name, mainboard and SME. Following one brings its filings
-            with it and starts its results, prices and calendar from the next run.
+            Every listed name, mainboard and SME. Following one brings its filings, and starts its
+            results, prices and calendar from the next run.
           </p>
         ) : searched && hits.length === 0 && !pending ? (
           <p className="picker-none">
-            Nothing in the security master matches “{query.trim()}”. If it listed recently, refresh
-            the master first.
+            Nothing matches “{query.trim()}”. If it listed recently, refresh the security master
+            first.
           </p>
         ) : null}
       </div>

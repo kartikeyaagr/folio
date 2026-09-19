@@ -104,6 +104,59 @@ export function serviceTxn<T>(principal: ServicePrincipal, fn: (c: Client) => Pr
 }
 
 /** Jobs are short-lived processes; closing lets them exit rather than hang on an idle socket. */
+/**
+ * Hold one connection open and call back on every `NOTIFY` on a channel.
+ *
+ * **Not from the pool, and it cannot be.** A pooled connection is handed back after the
+ * transaction that borrowed it; a `LISTEN` on one survives only until the next caller gets it, and
+ * then the notifications go to whoever holds it now. This opens its own `pg.Client`, which is the
+ * one place in this codebase that is true, and returns the function that closes it.
+ *
+ * Reconnects on its own. A notify listener that quietly dies after a database restart is worse
+ * than no listener, because the queue it was watching keeps filling and the screen keeps saying
+ * everything is indexed. It is still only ever a *nudge*: notifications sent while the socket was
+ * down are gone, which is exactly why the caller must also poll something durable. See
+ * `jobs/index-content.ts --watch`.
+ */
+export async function listen(
+  channel: string,
+  onNotify: () => void,
+  onReconnect?: () => void,
+): Promise<() => Promise<void>> {
+  if (!/^[a-z_][a-z0-9_]*$/.test(channel)) throw new Error(`unsafe channel name ${channel}`);
+  let client: pg.Client | undefined;
+  let stopped = false;
+
+  const connect = async (): Promise<void> => {
+    if (stopped) return;
+    client = new pg.Client({ connectionString: process.env.DATABASE_URL });
+    client.on('notification', (n) => { if (n.channel === channel) onNotify(); });
+    client.on('error', () => { void reconnect(); });
+    client.on('end', () => { void reconnect(); });
+    await client.connect();
+    await client.query(`LISTEN ${channel}`);
+  };
+
+  const reconnect = async (): Promise<void> => {
+    if (stopped || client === undefined) return;
+    client.removeAllListeners();
+    client = undefined;
+    // A fixed second, not a backoff: the thing being waited on is a local Postgres coming back,
+    // and a backoff that reached minutes would leave the queue unwatched long after it had.
+    await new Promise((r) => setTimeout(r, 1000));
+    await connect().then(() => onReconnect?.()).catch(() => void reconnect());
+  };
+
+  await connect();
+  return async () => {
+    stopped = true;
+    const c = client;
+    client = undefined;
+    c?.removeAllListeners();
+    await c?.end().catch(() => { /* closing a dead socket is not an error worth raising */ });
+  };
+}
+
 export async function closePool(): Promise<void> {
   await pool?.end();
   pool = undefined;

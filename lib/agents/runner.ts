@@ -32,7 +32,7 @@
 
 import { readTxn, serviceTxn, type Client } from '../db.ts';
 import { liveModel, type Answer, type FailureKind, type Model } from './model.ts';
-import { claimRun, claimThisRun, failRun, finishRun, id, reclaim, type ClaimedRun } from './queue.ts';
+import { claimRun, claimThisRun, failRun, finishRun, id, markDone, reclaim, type ClaimedRun } from './queue.ts';
 
 export class ScopeViolation extends Error {}
 
@@ -265,10 +265,8 @@ async function recordDraft(
         d.situation,
       ],
     );
-    await c.query(
-      "UPDATE agent_runs SET status='done', finished_at=now(), draft_id=$2 WHERE id=$1",
-      [runId, draftId],
-    );
+    // The statement itself lives in ./queue.ts, with every other thing that writes this row.
+    await markDone(c, runId, draftId);
   });
   return draftId;
 }

@@ -161,8 +161,8 @@ registerHandler(KEY, async (ctx: RunContext): Promise<HandlerResult> => {
       })),
       verification: {
         agreed: null,
-        note: 'No deterministic check applies. Every news item behind this brief passed the ' +
-          'mechanism gate; no ungated candidate was supplied.',
+        note: 'No automatic check applies. Every news item in this brief was confirmed by the ' +
+          'news gate.',
       },
       model: answer.model,
       inputTokens: answer.inputTokens,

@@ -3,9 +3,10 @@
 import { revalidatePath } from 'next/cache';
 
 import { acceptDraft, NotAChoice, rejectDraft, UnwritablePath } from '@/lib/agents/review.ts';
+import { missingSubject } from '@/lib/agents/invocable.ts';
+import { isSubjectFor } from '@/lib/agents/subjects.ts';
 import { positionOf } from '@/lib/agents/paths.ts';
-import { requeue } from '@/lib/agents/queue.ts';
-import { enqueue } from '@/lib/agents/queue.ts';
+import { enqueue, requeue } from '@/lib/agents/queue.ts';
 
 import { flash } from '../flash.ts';
 import { requireUser } from '../session.ts';
@@ -69,7 +70,7 @@ export async function reject(form: FormData): Promise<void> {
   const user = await requireUser();
   const reason = String(form.get('reason') ?? '').trim();
   if (!reason) {
-    await flash('A rejection needs a reason — that is the only record of what the agent got wrong.');
+    await flash('A rejection needs a reason.');
     revalidatePath('/review');
     return;
   }
@@ -85,12 +86,43 @@ export async function retryRun(form: FormData): Promise<void> {
   revalidatePath('/agents');
 }
 
-/** Agents 3 and 6 are prompted: somebody asks, and the asking is the trigger. */
+/**
+ * Somebody asks, and the asking is the trigger.
+ *
+ * **Everything is checked against `lib/agents/`, never against the form that rendered it.** A
+ * server action is a POST endpoint, and the only thing that had ever narrowed this one was which
+ * `<select>` the page drew. `agent_runs.agent_key` has a foreign key to `agents`, so no request
+ * could invent an agent — but any of the others could be named, and each has a handler that throws
+ * on its first line for want of something a forged POST would not supply.
+ *
+ * Three checks, in the order a request fails them:
+ *
+ *   1. the agent is one that may be asked at all (`INVOCABLE`);
+ *   2. the request carries the subject that agent's handler will look for (`missingSubject`);
+ *   3. the subject named is one this agent could legitimately be pointed at (`isSubjectFor`) —
+ *      because a `<select>` is a suggestion and the value posted back is whatever the browser sent.
+ *      Without this, a `subject_ref` from another company, or a superseded period, would enqueue a
+ *      run that fails after it has been claimed.
+ */
 export async function askAgent(form: FormData): Promise<void> {
   const user = await requireUser();
   const agentKey = String(form.get('agent') ?? '');
   const companyId = String(form.get('company') ?? '') || null;
-  await enqueue({ agentKey, companyId, requestedBy: user.userId });
-  await flash(`Queued ${agentKey}. It runs on the next sweep.`);
-  revalidatePath('/agents');
+  const subjectRef = String(form.get('subject') ?? '') || null;
+
+  const why = missingSubject(agentKey, companyId, subjectRef);
+  if (why !== null) {
+    await flash(why);
+    revalidatePath('/chat');
+    return;
+  }
+  if (subjectRef !== null && !(await isSubjectFor(agentKey, companyId, subjectRef))) {
+    await flash('This agent cannot be pointed at that.');
+    revalidatePath('/chat');
+    return;
+  }
+
+  await enqueue({ agentKey, companyId, subjectRef, requestedBy: user.userId });
+  await flash(`Queued ${agentKey}. Its draft will appear in Review.`);
+  revalidatePath('/chat');
 }

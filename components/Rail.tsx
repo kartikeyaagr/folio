@@ -14,9 +14,19 @@ import type { ReactNode } from 'react';
  * because a filing is something that happened — the same question the desk answers, over a longer
  * window.
  *
- * Chat is last, and the order is the order of the working day: what happened, then what is being
- * said about it, then what we own, then the names, then what ran unattended — and last, what you
- * asked. It carries no badge on purpose: a thread you left is not waiting on you.
+ * The order is the order of the working day: what happened, then what is being said about it, then
+ * what we own, then the names, and last what ran unattended.
+ *
+ * **Ask is the sixth, at the same URL the cut chat had.** Agent 8 went on 17-Sep-2026 (`0053`) and
+ * `/chat` is now a request desk: pick an agent, pick what it reads, it queues. It is still last,
+ * and still for the same reason the chat box was — "a chat box at the top of a research tool trains
+ * you to ask it things the screens answer better". You read first and ask second.
+ *
+ * It carries no badge on purpose: what you asked for is not waiting on you, it is waiting on a
+ * model. What comes back waits in Review, which is what the Agents badge counts.
+ *
+ * **Agents is admin-only** and the rail says so by omission — an analyst does not see it at all,
+ * rather than seeing it and being redirected off it.
  */
 
 /**
@@ -134,6 +144,12 @@ const HUBS: {
     // Three pages, one hub: what the agents are, what they are waiting to have accepted, and what
     // they have been told. A rule is not a seventh destination — it is the thing /review's
     // corrections turn into.
+    //
+    // **This hub changes destination by role, it does not disappear.** `/agents` became admin-only
+    // on 17-Sep-2026, and `/review` and `/rules` are prefixes of it — so hiding the hub outright
+    // would have stranded every analyst from the review queue, which is the one screen their job
+    // actually is. An admin lands on the registry; everybody else lands on the queue, and the badge
+    // (which counts the queue either way) keeps working.
     prefixes: ['/agents', '/review', '/rules'],
     icon: (
       <svg
@@ -155,7 +171,7 @@ const HUBS: {
   },
   {
     key: 'chat',
-    label: 'Chat',
+    label: 'Ask',
     // One prefix, because one route exists. A prefix for a route that does not reads, to the next
     // person, as a route that has gone missing — the reason four of them were removed in 676b375.
     href: '/chat',
@@ -170,7 +186,7 @@ const HUBS: {
         strokeWidth="1.8"
         strokeLinecap="round"
         strokeLinejoin="round"
-        aria-hidden="true"
+        aria-hidden
       >
         <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
       </svg>
@@ -193,10 +209,12 @@ export function Rail({
   badges,
   themeToggle,
   menu,
+  isAdmin,
 }: {
   badges: RailBadges;
   themeToggle: ReactNode;
   menu: ReactNode;
+  isAdmin: boolean;
 }) {
   const active = activeHub(usePathname() ?? '/');
   return (
@@ -206,19 +224,22 @@ export function Rail({
       </Link>
       {HUBS.map((hub) => {
         const badge = hub.key === 'desk' ? badges.desk : hub.key === 'agents' ? badges.agents : 0;
+        // The registry is admin-only; the queue under it is not. See the hub's own comment.
+        const href = hub.key === 'agents' && !isAdmin ? '/review' : hub.href;
+        const label = hub.key === 'agents' && !isAdmin ? 'Review' : hub.label;
         // The badge is a bare numeral, so the title says what it counts rather than leaving a
         // reader to hear "Desk, 22" and guess.
-        const title = badge > 0 ? `${hub.label} — ${badge} waiting` : hub.label;
+        const title = badge > 0 ? `${label} — ${badge} waiting` : label;
         return (
           <Link
             key={hub.key}
-            href={hub.href}
+            href={href}
             className="rail-hub"
             aria-current={active === hub.key ? 'page' : undefined}
             title={title}
           >
             {hub.icon}
-            <span>{hub.label}</span>
+            <span>{label}</span>
             {badge > 0 && <span className="rail-badge">{badge > 99 ? '99+' : badge}</span>}
           </Link>
         );

@@ -110,10 +110,10 @@ export default async function CompanyPage({
       {/* Said before the refusal rather than after it. A8's graveyard is only worth having if the
           reasons are in it, so exiting or passing without one is refused server-side. */}
       <p className="picker-none">
-        Required to exit or pass a name, and kept: a graveyard without reasons teaches nothing.
+        Required to exit or pass a name, and kept with it.
       </p>
       <div className="form-actions">
-        <button type="submit" className="btn btn-primary">Move it</button>
+        <button type="submit" className="btn btn-primary">Move</button>
       </div>
     </form>
   );
@@ -137,11 +137,11 @@ export default async function CompanyPage({
           nobody has written terms for matches nothing, so tagging a name with it would look
           answered and behave exactly like the blank it replaced. */}
       <p className="picker-none">
-        This is what puts a name in the sector-news tier: a story with none of its terms, from an
-        Indian source, still reaches it. Nothing matches retrospectively — the next run onward.
+        Puts this name in the sector-news tier. Matching starts from the next run; nothing is
+        matched retrospectively.
       </p>
       <div className="form-actions">
-        <button type="submit" className="btn btn-primary">Set it</button>
+        <button type="submit" className="btn btn-primary">Set</button>
       </div>
     </form>
   );
@@ -160,7 +160,7 @@ export default async function CompanyPage({
         </select>
       </label>
       <div className="form-actions">
-        <button type="submit" className="btn btn-primary">Set it</button>
+        <button type="submit" className="btn btn-primary">Set</button>
       </div>
     </form>
   );
@@ -195,7 +195,7 @@ export default async function CompanyPage({
             label="Sector"
             value={
               <span className="form-actions">
-                {co.sector ?? <Blank why="Out of the sector-news tier until one is set" />}
+                {co.sector ?? <Blank why="No sector set" />}
                 <DialogButton
                   label="Change"
                   title={`${co.symbol} — what it does`}
@@ -241,7 +241,7 @@ export default async function CompanyPage({
                   {Number(latest.pledgePct).toFixed(2)}%
                 </span>
               ) : (
-                <Blank why="No shareholding filing held, or the company declared an encumbrance it did not break down" />
+                <Blank why="No shareholding filing held, or no breakdown given" />
               )
             }
           />
@@ -286,12 +286,12 @@ export default async function CompanyPage({
                       surprising if you are not told, and importing one of the four in silence is
                       worse. */}
                   <p className="picker-none">
-                    Excel, Word, PDF, CSV and plain text. Each sheet of a workbook becomes its own
-                    grid, and a formula is kept live where this system can evaluate it — where it
-                    cannot, the cell holds the value Excel last showed rather than a broken formula.
+                    Excel, Word, PDF, CSV and plain text. Each sheet becomes its own grid. Formulas
+                    stay live where they can be evaluated; where they cannot, the cell keeps the
+                    value Excel last showed.
                   </p>
                   <div className="form-actions">
-                    <button type="submit" className="btn btn-primary">Import it</button>
+                    <button type="submit" className="btn btn-primary">Import</button>
                   </div>
                 </form>
               </DialogButton>
@@ -316,7 +316,7 @@ export default async function CompanyPage({
                     model moves when the next quarter lands instead of ageing quietly.
                   </p>
                   <div className="form-actions">
-                    <button type="submit" className="btn btn-primary">Create it</button>
+                    <button type="submit" className="btn btn-primary">Create</button>
                   </div>
                 </form>
               </DialogButton>
@@ -348,7 +348,7 @@ export default async function CompanyPage({
                       <td>{KIND_LABEL[d.kind] ?? d.kind}</td>
                       <td className="num">{d.versions}</td>
                       <td className="num">{when(d.updatedAt)}</td>
-                      <td>{d.updatedByName ?? <Blank why="Written before saves were attributed" />}</td>
+                      <td>{d.updatedByName ?? <Blank why="Saved before authorship was recorded" />}</td>
                       <td className="cell-note">
                         <form action={archiveDocumentAction}>
                           <input type="hidden" name="id" value={d.id} />

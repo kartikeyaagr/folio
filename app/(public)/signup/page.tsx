@@ -79,11 +79,13 @@ export default async function SignupPage({
             <div>
               <h2>Request received</h2>
               {/* Deliberately says nothing about whether an account already exists for that
-                  address, and promises no email — there is no relay configured, so a promise to
-                  "let you know" would be a lie the system cannot keep. */}
+                  address. And it still promises this requester no email: the system does send mail
+                  now (the daily digest, `0054`), but mailing a stranger who asked for access would
+                  confirm to them that the address reached something, which is the property the
+                  identical response above exists to protect. */}
               <p className="sub">
-                Somebody with access will decide on it. If it is approved they will get in touch
-                the way they normally would — this system sends no mail.
+                Somebody with access will decide on it and get in touch. No reply is sent by
+                email.
               </p>
             </div>
             <Link href="/login" className="btn btn-primary btn-lg">
@@ -95,7 +97,7 @@ export default async function SignupPage({
             <div>
               <h2>Ask for access</h2>
               <p className="sub">
-                This does not create an account. It puts a request in front of somebody who can.
+                This does not create an account. It sends a request to somebody who can.
               </p>
             </div>
 
@@ -110,7 +112,7 @@ export default async function SignupPage({
               <input className="field field-lg" name="name" autoComplete="name" required />
             </label>
             <label className="lbl">
-              Email
+              Work email
               <input
                 className="field field-lg"
                 name="email"
@@ -118,6 +120,14 @@ export default async function SignupPage({
                 autoComplete="username"
                 required
               />
+              {/* Said here rather than discovered after approval. This address is not only the
+                  account name: it is where the daily update goes, and it is the mailbox a person
+                  can later link so that update leaves from their own address instead of the
+                  desk's. Getting it wrong costs a round trip through whoever approves requests. */}
+              <span className="picker-none">
+                Your account name, and where your daily update arrives. Once signed in you can link
+                this mailbox so the update is sent from it.
+              </span>
             </label>
             <label className="lbl">
               Why you need access
@@ -129,7 +139,7 @@ export default async function SignupPage({
               />
             </label>
             <button type="submit" className="btn btn-primary btn-lg">
-              Send request <span aria-hidden="true">→</span>
+              Send <span aria-hidden="true">→</span>
             </button>
             <p className="hint">
               Already have an account? <Link href="/login">Sign in</Link>.

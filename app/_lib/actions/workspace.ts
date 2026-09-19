@@ -137,7 +137,7 @@ export async function archiveDocumentAction(form: FormData): Promise<void> {
   await flash(
     restore
       ? `Restored, as ${user.email}.`
-      : `Archived, as ${user.email}. Nothing is deleted — show archived to find it again.`,
+      : `Archived, as ${user.email}. Show archived to find it again.`,
   );
   revalidatePath(`/doc/${id}`);
   revalidatePath('/company/[symbol]', 'page');

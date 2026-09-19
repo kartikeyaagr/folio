@@ -96,7 +96,7 @@ export default async function DocumentPage({ params }: { params: Promise<{ id: s
                     <input className="field" name="title" defaultValue={doc.title} required />
                   </label>
                   <div className="form-actions">
-                    <button type="submit" className="btn btn-primary">Rename it</button>
+                    <button type="submit" className="btn btn-primary">Rename</button>
                   </div>
                 </form>
               </DialogButton>
@@ -125,9 +125,8 @@ export default async function DocumentPage({ params }: { params: Promise<{ id: s
         {isSheet && (
           <Card title="Figures this sheet can read">
             <p className="picker-none">
-              These come from what this system has already ingested, so a model moves when the next
-              filing lands. A figure it does not hold answers <code>#N/A</code> — never zero, because
-              a missing revenue that reads as nought still produces a margin and a valuation.
+              These read the figures already ingested, so a model updates when the next filing
+              lands. A figure that is not held answers <code>#N/A</code>, never zero.
             </p>
             <div className="tbl-scroll">
               <table className="tbl">
@@ -149,11 +148,11 @@ export default async function DocumentPage({ params }: { params: Promise<{ id: s
         {from && (
           <Card title="Where this came from">
             <p className="picker-none">
-              This is what this system read out of the file below. A reading is worth having only
-              while it can be checked against the thing it read, so the original is here.
+              This is what was read out of the file below. The original is kept so the reading can
+              be checked against it.
             </p>
             <Facts>
-              <Fact label="Filing" value={from.filingCategory ?? <Blank why="No announcement still links to this file" />} />
+              <Fact label="Filing" value={from.filingCategory ?? <Blank why="No announcement links to this file" />} />
               <Fact label="Announced" value={from.announcedAt ? when(from.announcedAt) : <Blank why="Not linked to an announcement" />} />
               <Fact label="Size" value={`${(from.bytes / 1e6).toFixed(2)} MB`} />
             </Facts>
@@ -177,7 +176,7 @@ export default async function DocumentPage({ params }: { params: Promise<{ id: s
                   {revisions.map((r) => (
                     <tr key={r.id}>
                       <td className="num">{when(r.writtenAt)}</td>
-                      <td>{r.writtenByName ?? <Blank why="Written before saves were attributed" />}</td>
+                      <td>{r.writtenByName ?? <Blank why="Saved before authorship was recorded" />}</td>
                     </tr>
                   ))}
                 </tbody>

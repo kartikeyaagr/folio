@@ -95,8 +95,7 @@ export default async function AdminPage({
             <Card title="Requests" padded={false}>
               {requests.length === 0 ? (
                 <Empty>
-                  Nobody has asked for access. Requests arrive from the signup page and create no
-                  account until somebody here decides.
+                  Nobody has asked for access. A request creates no account until it is approved.
                 </Empty>
               ) : (
                 <div className="tbl-scroll">
@@ -222,7 +221,7 @@ export default async function AdminPage({
                                     : undefined
                                 }
                               >
-                                {u.isAdmin ? 'Revoke admin' : 'Make admin'}
+                                {u.isAdmin ? 'Revoke' : 'Grant'}
                               </button>
                             </form>
                             <form action={setDisabledAction}>
@@ -233,7 +232,7 @@ export default async function AdminPage({
                                 disabled={u.id === admin.userId}
                                 title={u.id === admin.userId ? 'You cannot disable yourself' : undefined}
                               >
-                                {u.disabledAt ? 'Re-enable' : 'Disable'}
+                                {u.disabledAt ? 'Enable' : 'Disable'}
                               </button>
                             </form>
                           </div>
@@ -371,7 +370,7 @@ export default async function AdminPage({
                           <td>
                             <form action={requeueRunAction}>
                               <input type="hidden" name="id" value={f.id} />
-                              <button className="btn btn-sm">Queue again</button>
+                              <button className="btn btn-sm">Retry</button>
                             </form>
                           </td>
                         </tr>

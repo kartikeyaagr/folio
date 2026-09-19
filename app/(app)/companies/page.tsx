@@ -67,8 +67,8 @@ export default async function CompaniesPage() {
         <Card title="Followed names" padded={false}>
           {rows.length === 0 ? (
             <Empty>
-              No names yet. Following a company is what starts everything else: its filings, its
-              results and its calendar arrive from the next run onwards.
+              No names yet. Following a company starts its filings, results and calendar from the
+              next run.
             </Empty>
           ) : (
             <div className="tbl-scroll">
@@ -101,7 +101,7 @@ export default async function CompaniesPage() {
                         </Chip>
                       </td>
                       <td>
-                        {r.sector ?? <Blank why="No sector set. Without one this name matches no trade press." />}
+                        {r.sector ?? <Blank why="No sector set" />}
                       </td>
                       <td>
                         {r.coveredByName ?? (
@@ -115,7 +115,7 @@ export default async function CompaniesPage() {
                       </td>
                       <td className="num">{r.avgCost ? inr(r.avgCost) : ''}</td>
                       <td className="num">
-                        {r.lastClose ? inr(r.lastClose) : <Blank why="No price row joins this name yet" />}
+                        {r.lastClose ? inr(r.lastClose) : <Blank why="No price held" />}
                       </td>
                       <td className="num">{r.filings30 || ''}</td>
                       <td className="num">{r.news30 || ''}</td>

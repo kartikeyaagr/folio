@@ -1,6 +1,11 @@
 # Private planning notes and internal documentation. Never committed.
-docs/
-tasks/
+#
+# No trailing slash, deliberately. A Conductor worktree does not get gitignored directories, so a
+# session working in one symlinks `docs` and `tasks` back to the main checkout to make the paths in
+# CLAUDE.md resolve — and `docs/` matches a directory, not a symlink to one. With the slash, `git
+# status` listed both symlinks as untracked and a `git add -A` would have committed them.
+docs
+tasks
 
 node_modules/
 .next/
