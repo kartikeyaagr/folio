@@ -1,9 +1,9 @@
 # Architecture
 
 How Trisula is put together, and why it is put together that way. Accurate against the tree at the
-time of writing: **RECOUNT migrations, RECOUNT tables, 6 agents, RECOUNT job entry points, RECOUNT systemd
-timers, RECOUNT long-running watchers, RECOUNT routes, RECOUNT tests.** Every number here was counted, not
-remembered; if you change the shape, count again rather than editing around it.
+time of writing: **62 migrations, 50 tables, 6 agents, 25 job entry points, 19 systemd timers, two
+long-running watchers, 18 routes, 814 tests.** Every number here was counted, not remembered; if you
+change the shape, count again rather than editing around it.
 
 For the product argument — what was built, what was deliberately cut, and on whose authority — see
 the private `docs/specs/`. This file describes the machine.
@@ -325,8 +325,8 @@ generated paragraph reads better and cannot be checked. A rule enters a prompt o
 approves it on `/rules`, enforced by both code and schema check constraints, and can be retired but
 never deleted.
 
-The assembled system prompt is, in order: **purpose → approved rules → examples**. Four agents learn
-(`concall-insights`, `news-brief`, `forensics-review`, `desk-analyst`); the column is what gates it.
+The assembled system prompt is, in order: **purpose → approved rules → examples**. Three agents learn
+(`concall-insights`, `news-brief`, `forensics-review`); the column is what gates it.
 
 Mean edit distance per agent per week is rendered on `/agents`, which is the measurement that decides
 whether this loop survives.
@@ -428,7 +428,7 @@ export DATABASE_URL=postgres:///trisula_v3_dev
 pnpm install
 pnpm fetch-model                 # ~130 MB, bge-small-en-v1.5, validated on download
 pnpm exec tsx db/migrate.ts      # one transaction each, checksummed
-pnpm check                       # lint + typecheck + RECOUNT tests
+pnpm check                       # lint + typecheck + 814 tests
 pnpm dev                         # port 3100
 ```
 

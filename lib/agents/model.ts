@@ -85,8 +85,8 @@ const DEFAULT_MAX_TOKENS = 16_000;
  *
  * This checked the required *top-level* keys and nothing else until 18-Sep-2026, under a comment
  * that set its own expiry: *"a full validator would be a dependency earning its place on one
- * check. If schemas grow beyond this, reach for one then."* It was two checks by then — `loop.ts`
- * carried a verbatim copy — with the handlers making up the difference by hand, and what the
+ * check. If schemas grow beyond this, reach for one then."* It was two checks by then — agent 8's
+ * `loop.ts`, since cut, carried a verbatim copy — with the handlers making up the difference by hand, and what the
  * shallow form could not see was the case that matters. A declared number arriving as a string,
  * or a required key missing from a nested object, passed here and landed in `ai_drafts.content`,
  * to surface later as a 23514 from a check constraint *inside the acceptance transaction*, which

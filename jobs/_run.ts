@@ -13,7 +13,7 @@
  * of `runJob` that leaves one open.
  *
  * What a job still owns: what counts as failure. Throwing fails the run. Returning normally passes
- * it — which is how the five documented exemptions to *"zero items is a failure"* express themselves,
+ * it — which is how the six documented exemptions to *"zero items is a failure"* express themselves,
  * each one arguing its case in its own file.
  */
 

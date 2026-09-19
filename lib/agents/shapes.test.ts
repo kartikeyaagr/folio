@@ -115,12 +115,6 @@ test('forensics carries a field its model never emits, and shapes.ts knows', () 
   assert.equal(Object.keys((FORENSICS as Node).properties ?? {}).includes('version'), false);
 });
 
-test('agent 8 has no output schema at all, so its shape is declared here or nowhere', () => {
-  // Its content is assembled in `tools/draft.ts` as `{headline, kind, body}` from a tool input
-  // whose `title` is renamed and whose `symbol` is dropped.
-  assert.deepEqual(namesOf(CONTENT['desk-analyst']!), ['headline', 'kind', 'body']);
-});
-
 // ---- the fallback -------------------------------------------------------------------------------
 
 test('an agent nobody has declared still gets a usable screen', () => {
@@ -135,15 +129,18 @@ test('an agent nobody has declared still gets a usable screen', () => {
 test('a field the agent emitted and this file has not heard of is rendered, not dropped', () => {
   // A reviewer deciding whether to sign something off has to see all of it, and a schema that
   // changed without shapes.ts changing is exactly when that matters most.
-  const content = { headline: 'x', kind: 'memo', body: 'y', surprise: 'the agent added a field' };
-  const fields = fieldsOf(CONTENT['desk-analyst']!, content);
+  const content = { summary: 'x', comparison_available: true, surprise: 'the agent added a field' };
+  const fields = fieldsOf(CONTENT['concall-insights']!, content);
 
-  assert.deepEqual(fields.map(([k]) => k), ['headline', 'kind', 'body', 'surprise']);
+  assert.deepEqual(fields.map(([k]) => k), ['summary', 'comparison_available', 'surprise']);
   assert.equal(fields.at(-1)![1].kind, 'text');
 });
 
 test('a field this file declares and the draft does not carry is not rendered as empty', () => {
-  assert.deepEqual(fieldsOf(CONTENT['desk-analyst']!, { body: 'only this' }).map(([k]) => k), ['body']);
+  assert.deepEqual(
+    fieldsOf(CONTENT['concall-insights']!, { summary: 'only this' }).map(([k]) => k),
+    ['summary'],
+  );
 });
 
 test('an empty list infers a shape rather than throwing', () => {

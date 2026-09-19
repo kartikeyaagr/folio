@@ -32,6 +32,12 @@
 }
 
 /* --- Fleet ----------------------------------------------------------------------------------- */
+/* A note under a table that fills its card edge to edge. Kept through the 19-Sep-2026 merge: the
+   CSS census that removed the rest of `.fl-*` ran on a tree where /chat was still a conversation,
+   so the one selector the Ask desk uses looked as dead as the ones that were. */
+.fl-note {
+  padding: 0 16px 12px;
+}
 textarea.field.fl-rule {
   width: 100%;
   margin-top: 8px;
