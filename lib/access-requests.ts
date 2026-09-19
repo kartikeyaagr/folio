@@ -7,9 +7,8 @@
  * reversal narrow.
  */
 
-import { randomBytes } from 'node:crypto';
 
-import { readTxn, serviceTxn, writeTxn } from './db.ts';
+import { readTxn, rowId, serviceTxn, writeTxn } from './db.ts';
 
 export class ReasonRequired extends Error {}
 export class NoSuchRequest extends Error {}
@@ -92,7 +91,7 @@ export async function requestAccess(email: string, name: string, note: string): 
        DO UPDATE SET name = EXCLUDED.name,
                      note = EXCLUDED.note,
                      requested_at = now()`,
-      [randomBytes(16).toString('hex'), clean, who, note],
+      [rowId(), clean, who, note],
     );
   });
 }

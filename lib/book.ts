@@ -16,8 +16,7 @@
  * scaled integers involved. Postgres stores what it is given exactly.
  */
 
-import { randomBytes } from 'node:crypto';
-import { readTxn, writeTxn, type Client } from './db.ts';
+import { readTxn, rowId, type Client, writeTxn } from './db.ts';
 
 export class DuplicateTrade extends Error {}
 export class ReasonRequired extends Error {}
@@ -25,7 +24,6 @@ export class ReasonRequired extends Error {}
 export type Side = 'buy' | 'sell';
 export type ActionKind = 'bonus' | 'split' | 'dividend';
 
-const id = (): string => randomBytes(16).toString('hex');
 const n = (v: string | number | null): number => (v === null ? 0 : Number(v));
 
 // ------------------------------------------------------------------------------------------------
@@ -195,7 +193,7 @@ export interface TradeInput {
  * the escape hatch, because a genuine repeat fill is routine.
  */
 export async function recordTrade(t: TradeInput, actorId: string): Promise<string> {
-  const tradeId = id();
+  const tradeId = rowId();
   try {
     await writeTxn(actorId, async (c) => {
       await c.query(
@@ -212,7 +210,7 @@ export async function recordTrade(t: TradeInput, actorId: string): Promise<strin
       await c.query(
         `INSERT INTO cash_ledger (id, on_date, kind, amount, company_id, transaction_id)
          VALUES ($1,$2,$3,$4,$5,$6)`,
-        [id(), t.tradeDate, t.side, cash.toFixed(4), t.companyId, tradeId],
+        [rowId(), t.tradeDate, t.side, cash.toFixed(4), t.companyId, tradeId],
       );
     });
   } catch (err) {
@@ -276,7 +274,7 @@ export async function confirmAction(actionId: string, actorId: string): Promise<
       await c.query(
         `INSERT INTO cash_ledger (id, on_date, kind, amount, company_id, action_id, note)
          VALUES ($1,$2,'dividend',$3,$4,$5,$6)`,
-        [id(), a.record_date, amount.toFixed(4), a.company_id, actionId,
+        [rowId(), a.record_date, amount.toFixed(4), a.company_id, actionId,
          `${p.quantity} shares at ${n(a.amount_per_share)}`],
       );
     }
@@ -295,7 +293,7 @@ export async function recordCapital(
   await writeTxn(actorId, async (c) => {
     await c.query(
       'INSERT INTO cash_ledger (id, on_date, kind, amount, note) VALUES ($1,$2,$3,$4,$5)',
-      [id(), onDate, kind, (kind === 'capital_in' ? Math.abs(amount) : -Math.abs(amount)).toFixed(4), note],
+      [rowId(), onDate, kind, (kind === 'capital_in' ? Math.abs(amount) : -Math.abs(amount)).toFixed(4), note],
     );
   });
 }

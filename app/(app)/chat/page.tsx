@@ -10,6 +10,7 @@ import { AppHeader, Blank, Card, Chip, Empty, type Tone } from '@/components/ui.
 
 import { askAgent } from '../../_lib/actions/review.ts';
 import { requireUser } from '../../_lib/session.ts';
+import { dayMonthTime } from '@/components/ui';
 
 /**
  * Ask — a card per agent, and what each person has asked it for.
@@ -50,10 +51,6 @@ async function agents(): Promise<AgentRow[]> {
 const STATUS_TONE: Record<string, Tone> = {
   queued: 'neutral', running: 'navy', done: 'good', failed: 'bad',
 };
-
-const IST = new Intl.DateTimeFormat('en-IN', {
-  timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
-});
 
 /**
  * Where a request ended up, as a link wherever there is one to give.
@@ -201,7 +198,7 @@ export default async function AskPage({
                 <tbody>
                   {history.map((r) => (
                     <tr key={r.id}>
-                      <td className="num">{IST.format(r.createdAt)}</td>
+                      <td className="num">{dayMonthTime(r.createdAt)}</td>
                       {/* Only rendered for an admin, who is the only one shown anybody else's. */}
                       {user.isAdmin && <td>{r.askedByMe ? <b>You</b> : r.askedBy}</td>}
                       <td className="cell-wrap">

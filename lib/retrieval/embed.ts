@@ -118,6 +118,9 @@ export function isLoaded(): boolean {
  * Exported for the tokenization tests below: both are pure functions of the vocab, so they can be
  * checked against real vocab entries without paying for an ONNX session load.
  */
+/** `tokenizer.json`'s `model.max_input_chars_per_word`. Read from the file, not guessed. */
+const MAX_WORD_CHARS = 100;
+
 export function encode(v: Record<string, number>, s: string): number[] {
   const ids = [v['[CLS]']!];
   // Split on EVERY Unicode punctuation character, which is what BERT's BertPreTokenizer does
@@ -126,8 +129,20 @@ export function encode(v: Record<string, number>, s: string): number[] {
   // neighbouring word, and 3 of 10 real strings then scored as low as cosine 0.868 against Python
   // — "12.4%", "18%", "Related-party". The seven strings without stray punctuation passed at
   // 0.999999 either way, which is exactly why this is easy to ship broken.
+  //
+  // Accents are stripped as well, which is the other half of what the file asks for. Read out of
+  // `.models/bge-small-en-v1.5/tokenizer.json` on 18-Sep-2026: the normalizer is
+  // `BertNormalizer{clean_text:true, handle_chinese_chars:true, strip_accents:null,
+  // lowercase:true}`, and HuggingFace defaults `strip_accents` to the value of `lowercase` when it
+  // is null — so it is on. Without this, `Śrī` is one [UNK] here and `sri` in the reference, and
+  // the difference has no symptom: you still get a valid unit-length vector, just one that lands
+  // somewhere slightly wrong. NFD splits a letter from its marks; \p{Mn} is the marks.
+  //
+  // `clean_text` and `handle_chinese_chars` from the same normalizer are still not implemented.
   const words = s
     .toLowerCase()
+    .normalize('NFD')
+    .replace(/\p{Mn}/gu, '')
     .replace(/(\p{P})/gu, ' $1 ')
     .split(/\s+/)
     .filter(Boolean);
@@ -147,6 +162,17 @@ export function encode(v: Record<string, number>, s: string): number[] {
     // straight into `ids`, as the previous version did, leaves partial-pieces-plus-one-[UNK] for a
     // word that fails partway through, which is a different (and longer) token sequence than the
     // reference tokenizer would produce for the same input.
+    // A word longer than this is one [UNK], not a greedy decomposition of it — `tokenizer.json`
+    // says `max_input_chars_per_word: 100` and the reader only ever consumed `.model.vocab`, so
+    // this was the character-axis twin of the R1 bug above: a 500-character unbroken run (a URL, a
+    // base64 blob pasted into a note) became ~400 subword pieces and ate the whole 512 budget,
+    // silently truncating everything after it in the chunk.
+    if (word.length > MAX_WORD_CHARS) {
+      if (ids.length >= 511) break outer;
+      ids.push(v['[UNK]']!);
+      continue;
+    }
+
     const pieces: number[] = [];
     let rest = word;
     let first = true;

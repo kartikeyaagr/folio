@@ -5,783 +5,63 @@
  */
 
 /* --- The split: reading on the left, the record on the right ------------------------------- */
-
-.company-split {
-  grid-template-columns: minmax(0, 1fr) minmax(260px, 320px);
-}
-.co-scroll {
-  flex: 1;
-  min-height: 0;
-  overflow: auto;
-  overflow-x: hidden;
-}
 /* The tab strip rides at the top of the scrolling pane, not the page. */
 .co-scroll > .tabs {
   position: sticky;
   top: 0;
   z-index: 2;
 }
-.co-body {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  padding: 20px 20px 28px;
-}
 .co-body .box {
   display: flex;
   flex-direction: column;
   gap: 10px;
 }
-/* A box whose body is a table: the table meets the edges, the eyebrow keeps its inset. */
-.co-table {
-  padding: 0;
-  overflow: hidden;
-}
 .co-table > .box-head {
   padding: 12px 16px 0;
-}
-.co-box-r {
-  font-size: 12px;
-  color: var(--muted);
-}
-.co-grid-32 {
-  display: grid;
-  grid-template-columns: 3fr 2fr;
-  gap: 12px;
-}
-.co-grid-11 {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px;
-}
-
-/* Killed: said before anything else, because everything below reads differently once it is dead. */
-.co-killed {
-  padding: 12px 16px;
-  border-radius: 10px;
-  background: var(--red-soft);
-  color: var(--red);
-  font-size: 13px;
-  line-height: 1.5;
-}
-.co-killed p {
-  margin: 4px 0 0;
-  color: var(--ink);
-  white-space: pre-wrap;
-}
-.co-revisit {
-  color: var(--ink-2);
-}
-
-/* An entry in a box: a conversation, a stage note, a search hit. */
-.co-entry {
-  padding-top: 10px;
-  border-top: 1px solid var(--line);
-}
-.co-entry-meta {
-  font-size: 12px;
-  color: var(--muted);
-}
-.co-entry-meta a {
-  color: var(--ink);
-  font-weight: 700;
-  text-decoration: none;
-}
-.co-entry-meta a:hover {
-  color: var(--teal);
-}
-.co-entry p {
-  margin: 4px 0 0;
-  font-size: 13.5px;
-  line-height: 1.5;
-  white-space: pre-wrap;
-}
-.co-entry .co-excerpt {
-  font-size: 12.5px;
-  color: var(--muted);
-}
-.co-excerpt strong {
-  color: var(--ink);
-  font-weight: 600;
-}
-.co-entries {
-  gap: 0;
-}
-
-/* A form that appears inside a box: log a call. */
-.co-form {
-  display: grid;
-  gap: 8px;
-  padding: 12px;
-  border-radius: 8px;
-  background: var(--surface-2);
 }
 .co-form .field {
   background: var(--surface);
 }
-
-/* Thesis triggers, and the memo's trigger list. */
-.co-trig {
-  display: flex;
-  gap: 10px;
-  align-items: baseline;
-  padding-top: 8px;
-  border-top: 1px solid var(--line);
-  font-size: 13px;
-}
-.co-trig-l {
-  flex: 1;
-  min-width: 0;
-}
-.co-trig-v {
-  font-weight: 700;
-  white-space: nowrap;
-}
-.co-trig.is-retired {
-  opacity: 0.55;
-}
-.co-dot {
-  flex: none;
-  align-self: center;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--line-2);
-}
 .co-dot.is-bad {
   background: var(--red);
-}
-.co-dot.is-good {
-  background: var(--teal);
 }
 .co-trig-v.is-bad,
 .co-vote-v.is-bad {
   color: var(--red);
 }
-.co-trig-v.is-good,
-.co-vote-v.is-good {
-  color: var(--teal);
-}
-.co-trig-v.is-neutral,
-.co-vote-v.is-neutral {
-  color: var(--muted);
-  font-weight: 500;
-}
-.co-trig-form .co-w-sm {
-  width: 130px;
-}
-.co-radios {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px 14px;
-  align-items: center;
-  font-size: 12.5px;
-}
-.co-radios label {
-  display: inline-flex;
-  gap: 5px;
-  align-items: center;
-}
 
 /* --- The aside ------------------------------------------------------------------------------ */
-
-.co-aside-head {
-  flex: none;
-  display: grid;
-  gap: 8px;
-  padding: 16px 16px 12px;
-  border-bottom: 1px solid var(--line);
-}
-.co-aside-n {
-  font-size: 11px;
-  color: var(--muted);
-  white-space: nowrap;
-}
-.co-stage-name {
-  font-size: 17px;
-  font-weight: 800;
-  letter-spacing: -0.01em;
-}
-.co-stage-ask {
-  font-size: 12px;
-  color: var(--muted);
-}
-.co-aside-actions {
-  gap: 14px;
-}
-/* Passing on a name is quiet until it is hovered: a decision, not a call to action. */
-.co-pass {
-  color: var(--muted);
-}
-.co-pass:hover {
-  color: var(--red);
-}
-.co-dlg-actions {
-  justify-content: flex-end;
-}
-.co-aside-foot {
-  flex: none;
-  margin: 0;
-  padding: 14px 16px;
-  border-top: 1px solid var(--line);
-  font-size: 12px;
-  line-height: 1.5;
-  color: var(--muted);
-}
-
-/* The fold. On a phone the aside comes first, collapsed to its stage header, and this summary is
-   the toggle. On a desktop there is nothing to toggle: the summary is hidden and a closed <details>
-   is kept visible through its ::details-content pseudo-element. A browser without that
-   pseudo-element keeps the toggle at every width, so the checklist is never unreachable. */
-.co-fold {
-  flex: 1;
-  min-height: 0;
-  overflow: auto;
-}
-.co-fold > summary {
-  display: flex;
-  justify-content: space-between;
-  padding: 10px 16px;
-  border-bottom: 1px solid var(--line);
-  list-style: none;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--muted);
-  cursor: pointer;
-}
-.co-fold > summary::-webkit-details-marker {
-  display: none;
-}
-.co-fold > summary::after {
-  content: '▾';
-}
-.co-fold[open] > summary::after {
-  content: '▴';
-}
 @supports selector(details::details-content) {
-  @media (min-width: 901px) {
-    .co-fold > summary {
-      display: none;
-    }
-    .co-fold:not([open])::details-content {
-      content-visibility: visible;
-    }
-  }
-}
-
-/* --- The checklist -------------------------------------------------------------------------- */
-
-.chk-stage {
-  border-bottom: 1px solid var(--line);
-}
-.chk-stage-head {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  padding: 10px 16px 6px;
-  list-style: none;
-}
-details.chk-stage > .chk-stage-head {
-  cursor: pointer;
-  transition: background-color 140ms var(--ease);
-}
-details.chk-stage > .chk-stage-head::-webkit-details-marker {
-  display: none;
-}
-details.chk-stage > .chk-stage-head:hover {
-  background: var(--surface-2);
-}
-.chk-stage-n {
-  min-width: 16px;
-  font-size: 11px;
-  color: var(--muted);
-}
-.chk-stage-name {
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--muted);
-}
-.is-current .chk-stage-name {
-  color: var(--ink);
-}
-.chk-opt {
-  font-size: 11px;
-  color: var(--ghost);
-}
-.chk-stage-done {
-  margin-left: auto;
-  font-size: 11px;
-  color: var(--muted);
-}
-.chk-none {
-  margin: 0;
-  padding: 0 16px 10px 40px;
-  font-size: 12px;
-  color: var(--muted);
-}
-.chk-items {
-  padding: 0 16px 8px;
-}
-
-.chk-item > summary {
-  display: flex;
-  gap: 10px;
-  align-items: flex-start;
-  padding: 6px 0;
-  list-style: none;
-  cursor: pointer;
-}
-.chk-item > summary::-webkit-details-marker {
-  display: none;
-}
-/* The box: teal and ticked when satisfied, a dash when waived, empty otherwise. */
-.chk-box {
-  flex: none;
-  display: grid;
-  place-items: center;
-  width: 18px;
-  height: 18px;
-  border: 1.5px solid var(--line-2);
-  border-radius: 5px;
-  background: transparent;
-  color: var(--surface);
-  transition:
-    background-color 140ms var(--ease),
-    border-color 140ms var(--ease);
-}
-.chk-box svg {
-  opacity: 0;
-}
-.chk-box.is-done {
-  background: var(--teal);
-  border-color: var(--teal);
-}
-.chk-box.is-done svg {
-  opacity: 1;
-}
-.chk-box.is-waived {
-  background: transparent;
-  border-color: var(--line-2);
-}
-.chk-dash {
-  width: 8px;
-  height: 2px;
-  border-radius: 1px;
-  background: var(--muted);
-}
-/* The label and, beneath it, what answered the requirement. They share the middle column so the
-   count on the right stays on the first line however far the evidence wraps. */
-.chk-main {
-  flex: 1;
-  min-width: 0;
-  display: grid;
-  gap: 1px;
-}
-.chk-label {
-  font-size: 13px;
-  line-height: 1.4;
-}
-.is-done > summary .chk-label {
-  color: var(--muted);
-}
-.chk-count {
-  font-size: 11px;
-  line-height: 18px;
-  color: var(--muted);
-  white-space: nowrap;
-}
-
-/* What satisfied it, read without opening anything. Two lines at most: the item's own list is the
-   long form, and a checklist whose rows run to five lines stops being scannable. */
-.chk-ev {
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  line-clamp: 2;
-  overflow: hidden;
-  /* A filename can arrive with no spaces in it; the pane must not scroll sideways for it. */
-  overflow-wrap: anywhere;
-  font-size: 11.5px;
-  line-height: 1.45;
-  color: var(--muted);
-}
-.chk-ev-link {
-  color: var(--navy);
-  text-decoration: none;
-}
-.chk-ev-link:hover {
-  color: var(--teal);
-  text-decoration: underline;
-}
-/* Amber is pending: what is still owed reads differently from what is already there. */
-.chk-short {
-  color: var(--amber);
-}
-
-/* The long form, inside the item: every piece named and dated. */
-.chk-ev-list {
-  display: grid;
-  gap: 3px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  overflow-wrap: anywhere;
-  font-size: 12px;
-  line-height: 1.45;
-}
-.chk-ev-list li {
-  display: flex;
-  gap: 8px;
-  align-items: baseline;
-}
-.chk-ev-at {
-  margin-left: auto;
-  flex: none;
-  font-size: 11px;
-  color: var(--ghost);
-}
-.chk-ev-more {
-  color: var(--muted);
-}
-.chk-body {
-  display: grid;
-  gap: 8px;
-  margin: 2px 0 8px 28px;
-  animation: rise 0.25s var(--ease);
-}
-.chk-note {
-  display: grid;
-  gap: 8px;
-}
-.chk-note textarea {
-  min-height: 64px;
-  background: var(--surface-2);
-}
-.chk-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  align-items: center;
-}
-.chk-actions label {
-  cursor: pointer;
-}
-.chk-waive > summary {
-  display: inline-flex;
-  list-style: none;
-}
-.chk-waive > summary::-webkit-details-marker {
-  display: none;
-}
-.chk-waive form {
-  display: flex;
-  gap: 6px;
-  margin-top: 6px;
-}
-.chk-waive input {
-  flex: 1;
-  min-width: 0;
-}
-.chk-reason {
-  margin: 0;
-  font-size: 12.5px;
-  color: var(--muted);
-}
-.chk-hint {
-  margin: 0;
-  font-size: 11.5px;
-  line-height: 1.5;
-  color: var(--muted);
 }
 
 /* --- Financials ----------------------------------------------------------------------------- */
-
-.fin-group td {
-  padding-top: 14px;
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
-  color: var(--muted);
-}
 /* A hatch inside a fact tile: the reason should not inherit the figure's weight. */
 .fact-v .blank-why {
   font-weight: 500;
 }
 
 /* --- Files ---------------------------------------------------------------------------------- */
-
-.co-search {
-  flex: 1 1 220px;
-  max-width: 280px;
-}
 .co-search .field {
   width: 100%;
 }
-.co-name a {
-  font-weight: 600;
-  text-decoration: none;
-}
-.co-audio {
-  display: block;
-  max-width: 100%;
-  height: 28px;
-  margin-top: 4px;
-}
-.co-file {
-  height: auto;
-  padding: 6px 10px;
-}
 
 /* --- Forensics ------------------------------------------------------------------------------ */
-
-.co-finalised {
-  justify-content: space-between;
-}
-.co-fx {
-  gap: 0;
-}
 .co-fx > .box-head {
   margin-bottom: 6px;
-}
-.fx-item {
-  display: grid;
-  grid-template-columns: 28px minmax(0, 1fr) auto;
-  gap: 4px 12px;
-  align-items: baseline;
-  padding: 10px 0;
-  border-top: 1px solid var(--line);
-  font-size: 13.5px;
-}
-.fx-section {
-  grid-column: 1 / -1;
-  padding-bottom: 4px;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--muted);
-}
-.fx-n {
-  font-size: 12px;
-  color: var(--muted);
-}
-.fx-q b {
-  font-weight: 600;
-}
-.fx-guide {
-  display: block;
-  font-size: 12px;
-  color: var(--muted);
-}
-.fx-answer {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 4px;
-  max-width: 260px;
-  font-size: 12px;
-  color: var(--muted);
-  text-align: right;
-}
-.fx-controls {
-  grid-column: 2 / -1;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px 14px;
-  align-items: center;
-}
-.fx-verdicts {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 12px;
-  font-size: 12.5px;
-}
-.fx-verdicts label {
-  display: inline-flex;
-  gap: 5px;
-  align-items: center;
 }
 .fx-controls .field {
   flex: 1;
   min-width: 200px;
   height: 32px;
 }
-.co-fx-actions {
-  padding-top: 12px;
-  border-top: 1px solid var(--line);
-}
-.co-verdict {
-  font-size: 15px;
-}
-.co-earlier > summary {
-  display: flex;
-  justify-content: space-between;
-  gap: 10px;
-  align-items: baseline;
-  list-style: none;
-  cursor: pointer;
-}
-.co-earlier > summary::-webkit-details-marker {
-  display: none;
-}
-.fx-item.is-past .fx-q {
-  color: var(--ink-2);
-}
 
 /* --- IC memo -------------------------------------------------------------------------------- */
-
-.co-memo {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 240px;
-  gap: 12px;
-  align-items: flex-start;
-}
-.co-memo-doc {
-  max-width: 72ch;
-  padding: 28px 32px;
-  color: var(--ink);
-}
-.co-memo-doc h2 {
-  margin: 0 0 8px;
-  font-family: var(--serif);
-  font-size: 28px;
-  font-weight: 600;
-  letter-spacing: -0.01em;
-}
-.co-memo-doc h3 {
-  margin: 12px 0 0;
-  font-family: var(--font);
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--muted);
-}
-.co-memo-doc p {
-  margin: 0;
-}
-.co-memo-eyebrow {
-  font-family: var(--font);
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--teal);
-}
-.co-memo-note {
-  font-family: var(--font);
-  font-size: 13px;
-  color: var(--muted);
-}
 /* Controls inside the document keep the chrome face; the serif is for the prose. */
 .co-memo-doc .field,
 .co-memo-doc .btn,
 .co-memo-doc .hint,
-.co-memo-doc .lbl,
-.co-memo-doc .co-radios,
-.co-memo-doc .co-trig {
+.co-memo-doc .lbl {
   font-family: var(--font);
-}
-.co-memo-doc .co-trig {
-  font-size: 13px;
-  line-height: 1.5;
-}
-.co-vote {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  gap: 2px 8px;
-  padding-top: 8px;
-  border-top: 1px solid var(--line);
-  font-size: 13px;
-}
-.co-vote-v {
-  font-weight: 700;
-}
-.co-vote-r {
-  width: 100%;
-  font-size: 12px;
-  color: var(--muted);
-}
-.co-vote-form {
-  padding-top: 8px;
-  border-top: 1px solid var(--line);
-}
-.co-revote > summary {
-  list-style: none;
-  cursor: pointer;
-}
-.co-revote > summary::-webkit-details-marker {
-  display: none;
-}
-.co-memo-side-foot {
-  display: grid;
-  gap: 8px;
-  margin-top: auto;
-  padding-top: 8px;
-}
-
-/* --- Contact and model pages ---------------------------------------------------------------- */
-
-.co-dl {
-  display: grid;
-  gap: 6px;
-  margin: 0;
-  font-size: 13px;
-}
-.co-dl-row {
-  display: grid;
-  grid-template-columns: 96px minmax(0, 1fr);
-  gap: 16px;
-}
-.co-dl dt {
-  color: var(--muted);
-}
-.co-dl dd {
-  margin: 0;
-  white-space: pre-wrap;
-}
-
-.model-grid table {
-  border-collapse: collapse;
-  font-size: 12px;
-  white-space: nowrap;
-}
-.model-grid th,
-.model-grid td {
-  max-width: 220px;
-  padding: 3px 8px;
-  border: 1px solid var(--line);
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.model-grid thead th {
-  position: sticky;
-  top: 0;
-  min-width: 34px;
-  background: var(--surface-2);
-  font-weight: 500;
-  text-align: center;
-  color: var(--muted);
-}
-.model-grid tbody th {
-  background: var(--surface-2);
-  font-weight: 400;
-  text-align: right;
-  color: var(--muted);
-}
-.model-grid td.is-num {
-  text-align: right;
-}
-/* A dotted underline rather than a colour: models are dense, and a second colour across every
-   computed cell would fight the numbers for attention. */
-.model-grid td.is-formula {
-  text-decoration: underline dotted;
-  text-underline-offset: 3px;
-  cursor: help;
 }
 
 /* --- Small screens: the aside comes first, folded ------------------------------------------- */
@@ -793,28 +73,8 @@ details.chk-stage > .chk-stage-head:hover {
     max-height: none;
     overflow: visible;
   }
-  .company-split .co-aside {
-    order: -1;
-  }
-  .co-scroll,
-  .co-fold {
-    overflow: visible;
-  }
   .co-scroll > .tabs {
     top: var(--head-h);
-  }
-}
-@media (max-width: 720px) {
-  .co-grid-32,
-  .co-grid-11,
-  .co-memo {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  .co-body {
-    padding: 16px 14px 24px;
-  }
-  .co-memo-doc {
-    padding: 20px 18px;
   }
 }
 
@@ -823,31 +83,14 @@ details.chk-stage > .chk-stage-head:hover {
 @media print {
   .rail,
   .app-head,
-  .co-aside,
   .co-scroll > .tabs,
-  .co-memo-side,
-  .co-killed,
   .toast {
     display: none !important;
   }
-  .company-split {
-    display: block;
-    height: auto;
-    padding: 0;
-  }
-  .pane,
-  .co-scroll {
+  .pane {
     overflow: visible;
     border: 0;
     box-shadow: none;
-  }
-  .co-memo {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  .co-memo-doc {
-    max-width: none;
-    padding: 0;
-    border: 0;
   }
 }
 
@@ -882,103 +125,10 @@ details.chk-stage > .chk-stage-head:hover {
 }
 
 /* --- The three statements ------------------------------------------------------------------- */
-/* Periods across, line items down — the layout every filing uses, and the only one a trend can be
-   read from. The first column is sticky because a table wide enough to be worth scrolling is one
-   where you lose track of which line you are on. */
-
-.stmt {
-  min-width: max-content;
-}
 .stmt th.num,
 .stmt td.num {
   min-width: 88px;
   white-space: nowrap;
-}
-.stmt .stmt-item {
-  position: sticky;
-  left: 0;
-  z-index: 2;
-  min-width: 190px;
-  background: var(--surface);
-  white-space: nowrap;
-}
-.stmt thead .stmt-item {
-  z-index: 3;
-  font-weight: 600;
-  color: var(--muted);
-}
-/* A subtotal reads as one. Without this a P&L is fourteen equal rows and the eye finds no shape. */
-.stmt tr.is-strong td {
-  font-weight: 700;
-  background: var(--surface-2);
-}
-/* Screener's striping. On a table this wide the eye loses its row between the sticky first column
-   and a figure eight columns out; alternating the ground is what keeps them on the same line. The
-   sticky cell needs the same treatment explicitly, because it paints its own background over the
-   row's. */
-.stmt tbody tr.stmt-stripe td {
-  background: color-mix(in srgb, var(--surface-2) 55%, var(--surface));
-}
-.stmt tbody tr.stmt-stripe .stmt-item {
-  background: color-mix(in srgb, var(--surface-2) 55%, var(--surface));
-}
-
-/* A line with detail folded into it. The label is the control, so the whole thing is the target
-   rather than a separate chevron nobody aims at. */
-.stmt-expand {
-  border: 0;
-  padding: 0;
-  background: none;
-  font: inherit;
-  color: var(--ink);
-  cursor: pointer;
-  text-align: left;
-}
-.stmt-expand span {
-  display: inline-block;
-  min-width: 12px;
-  margin-left: 4px;
-  font-weight: 700;
-  color: var(--teal);
-}
-.stmt-expand:hover {
-  color: var(--teal);
-}
-.stmt-expand:focus-visible {
-  outline: 2px solid var(--ring);
-  outline-offset: 2px;
-  border-radius: 3px;
-}
-
-/* What the expander revealed: indented, lighter, and never bold — these are components of the row
-   above, not figures competing with it. */
-.stmt tbody tr.stmt-child td {
-  color: var(--ink-2);
-  background: var(--surface);
-}
-.stmt tbody tr.stmt-child .stmt-item {
-  padding-left: 26px;
-  background: var(--surface);
-  font-size: 12.5px;
-}
-
-.stmt-flag {
-  margin-left: 6px;
-  font-size: 10px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-  color: var(--muted);
-  cursor: help;
-}
-
-/* The basis switch and the period tabs sit on one line above the table. */
-.stmt-bar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 10px;
 }
 .stmt-bar .spacer {
   flex: 1;
@@ -1151,41 +301,11 @@ details.chk-stage > .chk-stage-head:hover {
 }
 
 /* --- Sections that scroll rather than push the page down ------------------------------------- */
-/* `max-height`, never `height`: a card with two filings is two filings tall and a card with forty
-   is capped and scrolls. The cap is in rem so it tracks the reader's text size, and it is set to
-   about three items of ordinary length — which is what "three stories, then scroll" means when the
-   headlines are not all the same length. */
-
-.scroll-box {
-  /* The rem cap is the fallback, used until a measured one arrives and whenever nothing measures.
-     `--rows-cap` is set by FilterList from the real height of the nth row. */
-  max-height: var(--rows-cap, 19rem);
-  overflow-y: auto;
-  overscroll-behavior: contain;
-}
-/* A scrolled region needs a focus ring of its own: it is keyboard-reachable and, without one,
-   a keyboard reader has no idea what has focus. */
-.scroll-box:focus-visible {
-  outline: 2px solid var(--navy);
-  outline-offset: 2px;
-}
-
-.filter-bar {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 10px;
-}
 .filter-bar .field {
   flex: 1 1 200px;
   min-width: 0;
   height: 30px;
   font-size: 12.5px;
-}
-.filter-count {
-  font-size: 11.5px;
-  color: var(--muted);
-  white-space: nowrap;
 }
 
 /* --- News, inside a company card ------------------------------------------------------------ */

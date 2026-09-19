@@ -1,197 +1,22 @@
 /* news — area styles. Tokens and shared components live in globals.css. */
 
 /* --- The list pane ---------------------------------------------------------------------------- */
-
-/* Tier toggle, search and the unread count share one row; on a phone they may take two. */
-.news-sub {
-  flex-wrap: wrap;
-  row-gap: 6px;
-}
-/* The search sits between the tier toggle and the unread count, and takes what room is left. */
-.news-qform {
-  flex: 1 1 120px;
-  display: flex;
-  justify-content: flex-end;
-  min-width: 0;
-}
-.news-q {
-  height: 26px;
-  padding: 0 8px;
-  font-size: 12px;
-  width: 100%;
-  max-width: 220px;
-}
-.news-unread {
-  white-space: nowrap;
-}
-.news-notice {
-  margin: 10px 14px 0;
-}
 /* Read stories recede but stay legible: the reader may want to find one again. */
 .item.is-read {
   opacity: 0.6;
 }
 
 /* --- The detail pane -------------------------------------------------------------------------- */
-
-.news-read {
-  color: var(--teal);
-  font-weight: 600;
-}
-/* A filing's own-marks line. Kept clear of the "Handled" tile above it: that one is what a rule
-   or an agent did, this one is what the reader did, and they must not read as the same claim. */
-.news-mine {
-  margin: 0;
-  font-size: 12.5px;
-  font-weight: 600;
-  color: var(--teal);
-}
-.news-cos {
-  display: flex;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-/* Two tinted boxes under the lede: why it matched, and the one fact that places it. */
-.news-tiles {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
-}
-.news-tile {
-  background: var(--surface-2);
-  border-radius: 10px;
-  padding: 12px 14px;
-}
-.news-tile-k {
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.03em;
-  text-transform: uppercase;
-  color: var(--muted);
-  margin-bottom: 4px;
-}
-.news-tile-v {
-  font-size: 13px;
-  line-height: 1.5;
-}
 .news-tile-v.is-bad {
   color: var(--red);
-}
-.news-tile-v.is-good {
-  color: var(--teal);
-}
-.news-transmission {
-  margin: 0;
-  font-size: 13.5px;
-  line-height: 1.55;
-  color: var(--ink-2);
-}
-.news-outlets {
-  margin: 0;
-  font-size: 12px;
-  color: var(--muted);
-}
-.news-outlets a {
-  color: var(--muted);
-  font-weight: 600;
-  text-decoration: none;
-}
-.news-outlets a:hover {
-  color: var(--navy);
-  text-decoration: underline;
-}
-.news-recent {
-  border-top: 1px solid var(--line);
-  padding-top: 14px;
 }
 .news-recent .eyebrow {
   margin-bottom: 8px;
 }
 
 /* --- Filing rows, shared by the detail pane and the company tab ------------------------------- */
-
-.news-flist {
-  display: grid;
-}
-.news-flist.is-boxed {
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  overflow: hidden;
-}
-.news-frow {
-  display: grid;
-  grid-template-columns: 72px minmax(0, 1fr) auto;
-  gap: 12px;
-  padding: 10px 0;
-  border-top: 1px solid var(--line);
-  font-size: 13px;
-  align-items: baseline;
-}
-.is-boxed .news-frow {
-  padding: 12px 14px;
-  border-top: 0;
-  border-bottom: 1px solid var(--line);
-  transition: background-color 120ms var(--ease);
-}
-.is-boxed .news-frow:last-child {
-  border-bottom: 0;
-}
-.is-boxed .news-frow:hover {
-  background: var(--surface-2);
-}
-.news-fdate {
-  font-size: 12px;
-  color: var(--muted);
-  white-space: nowrap;
-  font-variant-numeric: tabular-nums;
-}
-.news-fmain {
-  min-width: 0;
-}
-.news-fcat {
-  display: block;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.03em;
-  text-transform: uppercase;
-  color: var(--muted);
-}
-.news-fsub {
-  display: block;
-  font-size: 13.5px;
-  line-height: 1.45;
-  margin-top: 2px;
-}
-.news-fhandled {
-  display: block;
-  font-size: 12.5px;
-  margin-top: 4px;
-  color: var(--muted);
-}
 .news-fhandled.is-bad {
   color: var(--red);
-}
-.news-fhandled.is-good {
-  color: var(--teal);
-}
-.news-fpdf {
-  font-size: 12.5px;
-  font-weight: 600;
-  color: var(--navy);
-  white-space: nowrap;
-  text-decoration: none;
-}
-.news-fpdf:hover {
-  text-decoration: underline;
-}
-/* Each mark is its own form, and a form is a block: without this the PDF link and the three
-   buttons stack down the right-hand column instead of sitting in a row. */
-.news-fmarks {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  flex-wrap: wrap;
-  gap: 8px;
 }
 /* Read filings recede the way read stories do — but only the text. Dimming the marks too would
    make "Mark unread" the hardest button to read on the row it belongs to. */
@@ -200,117 +25,9 @@
   opacity: 0.6;
 }
 
-/* --- Story cards on the company tab ----------------------------------------------------------- */
-
-.news-cards {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-.news-card {
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  padding: 14px 16px;
-  display: grid;
-  gap: 8px;
-}
-.news-card-meta {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-  flex-wrap: wrap;
-  font-size: 12px;
-  color: var(--muted);
-}
-.news-card-also {
-  margin-left: auto;
-}
-.news-card-title {
-  font-size: 15.5px;
-  font-weight: 700;
-  margin: 0;
-  line-height: 1.35;
-}
-.news-card-title a {
-  color: inherit;
-  text-decoration: none;
-}
-.news-card-title a:hover {
-  text-decoration: underline;
-}
-.news-card-body {
-  font-size: 13.5px;
-  color: var(--ink-2);
-  margin: 0;
-  line-height: 1.55;
-}
-.news-attached {
-  font-size: 12px;
-  color: var(--teal);
-  font-weight: 600;
-  white-space: nowrap;
-}
-
 /* --- The brief -------------------------------------------------------------------------------- */
-
-.brief-group + .brief-group {
-  margin-top: 14px;
-}
 .brief-group .eyebrow {
   margin-bottom: 4px;
-}
-.brief-item {
-  display: grid;
-  gap: 4px;
-  padding: 12px 0;
-  border-top: 1px solid var(--line);
-}
-.brief-item:first-of-type {
-  border-top: 0;
-  padding-top: 0;
-}
-.brief-item-meta {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-  flex-wrap: wrap;
-  font-size: 12px;
-  color: var(--muted);
-}
-.brief-item-title {
-  font-size: 15px;
-  font-weight: 700;
-  line-height: 1.35;
-  color: var(--ink);
-  text-decoration: none;
-}
-a.brief-item-title:hover {
-  text-decoration: underline;
-}
-
-@media (max-width: 620px) {
-  .news-tiles {
-    grid-template-columns: 1fr;
-  }
-  .news-frow {
-    grid-template-columns: 56px minmax(0, 1fr) auto;
-  }
-  /* Three buttons will not share a phone's width with the subject, so they take their own line. */
-  .has-actions .news-frow {
-    grid-template-columns: 56px minmax(0, 1fr);
-  }
-  .has-actions .news-fmarks {
-    grid-column: 2;
-    justify-content: flex-start;
-  }
-}
-
-/* The classifier's sentence about a company, under the rule that produced the candidate. */
-.news-verdict {
-  margin-top: 3px;
-  color: var(--muted);
-  font-size: 12px;
-  line-height: 1.45;
 }
 
 /*

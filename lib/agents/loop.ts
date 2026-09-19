@@ -34,7 +34,7 @@ import type {
 } from '@anthropic-ai/sdk/lib/tools/BetaToolRunner';
 
 import { modelClient } from './client.ts';
-import { costUsd, sealObjects, type Answer, type Effort } from './model.ts';
+import { costUsd, fitsSchema, sealObjects, type Answer, type Effort } from './model.ts';
 
 /**
  * `v4.md §6.2`'s cap. Counts API requests, which is one per assistant turn — the model may call
@@ -130,21 +130,6 @@ function textOf(message: Anthropic.Beta.BetaMessage): string {
     .filter((b): b is Anthropic.Beta.BetaTextBlock => b.type === 'text')
     .map((b) => b.text)
     .join('');
-}
-
-/**
- * Shallow structural check against the schema's required top-level keys.
- *
- * The same check `model.ts` makes, and for the same reason: the API already constrained the shape,
- * so this catches the case where it did not.
- */
-function fitsSchema(value: unknown, schema: Record<string, unknown>): string | null {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-    return 'expected a JSON object';
-  }
-  const required = Array.isArray(schema['required']) ? (schema['required'] as string[]) : [];
-  const missing = required.filter((k) => !(k in (value as Record<string, unknown>)));
-  return missing.length > 0 ? `missing required: ${missing.join(', ')}` : null;
 }
 
 /**

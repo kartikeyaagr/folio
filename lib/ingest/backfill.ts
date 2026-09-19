@@ -40,8 +40,7 @@
  * morning has the name by lunch.
  */
 
-import { randomBytes } from 'node:crypto';
-import { serviceTxn, type Client } from '../db.ts';
+import { rowId, serviceTxn, type Client } from '../db.ts';
 
 /**
  * Longer than the longest backfill observed (PRAJIND: 845 filings, 16 annual reports, 117 periods
@@ -254,7 +253,7 @@ export async function record(t: Target, taken: Step[]): Promise<Verdict> {
       await c.query(
         `INSERT INTO notification_outbox (id, kind, recipient, subject, body)
          VALUES ($1, 'backfill', $2, $3, $4)`,
-        [randomBytes(16).toString('hex'), userId, subject, `${opening}\n\n${summary}\n`],
+        [rowId(), userId, subject, `${opening}\n\n${summary}\n`],
       );
     }
   });

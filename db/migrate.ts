@@ -27,6 +27,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import pg from 'pg';
+import { pathToFileURL } from 'node:url';
 
 const MIGRATIONS_DIR = join(dirname(fileURLToPath(import.meta.url)), 'migrations');
 
@@ -116,7 +117,11 @@ export async function migrate(opts: { statusOnly?: boolean } = {}): Promise<void
   }
 }
 
-const invokedDirectly = process.argv[1] && import.meta.url.endsWith(process.argv[1].split('/').pop()!);
+// Compared as a whole path, not a basename. `endsWith(basename)` was true for any module whose
+// filename happened to match the entry point's — and `db/migrate.ts` is imported by 37 test files,
+// so a later `tools/migrate.ts` would have run the migration runner on import, during tests.
+const invokedDirectly =
+  process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href;
 if (invokedDirectly) {
   migrate({ statusOnly: process.argv.includes('--status') }).catch((err: unknown) => {
     console.error(String(err instanceof Error ? err.message : err));

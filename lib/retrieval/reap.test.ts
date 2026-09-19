@@ -1,9 +1,8 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
-import { migrate } from '../../db/migrate.ts';
-import { closePool, serviceTxn, type Client } from '../db.ts';
+import { serviceTxn, type Client } from '../db.ts';
 import { registerAll } from './register.ts';
+import { createTestDatabase, dropTestDatabase } from '../../db/testing.ts';
 
 /**
  * Retraction tests, split out of register.test.ts (which covers admission — what gets INSERTed and
@@ -43,9 +42,7 @@ async function saveNewVersion(c: Client, docId: string, text: string): Promise<v
 }
 
 before(async () => {
-  execFileSync('createdb', [DB]);
-  process.env.DATABASE_URL = `postgres:///${DB}`;
-  await migrate();
+  await createTestDatabase(DB);
 
   await serviceTxn('system:index', async (c) => {
     await c.query("INSERT INTO companies (id, symbol, name) VALUES ($1,'PRAJIND','Praj Industries Limited')", [CO]);
@@ -58,8 +55,7 @@ before(async () => {
 });
 
 after(async () => {
-  await closePool();
-  execFileSync('dropdb', ['--if-exists', DB]);
+  await dropTestDatabase(DB);
 });
 
 test('archiving a previously-registered document retracts its source and chunks', async () => {

@@ -8,9 +8,7 @@
 
 import { test, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
-import { migrate } from '../db/migrate.ts';
-import { closePool, readTxn, serviceTxn } from './db.ts';
+import { readTxn, serviceTxn } from './db.ts';
 import { issueSession, resolveSession } from './auth.ts';
 import {
   listAgents,
@@ -26,6 +24,7 @@ import {
   setUserDisabled,
   WouldLockYouOut,
 } from './admin.ts';
+import { createTestDatabase, dropTestDatabase } from '../db/testing.ts';
 
 const DB = `trisula_admin_${process.pid}`;
 const ONE = 'p1'; // admin
@@ -33,9 +32,7 @@ const TWO = 'p2'; // admin
 const MEMBER = 'p3';
 
 before(async () => {
-  execFileSync('createdb', [DB]);
-  process.env.DATABASE_URL = `postgres:///${DB}`;
-  await migrate();
+  await createTestDatabase(DB);
   // Created once, never deleted. `audit_log` references `actors`, so an actor who has written
   // anything cannot be removed — which is the audit trail working, and the reason the reset below
   // puts their state back rather than putting them back.
@@ -52,8 +49,7 @@ before(async () => {
 });
 
 after(async () => {
-  await closePool();
-  execFileSync('dropdb', ['--if-exists', DB]);
+  await dropTestDatabase(DB);
 });
 
 /** Two admins and a member, put back before every case. */

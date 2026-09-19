@@ -11,12 +11,10 @@
  * comes due — produces a growing pile of untouched reminders for anything nobody gets round to.
  */
 
-import { randomBytes } from 'node:crypto';
-import { readTxn, serviceTxn, writeTxn } from './db.ts';
+import { readTxn, rowId, serviceTxn, writeTxn } from './db.ts';
 
 export type Repeat = 'weekly' | 'monthly' | 'quarterly';
 
-const id = (): string => randomBytes(16).toString('hex');
 
 export interface Reminder {
   id: string;
@@ -40,7 +38,7 @@ export class EmptyReminder extends Error {}
 
 export async function createReminder(input: CreateInput, actorId: string): Promise<string> {
   if (!input.body.trim()) throw new EmptyReminder('A reminder needs something to say.');
-  const reminderId = id();
+  const reminderId = rowId();
   await writeTxn(actorId, async (c) => {
     await c.query(
       `INSERT INTO reminders (id, body, due_on, company_id, repeats, created_by, assigned_to)
@@ -149,7 +147,7 @@ export async function deliverDue(): Promise<number> {
           `INSERT INTO notification_outbox (id, kind, recipient, subject, body, reminder_id)
            VALUES ($1,'reminder',$2,$3,$4,$5)`,
           [
-            id(), u.id,
+            rowId(), u.id,
             r.symbol ? `Reminder: ${r.symbol}` : 'Reminder',
             `${r.body}\n\nDue ${r.due_on}.`,
             r.id,

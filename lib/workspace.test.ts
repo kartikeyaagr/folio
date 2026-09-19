@@ -1,14 +1,12 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { migrate } from '../db/migrate.ts';
-import { closePool, serviceTxn, writeTxn } from './db.ts';
+import { serviceTxn, writeTxn } from './db.ts';
 import { pathFor } from './ingest/attachments.ts';
 import { readUpload } from './import/index.ts';
 import { bodyOf, sheetsOf } from './sheet/book.ts';
@@ -18,6 +16,7 @@ import {
   archiveDocument, createDocument, deleteDocument, documentsFor, getDocument,
   keepUploadAsAttachment, NoSuchDocument, revisionsOf, saveDocument,
 } from './workspace.ts';
+import { createTestDatabase, dropTestDatabase } from '../db/testing.ts';
 
 const DB = `trisula_workspace_${process.pid}`;
 const CO = 'c1'; // Aeron Composite Limited — one of the two names this path exists for
@@ -33,9 +32,7 @@ before(async () => {
   attachDir = mkdtempSync(join(tmpdir(), 'trisula-workspace-test-'));
   process.env['ATTACHMENT_DIR'] = attachDir;
 
-  execFileSync('createdb', [DB]);
-  process.env.DATABASE_URL = `postgres:///${DB}`;
-  await migrate();
+  await createTestDatabase(DB);
 
   await serviceTxn('system:auth', async (c) => {
     await c.query("INSERT INTO actors (id, kind, label) VALUES ($1, 'person', 'Tester')", [ME]);
@@ -50,8 +47,7 @@ before(async () => {
 });
 
 after(async () => {
-  await closePool();
-  execFileSync('dropdb', ['--if-exists', DB]);
+  await dropTestDatabase(DB);
   rmSync(attachDir, { recursive: true, force: true });
 });
 

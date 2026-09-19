@@ -14,6 +14,7 @@ import { assertInScope, raise, registerHandler, type RunContext, type HandlerRes
 import { systemFor } from './prompt.ts';
 import { serviceTxn, type Client } from '../db.ts';
 import { enqueue } from './queue.ts';
+import { croreText, CRORE } from '../money.ts';
 
 export const KEY = 'results-figures';
 
@@ -37,8 +38,6 @@ export const SCHEMA = {
     watch_items: { type: 'array', items: { type: 'string' } },
   },
 } as const;
-
-const CRORE = 10_000_000;
 
 interface Row {
   id: string; symbol: string; name: string;
@@ -108,8 +107,6 @@ async function priorPeriod(c: Client, row: Row): Promise<Row | null> {
   return rows[0] ?? null;
 }
 
-const cr = (v: string | null): string => (v === null ? 'not reported' : `${(Number(v) / CRORE).toFixed(1)} cr`);
-
 registerHandler(KEY, async (ctx: RunContext): Promise<HandlerResult> => {
   assertInScope(ctx.agent, READS);
 
@@ -125,13 +122,13 @@ registerHandler(KEY, async (ctx: RunContext): Promise<HandlerResult> => {
     `${row.name} (${row.symbol}) — ${row.period_kind} ${row.period_start} to ${row.period_end}, ${row.basis}.`,
     '',
     'Filed figures:',
-    `  revenue        ${cr(row.revenue)}`,
-    `  profit after tax ${cr(row.profit_after_tax)}`,
-    `  total expenses ${cr(row.total_expenses)}`,
+    `  revenue        ${croreText(row.revenue)}`,
+    `  profit after tax ${croreText(row.profit_after_tax)}`,
+    `  total expenses ${croreText(row.total_expenses)}`,
     '',
     prior
       ? `Comparable prior period (${prior.period_start} to ${prior.period_end}):\n` +
-        `  revenue        ${cr(prior.revenue)}\n  profit after tax ${cr(prior.profit_after_tax)}`
+        `  revenue        ${croreText(prior.revenue)}\n  profit after tax ${croreText(prior.profit_after_tax)}`
       : // Said explicitly. A model given no comparison and no note about it tends to invent one.
         'No comparable prior period is held. Do not infer one; say the comparison is unavailable.',
     '',

@@ -152,6 +152,22 @@ test('a CSV becomes a grid, headings in row one', () => {
   assert.equal(s.cells['A3'], '2026');
 });
 
+test('two columns sharing a heading both survive the import', () => {
+  // The grid used to be built from a Record keyed by heading, so the second Total overwrote the
+  // first and the sheet came back a column short — silently, under a real filename.
+  const s = csvToSheet('Year,Total,Total\n2026,10,20\n', 'export');
+  assert.equal(s.cells['B1'], 'Total');
+  assert.equal(s.cells['C1'], 'Total');
+  assert.equal(s.cells['B2'], '10');
+  assert.equal(s.cells['C2'], '20');
+});
+
+test('a quoted line break inside a cell does not become another row', () => {
+  const s = csvToSheet('Name,Note\nPRAJIND,"Pune,\nIndia"\n', 'export');
+  assert.equal(s.cells['B2'], 'Pune,\nIndia');
+  assert.equal(s.cells['A3'], undefined, 'the quoted newline is content, not a row break');
+});
+
 test('a CSV cell beginning with = is text, not a formula', () => {
   // The oldest spreadsheet attack there is, and this system would happily evaluate it. A CSV is
   // data that arrived from somewhere else; nothing in it gets to be code.

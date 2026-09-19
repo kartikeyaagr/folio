@@ -32,8 +32,8 @@ export function middleware(request: NextRequest): NextResponse {
 }
 
 export const config = {
-  // Everything except Next internals and static assets. The public allowlist is exactly two
-  // pages, both of which live in (public); everything else is behind requireUser() by virtue of
-  // living in (app), rather than by anybody remembering a check.
+  // Everything except Next internals and static assets. The public allowlist is exactly the three
+  // pages in (public); everything else is behind requireUser() by virtue of living in (app),
+  // rather than by anybody remembering a check.
   matcher: ['/((?!_next/static|_next/image|favicon.ico).*)'],
 };

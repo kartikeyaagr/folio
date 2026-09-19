@@ -1,11 +1,10 @@
 import { test, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
-import { migrate } from '../db/migrate.ts';
-import { closePool, readTxn, serviceTxn } from './db.ts';
+import { readTxn, serviceTxn } from './db.ts';
 import {
   acknowledge, desk, evaluateFilings, evaluateInsider, evaluatePrices, recipients,
 } from './alerts.ts';
+import { createTestDatabase, dropTestDatabase } from '../db/testing.ts';
 
 const DB = `trisula_alerts_${process.pid}`;
 const A = 'u_a';
@@ -14,9 +13,7 @@ const COVERED = 'c_covered';
 const ORPHAN = 'c_orphan';
 
 before(async () => {
-  execFileSync('createdb', [DB]);
-  process.env.DATABASE_URL = `postgres:///${DB}`;
-  await migrate();
+  await createTestDatabase(DB);
   await serviceTxn('system:auth', async (c) => {
     for (const [id, name] of [[A, 'Ana'], [B, 'Bo']]) {
       await c.query("INSERT INTO actors (id,kind,label) VALUES ($1,'person',$2)", [id, name]);
@@ -31,8 +28,7 @@ before(async () => {
 });
 
 after(async () => {
-  await closePool();
-  execFileSync('dropdb', ['--if-exists', DB]);
+  await dropTestDatabase(DB);
 });
 
 beforeEach(async () => {

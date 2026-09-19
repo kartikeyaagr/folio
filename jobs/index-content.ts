@@ -30,6 +30,7 @@
 import { closePool, listen, readTxn, serviceTxn } from '../lib/db.ts';
 import { drain, type DrainResult } from '../lib/retrieval/index.ts';
 import { embedPending } from '../lib/agents/exemplars.ts';
+import { pathToFileURL } from 'node:url';
 
 /** Sources still waiting to be claimed — queried only to print `--all`'s progress line. */
 async function remaining(): Promise<number> {
@@ -223,8 +224,10 @@ async function main(): Promise<void> {
 }
 
 // Guarded so a test can import `untilQueueEmpty` above without also running the job — same
-// pattern as db/migrate.ts's own `invokedDirectly` check, for the same reason.
-const invokedDirectly = process.argv[1] && import.meta.url.endsWith(process.argv[1].split('/').pop()!);
+// pattern as db/migrate.ts's own check, and compared as a whole path rather than a basename,
+// which `endsWith` made true for any module whose filename matched the entry point's.
+const invokedDirectly =
+  process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href;
 if (invokedDirectly) {
   main()
     .catch((err: unknown) => {

@@ -21,6 +21,7 @@ import {
   setNewsSourceAction,
 } from '../../_lib/actions/admin.ts';
 import { requireAdmin } from '../../_lib/session.ts';
+import { stamp } from '@/components/ui';
 
 /**
  * The admin panel.
@@ -45,8 +46,6 @@ const TABS = [
 const SEVERITY_TONE: Record<string, Tone> = { high: 'bad', medium: 'warn', low: 'neutral' };
 const RUN_TONE: Record<string, Tone> = { ok: 'good', failed: 'bad', running: 'navy' };
 
-const when = (d: Date | null): string =>
-  d ? new Intl.DateTimeFormat('en-IN', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Kolkata' }).format(d) : '—';
 
 export default async function AdminPage({
   searchParams,
@@ -112,7 +111,7 @@ export default async function AdminPage({
                             <b>{r.name}</b>
                             <span className="cell-sub">{r.email}</span>
                           </td>
-                          <td>{when(r.requestedAt)}</td>
+                          <td>{stamp(r.requestedAt)}</td>
                           <td className="cell-wrap">{r.note ?? <span className="muted">said nothing</span>}</td>
                           <td>
                             <Chip tone={r.status === 'approved' ? 'good' : r.status === 'rejected' ? 'bad' : 'navy'}>
@@ -156,7 +155,7 @@ export default async function AdminPage({
                               // request reads "approved" with no account behind it and no
                               // instruction anywhere. It disappears once the account exists.
                               <div>
-                                <span className="cell-sub">Approved {when(r.decidedAt)}. Run on the VM:</span>
+                                <span className="cell-sub">Approved {stamp(r.decidedAt)}. Run on the VM:</span>
                                 {/* The request's id, which this system minted, and nothing the
                                     applicant typed. The command used to interpolate their email
                                     and name — both straight off the public form — into a line an
@@ -169,7 +168,7 @@ export default async function AdminPage({
                               </div>
                             ) : (
                               <span className="muted">
-                                {when(r.decidedAt)}
+                                {stamp(r.decidedAt)}
                                 {r.status === 'approved' && r.accountExists && (
                                   <span className="cell-sub">account created</span>
                                 )}
@@ -315,7 +314,7 @@ export default async function AdminPage({
               />
               <Stat
                 label="Oldest pending"
-                value={lag.oldestPendingAt ? when(new Date(lag.oldestPendingAt)) : <Blank why="Nothing waiting to be indexed" />}
+                value={lag.oldestPendingAt ? stamp(new Date(lag.oldestPendingAt)) : <Blank why="Nothing waiting to be indexed" />}
               />
               <Stat
                 label="Failed"
@@ -343,7 +342,7 @@ export default async function AdminPage({
                           <td><Chip tone={RUN_TONE[r.status] ?? 'neutral'}>{r.status}</Chip></td>
                           <td className="num">{r.items ?? ''}</td>
                           <td className="cell-wrap">{r.detail ?? ''}</td>
-                          <td>{when(r.startedAt)}</td>
+                          <td>{stamp(r.startedAt)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -365,7 +364,7 @@ export default async function AdminPage({
                       {failed.map((f) => (
                         <tr key={f.id}>
                           <td><b>{f.agentKey}</b></td>
-                          <td>{when(f.finishedAt)}</td>
+                          <td>{stamp(f.finishedAt)}</td>
                           <td className="cell-wrap">{f.error ?? f.failureKind ?? ''}</td>
                           <td>
                             <form action={requeueRunAction}>
@@ -446,7 +445,7 @@ export default async function AdminPage({
                             <>
                               <Chip tone={s.lastStatus === 'ok' ? 'good' : 'bad'}>{s.lastStatus}</Chip>
                               <span className="cell-sub">
-                                {when(s.lastPolledAt)}
+                                {stamp(s.lastPolledAt)}
                                 {s.lastError ? ` — ${s.lastError}` : ''}
                               </span>
                             </>

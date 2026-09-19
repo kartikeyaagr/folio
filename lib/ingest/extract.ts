@@ -8,12 +8,11 @@
  * so a job can write one at all.
  */
 
-import { randomBytes } from 'node:crypto';
 import { access, readFile } from 'node:fs/promises';
 
 import { extractText, getDocumentProxy } from 'unpdf';
 
-import { serviceTxn, type Client } from '../db.ts';
+import { rowId, serviceTxn, type Client } from '../db.ts';
 import { pathFor } from './attachments.ts';
 
 /**
@@ -97,7 +96,7 @@ export interface Row {
  * the bug this replaces did — is not.
  */
 export async function promoteTranscript(c: Client, row: Row, text: string): Promise<boolean> {
-  const id = randomBytes(16).toString('hex');
+  const id = rowId();
   // **The title is what it is, not what the file was called.**
   // `TEGA_21022022190439_Earnings_call_transcript.pdf` is an exchange upload key: it repeats the
   // symbol the page already shows, buries the date in fourteen undelimited digits, and differs

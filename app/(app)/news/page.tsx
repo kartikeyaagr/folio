@@ -7,6 +7,7 @@ import { AppHeader, Card, Empty, Seg, Stat, StatRow } from '@/components/ui.tsx'
 
 import { markNews } from '../../_lib/actions/news.ts';
 import { requireUser } from '../../_lib/session.ts';
+import { dayMonth } from '@/components/ui';
 
 /**
  * C4 — news on our names, with the reason it matched.
@@ -21,12 +22,8 @@ import { requireUser } from '../../_lib/session.ts';
 
 export const dynamic = 'force-dynamic';
 
-function when(at: Date | null): string {
-  if (!at) return 'undated';
-  return new Intl.DateTimeFormat('en-GB', {
-    timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short',
-  }).format(at);
-}
+/** "undated" rather than a dash: a feed item with no date is a fact about the feed. */
+const when = (at: Date | null): string => (at ? dayMonth(at) : 'undated');
 
 export default async function NewsPage({
   searchParams,

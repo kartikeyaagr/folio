@@ -71,13 +71,10 @@ import { fetchResultsForSymbol, ingestFundamentals } from '../lib/ingest/fundame
 import { fetchInsider, storeInsider } from '../lib/ingest/insider.ts';
 import { NseSession } from '../lib/ingest/nse.ts';
 import { ingestShareholding } from '../lib/ingest/shareholding.ts';
+import { readFlags } from './_args.ts';
 
 const run = promisify(execFile);
 
-function arg(flag: string): string | undefined {
-  const i = process.argv.indexOf(flag);
-  return i >= 0 ? process.argv[i + 1] : undefined;
-}
 
 /**
  * How many rows this one name ended up with.
@@ -428,8 +425,9 @@ async function watch(priceDays: number): Promise<void> {
 }
 
 async function main(): Promise<void> {
-  const only = arg('--symbol')?.trim().toUpperCase();
-  const priceDays = Number(arg('--price-days') ?? 400);
+  const flags = readFlags(['symbol', 'price-days']);
+  const only = flags.str('symbol')?.trim().toUpperCase();
+  const priceDays = Number(flags.str('price-days') ?? 400);
   if (!Number.isFinite(priceDays) || priceDays < 1) throw new Error('--price-days must be positive');
 
   if (process.argv.includes('--watch')) {

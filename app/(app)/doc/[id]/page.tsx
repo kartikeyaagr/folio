@@ -4,7 +4,7 @@ import { getDocument, isEditable, KIND_LABEL, provenanceOf, revisionsOf } from '
 import { typographyOf } from '@/lib/prose/typography.ts';
 import { sheetsOf } from '@/lib/sheet/book.ts';
 import { lookupsFor } from '@/lib/sheet/data.ts';
-import { AppHeader, Blank, Empty, Fact, Facts } from '@/components/ui.tsx';
+import { AppHeader, Blank, Empty, Fact, Facts, stamp } from '@/components/ui.tsx';
 import { DeleteDocument } from '@/components/DeleteDocument.tsx';
 import { DialogButton } from '@/components/DialogButton.tsx';
 import { DocEditor } from '@/components/DocEditor.tsx';
@@ -47,15 +47,6 @@ import {
  */
 
 export const dynamic = 'force-dynamic';
-
-const when = (d: Date | null): string =>
-  d === null
-    ? '—'
-    : new Intl.DateTimeFormat('en-IN', {
-        dateStyle: 'medium',
-        timeStyle: 'short',
-        timeZone: 'Asia/Kolkata',
-      }).format(d);
 
 /** The house icon shape: 16px, stroked in `currentColor`, no fill. Same as the header's own back arrow. */
 const icon = (path: React.ReactNode) => (
@@ -138,7 +129,7 @@ export default async function DocumentPage({ params }: { params: Promise<{ id: s
       <div className="doc-screen paper">
         {doc.archivedAt && (
           <p className="doc-flag">
-            Archived {when(doc.archivedAt)}. It is still here and still editable — archiving does
+            Archived {stamp(doc.archivedAt)}. It is still here and still editable — archiving does
             not delete writing.
           </p>
         )}
@@ -194,7 +185,7 @@ export default async function DocumentPage({ params }: { params: Promise<{ id: s
                   <tbody>
                     {revisions.map((r) => (
                       <tr key={r.id}>
-                        <td className="num">{when(r.writtenAt)}</td>
+                        <td className="num">{stamp(r.writtenAt)}</td>
                         <td>{r.writtenByName ?? <Blank why="Written before saves were attributed" />}</td>
                       </tr>
                     ))}
@@ -222,7 +213,7 @@ export default async function DocumentPage({ params }: { params: Promise<{ id: s
               </p>
               <Facts>
                 <Fact label="Filing" value={from.filingCategory ?? <Blank why="No announcement still links to this file" />} />
-                <Fact label="Announced" value={from.announcedAt ? when(from.announcedAt) : <Blank why="Not linked to an announcement" />} />
+                <Fact label="Announced" value={from.announcedAt ? stamp(from.announcedAt) : <Blank why="Not linked to an announcement" />} />
                 <Fact label="Size" value={`${(from.bytes / 1e6).toFixed(2)} MB`} />
               </Facts>
               {from.filingSubject && <p className="tbl-note">{from.filingSubject}</p>}

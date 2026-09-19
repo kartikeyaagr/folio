@@ -6,6 +6,7 @@ import { AppHeader, Blank, Card, Chip, Empty, Seg } from '@/components/ui.tsx';
 import { DeleteDocument } from '@/components/DeleteDocument.tsx';
 
 import { requireUser } from '../../_lib/session.ts';
+import { stamp } from '@/components/ui';
 import { archiveDocumentAction } from '../../_lib/actions/workspace.ts';
 
 /**
@@ -23,15 +24,6 @@ import { archiveDocumentAction } from '../../_lib/actions/workspace.ts';
  */
 
 export const dynamic = 'force-dynamic';
-
-const when = (d: Date | null): string =>
-  d === null
-    ? '—'
-    : new Intl.DateTimeFormat('en-IN', {
-        dateStyle: 'medium',
-        timeStyle: 'short',
-        timeZone: 'Asia/Kolkata',
-      }).format(d);
 
 export default async function DocumentsPage({
   searchParams,
@@ -118,7 +110,7 @@ export default async function DocumentsPage({
                         className="num"
                         title={d.fromAttachment ? 'Released by the exchange' : 'Last saved here'}
                       >
-                        {when(d.documentDate)}
+                        {stamp(d.documentDate)}
                       </td>
                       <td>{d.updatedByName ?? <Blank why="Written before saves were attributed" />}</td>
                       <td className="cell-note">

@@ -80,8 +80,8 @@ Everything visual comes from `components/ui.tsx` and the classes in `globals.css
 bespoke control, check it isn't there. Styling is by **class**, not inline `style` objects.
 
 `AppHeader` · `Button` / `LinkButton` (default · primary · quiet · danger · link) · `Card` · `Eyebrow`
-· `Chip` · `Pill` · `Seg` · `Tabs` · `Stat` / `StatRow` · `Fact` / `Facts` · `Blank` · `Segs` ·
-`Empty` · `StaleBanner` · `inr()` / `crore()` / `signedPct()` · `DialogButton` (client) ·
+· `Chip` · `Pill` · `Seg` · `Tabs` · `Stat` / `StatRow` · `Fact` / `Facts` · `Blank` ·
+`Empty` · `inr()` / `crore()` / `signedPct()` · `DialogButton` (client) ·
 `Toast` (client, fed by `flash()`) · `CompanySearch` (client).
 
 Layout classes: `.split-2` / `.split-3` + `.pane` / `.pane-head` / `.pane-list` / `.pane-body`;
@@ -137,6 +137,13 @@ prefixes.
 - **Quiet day** — a plain sentence naming what was checked and when. Never "No items". With forty
   names most days are quiet, and a desk that reads as broken on a working morning stops being
   opened. An empty list and a failed fetch must never look the same.
+
+**4. Two components are gone, 18-Sep-2026.** `Segs` drew the **12-stage pipeline**, which
+`capabilities.md` lists among the things v3 is not building. `StaleBanner` announced that tax lots
+were behind the transaction log and told the reader to run
+`uv run python -m trisula_portfolio.materialise` — a v2 Python worker, in a system whose E1 rule is
+one language. Nothing supplied its props; holdings are replayed synchronously now. Both are removed
+from the catalogue above rather than left as vocabulary nobody can use.
 
 **3. The phone layout is a requirement, not a description.** The bottom-bar rail below phone width,
 and a 44px minimum touch target — `Button` at 36px is correct on desktop and too small on a coarse

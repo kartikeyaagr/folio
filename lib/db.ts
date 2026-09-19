@@ -18,6 +18,7 @@
  * Connection is over a unix socket, so Postgres needs no TCP listener on the VM.
  */
 
+import { randomBytes } from 'node:crypto';
 import pg from 'pg';
 
 /**
@@ -185,4 +186,20 @@ export async function listen(
     // it. Wait for the chain to drain.
     await working.catch(() => { /* already reported through onError */ });
   };
+}
+
+/**
+ * An id for a new row.
+ *
+ * Seventeen call sites spelled `randomBytes(16).toString('hex')` for themselves, five of them
+ * wrapped in a local `const id = () => …` and one exported from `lib/agents/queue.ts`, which meant
+ * `lib/book.ts` reaching into the agent queue for a random string. Every one of them is making a
+ * primary key for a row it is about to write, and every one already imports this module to write
+ * it — so the id belongs beside the transaction helpers.
+ *
+ * 128 bits of hex, not `crypto.randomUUID()`: the stored format is 32 hex characters with no
+ * dashes and changing it would not be a refactor, it would be a migration.
+ */
+export function rowId(): string {
+  return randomBytes(16).toString('hex');
 }

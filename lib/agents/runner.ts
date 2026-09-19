@@ -30,9 +30,9 @@
  * why a handler failed is no longer written on the connection the handler poisoned.
  */
 
-import { readTxn, serviceTxn, type Client } from '../db.ts';
+import { readTxn, rowId, serviceTxn, type Client } from '../db.ts';
 import { liveModel, type Answer, type FailureKind, type Model } from './model.ts';
-import { claimRun, claimThisRun, failRun, finishRun, id, markDone, reclaim, type ClaimedRun } from './queue.ts';
+import { claimRun, claimThisRun, failRun, finishRun, markDone, reclaim, type ClaimedRun } from './queue.ts';
 
 export class ScopeViolation extends Error {}
 
@@ -246,7 +246,7 @@ export function raise(answer: Extract<Answer, { ok: false }>): never {
 async function recordDraft(
   runId: string, agent: AgentRow, companyId: string | null, d: Draft,
 ): Promise<string> {
-  const draftId = id();
+  const draftId = rowId();
   await serviceTxn('system:agents', async (c) => {
     await c.query(
       `INSERT INTO ai_drafts (id, run_id, agent_key, company_id, content, sources, verification,

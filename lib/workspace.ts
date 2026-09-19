@@ -18,11 +18,11 @@
  * graveyard rests on the same argument.
  */
 
-import { createHash, randomBytes } from 'node:crypto';
+import { createHash } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 
-import { readTxn, writeTxn, type Client } from './db.ts';
+import { readTxn, rowId, type Client, writeTxn } from './db.ts';
 import { pathFor } from './ingest/attachments.ts';
 import { bodyOf, DEFAULT_SHEET_NAME } from './sheet/book.ts';
 
@@ -282,7 +282,7 @@ export async function createDocument(
 ): Promise<string> {
   const title = input.title.trim();
   if (!title) throw new TitleRequired('A document needs a title.');
-  const id = randomBytes(16).toString('hex');
+  const id = rowId();
   // A new spreadsheet opens on one empty tab, named as Excel names it. Never `{cells}`: that
   // shape is read for the rows that already have it and written by nothing.
   const body =

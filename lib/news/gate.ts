@@ -195,34 +195,6 @@ export async function runGate(model: Model = liveModel, limit = 100): Promise<Ga
   return out;
 }
 
-/** What the desk is allowed to see: confirmed matches, with the reason attached. */
-export async function confirmedNews(companyId?: string, days = 14): Promise<
-  {
-    id: string; title: string; url: string; source: string; mechanism: string;
-    symbol: string; publishedAt: Date | null;
-  }[]
-> {
-  return serviceTxn('system:news', async (c) => {
-    const { rows } = await c.query<{
-      id: string; title: string; url: string; source: string; mechanism: string;
-      symbol: string; publishedAt: Date | null;
-    }>(
-      `SELECT m.id, i.title, i.url, s.label AS source, m.mechanism, co.symbol,
-              i.published_at AS "publishedAt"
-         FROM news_matches m
-         JOIN news_items i ON i.id = m.item_id
-         JOIN news_sources s ON s.key = i.source_key
-         JOIN companies co ON co.id = m.company_id
-        WHERE m.state = 'confirmed'
-          AND ($1::text IS NULL OR m.company_id = $1)
-          AND COALESCE(i.published_at, i.fetched_at) > now() - ($2 || ' days')::interval
-        ORDER BY COALESCE(i.published_at, i.fetched_at) DESC`,
-      [companyId ?? null, String(days)],
-    );
-    return rows;
-  });
-}
-
 /** Candidates the gate could not judge. Small, and worth someone noticing. */
 export async function ungated(): Promise<{ id: string; title: string; lastError: string | null }[]> {
   return serviceTxn('system:news', async (c) => {

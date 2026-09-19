@@ -14,17 +14,15 @@
 
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import pg from 'pg';
 import { migrate } from './migrate.ts';
+import { createTestDatabase, dropTestDatabase } from './testing.ts';
 
 const DB = `trisula_test_${process.pid}`;
 let client: pg.Client;
 
 before(async () => {
-  execFileSync('createdb', [DB]);
-  process.env.DATABASE_URL = `postgres:///${DB}`;
-  await migrate();
+  await createTestDatabase(DB);
   client = new pg.Client({ connectionString: process.env.DATABASE_URL });
   await client.connect();
   // A person to write as. `actors` is deliberately unaudited — otherwise the first actor could
@@ -39,7 +37,7 @@ before(async () => {
 
 after(async () => {
   await client?.end();
-  execFileSync('dropdb', ['--if-exists', DB]);
+  await dropTestDatabase(DB);
 });
 
 /** Run in a transaction with an optional actor, always rolled back. */

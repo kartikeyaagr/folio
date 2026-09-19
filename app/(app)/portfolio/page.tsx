@@ -17,6 +17,7 @@ import {
   reverseTradeAction,
 } from '../../_lib/actions/book.ts';
 import { requireUser } from '../../_lib/session.ts';
+import { istDate } from '@/components/ui';
 
 /**
  * The book.
@@ -66,7 +67,7 @@ export default async function PortfolioPage({
 
   // The date the form opens on. Not a default the action would apply — the field is required and
   // checked server-side — just the day somebody recording a trade almost always means.
-  const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
+  const today = istDate();
 
   const tradeForm = <TradeForm names={names} today={today} action={recordTradeAction} />;
 

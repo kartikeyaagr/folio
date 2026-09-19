@@ -7,6 +7,7 @@ import { Brief } from '@/components/Brief.tsx';
 import { AppHeader, Card, Eyebrow } from '@/components/ui.tsx';
 
 import { requireUser } from '../../../../_lib/session.ts';
+import { weekdayTime } from '@/components/ui';
 
 /**
  * One brief, kept.
@@ -17,13 +18,6 @@ import { requireUser } from '../../../../_lib/session.ts';
  */
 
 export const dynamic = 'force-dynamic';
-
-function ist(at: Date): string {
-  return new Intl.DateTimeFormat('en-GB', {
-    timeZone: 'Asia/Kolkata', weekday: 'short', day: 'numeric', month: 'short',
-    hour: '2-digit', minute: '2-digit', hour12: false,
-  }).format(at);
-}
 
 /** How many distinct things were corrected, as opposed to how many places. */
 const fields = (edits: Record<string, unknown>): number =>
@@ -41,7 +35,7 @@ export default async function OneBriefPage({ params }: { params: Promise<{ id: s
     <>
       <AppHeader
         title="Brief"
-        subtitle={`${ist(b.writtenAt)} · accepted by ${b.acceptedBy ?? 'somebody'}`}
+        subtitle={`${weekdayTime(b.writtenAt)} · accepted by ${b.acceptedBy ?? 'somebody'}`}
         back="/news/brief"
         backTitle="Briefs"
       />

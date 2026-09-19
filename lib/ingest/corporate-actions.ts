@@ -16,6 +16,7 @@ import { createHash } from 'node:crypto';
 import { serviceTxn } from '../db.ts';
 import { readSubject, normalise, type Kind } from './ca-subject.ts';
 import { NseSession } from './nse.ts';
+import { nseDate } from './dates.ts';
 
 export type Board = 'equities' | 'sme';
 
@@ -31,11 +32,7 @@ export interface Announcement {
 
 /** NSE writes these as DD-MMM-YYYY, and writes "-" where it has nothing. */
 export function asDate(value: string): string | null {
-  const m = /^(\d{2})-([A-Za-z]{3})-(\d{4})$/.exec(String(value ?? '').trim());
-  if (!m) return null;
-  const i = 'janfebmaraprmayjunjulaugsepoctnovdec'.indexOf(m[2]!.toLowerCase());
-  if (i < 0 || i % 3 !== 0) return null;
-  return `${m[3]}-${String(i / 3 + 1).padStart(2, '0')}-${m[1]}`;
+  return nseDate(value);
 }
 
 export function parseAnnouncements(rows: Record<string, unknown>[]): Announcement[] {
