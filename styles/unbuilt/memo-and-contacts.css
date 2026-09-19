@@ -1,0 +1,266 @@
+/*
+ * NOT IMPORTED. Nothing in `app/globals.css` pulls this file in, and that is the point.
+ *
+ * `tasks/open-items.md` found 62% of this tree's CSS referenced by no component, and warned what
+ * that costs: "A stylesheet for a capability the specs *cut* is the exact thing CLAUDE.md's 'a gap
+ * against something the specs deliberately cut is not a gap' warns future readers about, sitting in
+ * the tree as evidence that it wasn't cut." Its prescription was to move rather than delete, because
+ * some of this is finished design for a screen that was never wired — lesson L14 — and deleting it
+ * would throw away work, while leaving it imported keeps asserting that a cut feature exists.
+ *
+ * Forensics verdicts, the IC memo, and the contact/model pages. `/memo` is on the D2 cut
+ * list; contacts and `/model/[id]` are A9, agreed in principle and unscheduled.
+ *
+ * Re-check with `pnpm exec tsx ops/measure-css.ts` before reviving any of it.
+ */
+
+/* from styles/company.css:538-786 */
+/* --- Forensics ------------------------------------------------------------------------------ */
+
+.co-finalised {
+  justify-content: space-between;
+}
+.co-fx {
+  gap: 0;
+}
+.co-fx > .box-head {
+  margin-bottom: 6px;
+}
+.fx-item {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) auto;
+  gap: 4px 12px;
+  align-items: baseline;
+  padding: 10px 0;
+  border-top: 1px solid var(--line);
+  font-size: 13.5px;
+}
+.fx-section {
+  grid-column: 1 / -1;
+  padding-bottom: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.fx-n {
+  font-size: 12px;
+  color: var(--muted);
+}
+.fx-q b {
+  font-weight: 600;
+}
+.fx-guide {
+  display: block;
+  font-size: 12px;
+  color: var(--muted);
+}
+.fx-answer {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  max-width: 260px;
+  font-size: 12px;
+  color: var(--muted);
+  text-align: right;
+}
+.fx-controls {
+  grid-column: 2 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  align-items: center;
+}
+.fx-verdicts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  font-size: 12.5px;
+}
+.fx-verdicts label {
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
+}
+.fx-controls .field {
+  flex: 1;
+  min-width: 200px;
+  height: 32px;
+}
+.co-fx-actions {
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+.co-verdict {
+  font-size: 15px;
+}
+.co-earlier > summary {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: baseline;
+  list-style: none;
+  cursor: pointer;
+}
+.co-earlier > summary::-webkit-details-marker {
+  display: none;
+}
+.fx-item.is-past .fx-q {
+  color: var(--ink-2);
+}
+
+/* --- IC memo -------------------------------------------------------------------------------- */
+
+.co-memo {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 240px;
+  gap: 12px;
+  align-items: flex-start;
+}
+.co-memo-doc {
+  max-width: 72ch;
+  padding: 28px 32px;
+  color: var(--ink);
+}
+.co-memo-doc h2 {
+  margin: 0 0 8px;
+  font-family: var(--serif);
+  font-size: 28px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.co-memo-doc h3 {
+  margin: 12px 0 0;
+  font-family: var(--font);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.co-memo-doc p {
+  margin: 0;
+}
+.co-memo-eyebrow {
+  font-family: var(--font);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--teal);
+}
+.co-memo-note {
+  font-family: var(--font);
+  font-size: 13px;
+  color: var(--muted);
+}
+/* Controls inside the document keep the chrome face; the serif is for the prose. */
+.co-memo-doc .field,
+.co-memo-doc .btn,
+.co-memo-doc .hint,
+.co-memo-doc .lbl,
+.co-memo-doc .co-radios,
+.co-memo-doc .co-trig {
+  font-family: var(--font);
+}
+.co-memo-doc .co-trig {
+  font-size: 13px;
+  line-height: 1.5;
+}
+.co-vote {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 2px 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+  font-size: 13px;
+}
+.co-vote-v {
+  font-weight: 700;
+}
+.co-vote-r {
+  width: 100%;
+  font-size: 12px;
+  color: var(--muted);
+}
+.co-vote-form {
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+.co-revote > summary {
+  list-style: none;
+  cursor: pointer;
+}
+.co-revote > summary::-webkit-details-marker {
+  display: none;
+}
+.co-memo-side-foot {
+  display: grid;
+  gap: 8px;
+  margin-top: auto;
+  padding-top: 8px;
+}
+
+/* --- Contact and model pages ---------------------------------------------------------------- */
+
+.co-dl {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  font-size: 13px;
+}
+.co-dl-row {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  gap: 16px;
+}
+.co-dl dt {
+  color: var(--muted);
+}
+.co-dl dd {
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+.model-grid table {
+  border-collapse: collapse;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.model-grid th,
+.model-grid td {
+  max-width: 220px;
+  padding: 3px 8px;
+  border: 1px solid var(--line);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.model-grid thead th {
+  position: sticky;
+  top: 0;
+  min-width: 34px;
+  background: var(--surface-2);
+  font-weight: 500;
+  text-align: center;
+  color: var(--muted);
+}
+.model-grid tbody th {
+  background: var(--surface-2);
+  font-weight: 400;
+  text-align: right;
+  color: var(--muted);
+}
+.model-grid td.is-num {
+  text-align: right;
+}
+/* A dotted underline rather than a colour: models are dense, and a second colour across every
+   computed cell would fight the numbers for attention. */
+.model-grid td.is-formula {
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+  cursor: help;
+}
+

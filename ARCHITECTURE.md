@@ -400,6 +400,23 @@ Three standing rules, all of which have cost something to learn:
   `:focus-visible`, `:active` or `:disabled`, and a control with no hover state is the fastest way to
   look unfinished.
 
+**Tailwind v4 is present and on a short leash.** `app/tailwind.css` imports `theme` and `utilities`
+only — the preflight would be a second reset competing with the one `globals.css` already has — and
+clears three token namespaces before declaring ours. Clearing `--color-*` is the load-bearing one:
+Tailwind's default palette is ~300 colours, the design system allows one accent and three meanings,
+and `bg-red-500` now fails to compile rather than relying on somebody remembering the rule. The
+`v4.md` constraint that forbade this is reversed there, with the reasoning, rather than edited away.
+
+`components/primitives/` holds vendored shadcn/Base UI components; `components/ui.tsx` composes them
+into the kit. Three shadcn components are refused on purpose — `Tabs`, `ToggleGroup` and `Select`
+are client-state and would convert server pages into client ones, and `Form` would do the same to
+all 41 forms. There are zero `'use client'` files in `app/` and that is the property being
+protected.
+
+`ops/measure-css.ts` is the census: it reports dead selectors, and fails on a class a component
+names that no stylesheet defines. `styles/unbuilt/` holds stylesheets for cut or unbuilt screens and
+is imported by nothing.
+
 Read `.interface-design/system.md` before adding any screen.
 
 ---

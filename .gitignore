@@ -1,9 +1,7 @@
 # Private planning notes and internal documentation. Never committed.
-#
-# No trailing slash, deliberately. A Conductor worktree does not get gitignored directories, so a
-# session working in one symlinks `docs` and `tasks` back to the main checkout to make the paths in
-# CLAUDE.md resolve — and `docs/` matches a directory, not a symlink to one. With the slash, `git
-# status` listed both symlinks as untracked and a `git add -A` would have committed them.
+# No trailing slash on these three: in a Conductor worktree they are symlinks back to the main
+# checkout, and `docs/` matches a directory but not a symlink to one — so with the slash they
+# showed as untracked and `git add -A` would have committed the private notes.
 docs
 tasks
 
@@ -17,4 +15,5 @@ out/
 next-env.d.ts
 
 # The embedding model. Fetched with `pnpm fetch-model`, never committed — see ops/fetch-model.sh.
-.models/
+# Bare, for the same symlink reason as docs/tasks above.
+.models

@@ -1,3 +1,6 @@
+/* Tailwind's theme and utilities — no preflight, no default palette. See tailwind.css. */
+@import './tailwind.css';
+
 /* Thesis and the editor are not carried forward: D2 cut /thesis, /memo and /pipeline. */
 @import '../styles/shell.css';
 @import '../styles/company.css';
@@ -10,118 +13,97 @@
 /*
  * Trisula.
  *
- * A navy rail, white cards on a cool grey ground, one accent (navy) for actions and three meaning
- * colours — teal for good, red for bad, amber for pending — spent only where they say something.
- * Depth is a soft shadow on cards and a firm one on anything that leaves the page. Manrope carries
- * the chrome; Lora carries anything that is a document.
+ * The palette is shadcn's, read off ui.shadcn.com rather than remembered: an achromatic neutral
+ * scale at literally zero chroma, black as the primary in light and near-white in dark, borders
+ * that separate by a single step rather than by shadow. In dark, a card sits *above* the ground
+ * (#171717 on #0a0a0a) and the border becomes white at 10% — elevation is carried by lightness,
+ * not by a drop shadow, which is why the shadows here are one hairline ring and nothing else.
  *
- * Every colour is a token here, and each has exactly one name. The pre-v2 vocabulary (`--paper`,
- * `--oxblood`, `--rule` …) was aliased onto these tokens while the pages migrated; the migration is
- * finished and the aliases are gone, so `var(--faint)` in a new file now resolves to nothing and
- * shows up, instead of quietly starting a second vocabulary alongside this one.
+ * WHAT IS DELIBERATELY NOT shadcn: the three meanings. shadcn ships one non-neutral colour,
+ * `destructive`, because a documentation site has one thing to warn about. This is a book of
+ * holdings — `+66.8%` and `−17.6%` in the same column have to be separable at a glance, and a
+ * neutral-only table makes a loss look like a gain until you read the sign. So teal/red/amber stay,
+ * and the design system's rule is unchanged: one accent, three meanings, never a fourth. The
+ * accent is simply black now instead of navy.
+ *
+ * Every colour is a token and each has exactly one name. EVERY TOKEN IS DECLARED ONCE, via
+ * `light-dark()`: the dark palette used to be 22 overrides written out twice, where adding a token
+ * to one and not the other fails silently in whichever theme you were not looking at.
  */
 
 :root {
-  /* Surfaces */
-  --bg: #f4f6f9;
-  --surface: #ffffff;
-  --surface-2: #f0f3f7;
-  --line: #e2e7ee;
-  --line-2: #cbd3de;
+  /* The default. A chosen theme wins below; absent one, the OS decides. */
+  color-scheme: light dark;
+
+  /* Surfaces. In light, bg and card are both white and the border does the separating. In dark the
+     card lifts above the ground, which is how shadcn expresses elevation without a shadow. */
+  --bg: light-dark(#ffffff, #0a0a0a);
+  --surface: light-dark(#ffffff, #171717);
+  --surface-2: light-dark(#f5f5f5, #262626);
+  --line: light-dark(#e5e5e5, rgba(255, 255, 255, 0.1));
+  --line-2: light-dark(#d4d4d4, rgba(255, 255, 255, 0.18));
 
   /* Ink — four levels. Fewer than four and the hierarchy goes flat. */
-  --ink: #15223a;
-  --ink-2: #3b475c;
-  --muted: #6b7689;
-  --ghost: #98a2b3;
+  --ink: light-dark(#0a0a0a, #fafafa);
+  --ink-2: light-dark(#404040, #d4d4d4);
+  --muted: light-dark(#737373, #a1a1a1);
+  --ghost: light-dark(#a1a1a1, #737373);
 
-  /* Brand, and the three meanings. Never a fourth. */
-  --navy: #0f2440;
-  --navy-2: #1a3559;
-  --navy-soft: #e7edf6;
-  --on-navy: #ffffff;
-  --teal: #1f7a63;
-  --teal-soft: #e3f2ec;
-  --red: #b4413a;
-  --red-soft: #f9e9e7;
-  --amber: #a86f1a;
-  --amber-soft: #f9f0dd;
+  /* One accent: black, inverting to near-white in dark, exactly as shadcn's `primary` does. */
+  --navy: light-dark(#0a0a0a, #fafafa);
+  --navy-2: light-dark(#262626, #ffffff);
+  --navy-soft: light-dark(#f5f5f5, #262626);
+  --on-navy: light-dark(#fafafa, #0a0a0a);
 
-  /* The rail is navy in both themes — it is the one fixed point on the screen. */
-  --rail: #0f2440;
+  /* The three meanings. Saturated on purpose — against a zero-chroma ground a little colour goes
+     a long way, and these are the only things on screen allowed to have any. */
+  --teal: light-dark(oklch(62.7% 0.194 149.214), oklch(79.2% 0.209 151.711));
+  --red: light-dark(#e7000b, #ff6467);
+  --amber: light-dark(oklch(66.6% 0.179 58.318), oklch(82.8% 0.189 84.429));
+
+  /* The washes are mixed from the meaning and the surface, so they follow both the colour and the
+     theme instead of being six more hand-picked values that can drift out of step. */
+  --teal-soft: color-mix(in oklab, var(--teal) 12%, var(--surface));
+  --red-soft: color-mix(in oklab, var(--red) 12%, var(--surface));
+  --amber-soft: color-mix(in oklab, var(--amber) 12%, var(--surface));
+
+  /* The rail follows the theme now. shadcn's sidebar is a near-white panel held by a border, not a
+     dark slab, so the rail stops being "the one fixed point" and becomes part of the page. */
+  --rail: light-dark(#fafafa, #171717);
+  --rail-ink: light-dark(#737373, #a1a1a1);
+  --rail-on: light-dark(#0a0a0a, #fafafa);
+  --rail-line: light-dark(#e5e5e5, rgba(255, 255, 255, 0.1));
   --rail-w: 72px;
   --head-h: 60px;
 
-  --ring: rgba(15, 36, 64, 0.14);
-  --shadow-sm: 0 1px 2px rgba(15, 36, 64, 0.06), 0 1px 1px rgba(15, 36, 64, 0.04);
-  --shadow-lg: 0 12px 32px rgba(15, 36, 64, 0.14), 0 2px 6px rgba(15, 36, 64, 0.08);
+  --ring: light-dark(#a1a1a1, #737373);
 
+  /* Depth is a border, not a shadow. shadcn's cards carry a hairline and nothing else; only a
+     thing that has genuinely left the page gets a ring plus a soft drop. */
+  --shadow-sm: none;
+  --shadow-ring: light-dark(#e5e5e5, rgba(255, 255, 255, 0.12));
+  --shadow-drop: light-dark(rgba(0, 0, 0, 0.12), rgba(0, 0, 0, 0.6));
+  --shadow-lg: 0 0 0 1px var(--shadow-ring), 0 16px 40px var(--shadow-drop);
+
+  /* shadcn ships one radius, 0.625rem, and derives the rest from it. */
   --r-sm: 6px;
   --r-md: 8px;
-  --r-lg: 12px;
-  --r-xl: 14px;
+  --r-lg: 10px;
+  --r-xl: 12px;
 
-  /* Type. `next/font` injects `--font-sans` and `--font-serif`; these name what they are for. */
+  /* Geist for anything written, Geist Mono for every figure. */
   --font: var(--font-sans), ui-sans-serif, system-ui, -apple-system, sans-serif;
-  --serif: var(--font-serif), Georgia, 'Iowan Old Style', serif;
+  --mono: var(--font-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
 
   /* Motion. Ease-out only — ease-in delays the frame the user is watching. */
   --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+}
 
+/* The toggle wins either way; it carries no colours, only which half of `light-dark()` applies. */
+:root[data-theme='light'] {
   color-scheme: light;
 }
-
-/* Dark. The OS preference applies when no theme has been chosen; the toggle wins either way. */
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme='light']) {
-    --bg: #0e131c;
-    --surface: #151c28;
-    --surface-2: #1c2533;
-    --line: #26324a;
-    --line-2: #34425c;
-    --ink: #e9edf4;
-    --ink-2: #c3cbd9;
-    --muted: #8a96ad;
-    --ghost: #5c6780;
-    --navy: #dfe7f3;
-    --navy-2: #ffffff;
-    --navy-soft: #1f2c42;
-    --on-navy: #0e131c;
-    --teal: #4fb695;
-    --teal-soft: #15302a;
-    --red: #e07a72;
-    --red-soft: #3a1f1e;
-    --amber: #d9a54a;
-    --amber-soft: #3a2e17;
-    --ring: rgba(223, 231, 243, 0.18);
-    --shadow-sm: 0 0 0 1px rgba(255, 255, 255, 0.04);
-    --shadow-lg: 0 0 0 1px rgba(255, 255, 255, 0.06), 0 20px 50px rgba(0, 0, 0, 0.6);
-    color-scheme: dark;
-  }
-}
 :root[data-theme='dark'] {
-  --bg: #0e131c;
-  --surface: #151c28;
-  --surface-2: #1c2533;
-  --line: #26324a;
-  --line-2: #34425c;
-  --ink: #e9edf4;
-  --ink-2: #c3cbd9;
-  --muted: #8a96ad;
-  --ghost: #5c6780;
-  --navy: #dfe7f3;
-  --navy-2: #ffffff;
-  --navy-soft: #1f2c42;
-  --on-navy: #0e131c;
-  --teal: #4fb695;
-  --teal-soft: #15302a;
-  --red: #e07a72;
-  --red-soft: #3a1f1e;
-  --amber: #d9a54a;
-  --amber-soft: #3a2e17;
-  --ring: rgba(223, 231, 243, 0.18);
-  --shadow-sm: 0 0 0 1px rgba(255, 255, 255, 0.04);
-  --shadow-lg: 0 0 0 1px rgba(255, 255, 255, 0.06), 0 20px 50px rgba(0, 0, 0, 0.6);
   color-scheme: dark;
 }
 
@@ -164,6 +146,17 @@ th,
 [data-num] {
   font-variant-numeric: tabular-nums;
 }
+/* Geist Mono on every declared figure. A holdings table is read down its columns, and in a
+   proportional face 1,42,000 and 96,400 are different widths for the same digit count, so the eye
+   re-finds the decimal on every row. `.num` marks a numeric cell in 79 places; nothing else here
+   becomes monospace, least of all a company name. */
+.num,
+[data-num],
+.stat-v,
+.fact-v {
+  font-family: var(--mono);
+  font-feature-settings: 'tnum' 1;
+}
 
 a {
   color: var(--navy);
@@ -176,7 +169,7 @@ a:hover {
 
 /* Serif is for things that are documents — memo bodies, the document editor, long prose. */
 .prose {
-  font-family: var(--serif);
+  font-family: var(--font);
   font-size: 15.5px;
   line-height: 1.65;
 }
@@ -343,49 +336,6 @@ select:focus-visible {
   height: 44px;
   font-size: 14px;
   font-weight: 700;
-}
-
-/* --- Pill (a filter with a count) ---------------------------------------------------------- */
-
-.pills {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-.pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 28px;
-  padding: 0 10px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: transparent;
-  color: var(--ink);
-  font-size: 12px;
-  font-weight: 600;
-  text-decoration: none;
-  white-space: nowrap;
-  cursor: pointer;
-  transition:
-    background-color 140ms var(--ease),
-    border-color 140ms var(--ease),
-    transform 100ms var(--ease);
-}
-.pill:hover {
-  border-color: var(--line-2);
-  color: var(--ink);
-}
-.pill[aria-current='true'],
-.pill[aria-current='page'] {
-  background: var(--navy);
-  border-color: var(--navy);
-  color: var(--on-navy);
-}
-.pill-n {
-  font-size: 11px;
-  font-weight: 700;
-  opacity: 0.8;
 }
 
 /* --- Segmented control ----------------------------------------------------------------------- */
@@ -584,7 +534,7 @@ select:focus-visible {
   top: 0;
   z-index: 1;
   text-align: left;
-  padding: 10px 12px;
+  padding: 9px 13px;
   background: var(--surface-2);
   border-bottom: 1px solid var(--line);
   color: var(--muted);
@@ -603,7 +553,7 @@ select:focus-visible {
   color: var(--ink);
 }
 .tbl td {
-  padding: 10px 12px;
+  padding: 9px 13px;
   border-bottom: 1px solid var(--line);
   vertical-align: top;
 }
@@ -751,7 +701,7 @@ select:focus-visible {
 }
 .stat-v {
   font-size: 22px;
-  font-weight: 800;
+  font-weight: 600;
   letter-spacing: -0.02em;
   line-height: 1.15;
   font-variant-numeric: tabular-nums;
@@ -1216,8 +1166,6 @@ dialog.dlg[open] {
   animation: rise 0.25s var(--ease);
 }
 
-/* --- Progress: twelve stage segments --------------------------------------------------------- */
-
 /* --- Control states -------------------------------------------------------------------------- */
 /*                                                                                                */
 /* Hover and focus-visible are declared with each control above, and focus-visible is one rule for */
@@ -1227,7 +1175,6 @@ dialog.dlg[open] {
 /* their own, so it fences them off at the hover instead.                                          */
 
 /* Press: the 0.97 the buttons use, for everything else shaped like a button. */
-.pill:active,
 .seg a:active,
 .seg button:active,
 .tabs a:active,
@@ -1248,7 +1195,6 @@ dialog.dlg[open] {
 /* Disabled. An anchor cannot carry `disabled`, so a link says it with `aria-disabled`. Each of
    these rests on a transparent background, so restoring it is enough to stop hover repainting a
    control that no longer answers. */
-.pill[aria-disabled='true'],
 .seg a[aria-disabled='true'],
 .seg button:disabled,
 .tabs a[aria-disabled='true'],

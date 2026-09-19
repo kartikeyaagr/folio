@@ -1,0 +1,330 @@
+/*
+ * NOT IMPORTED. Nothing in `app/globals.css` pulls this file in, and that is the point.
+ *
+ * `tasks/open-items.md` found 62% of this tree's CSS referenced by no component, and warned what
+ * that costs: "A stylesheet for a capability the specs *cut* is the exact thing CLAUDE.md's 'a gap
+ * against something the specs deliberately cut is not a gap' warns future readers about, sitting in
+ * the tree as evidence that it wasn't cut." Its prescription was to move rather than delete, because
+ * some of this is finished design for a screen that was never wired — lesson L14 — and deleting it
+ * would throw away work, while leaving it imported keeps asserting that a cut feature exists.
+ *
+ * The company aside and the 14-item forensic checklist. The checklist screen is unbuilt;
+ * `docs/forensic-checklist.md` describes what it would show.
+ *
+ * Re-check with `pnpm exec tsx ops/measure-css.ts` before reviving any of it.
+ */
+
+/* from styles/company.css:186-498 */
+/* --- The aside ------------------------------------------------------------------------------ */
+
+.co-aside-head {
+  flex: none;
+  display: grid;
+  gap: 8px;
+  padding: 16px 16px 12px;
+  border-bottom: 1px solid var(--line);
+}
+.co-aside-n {
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.co-stage-name {
+  font-size: 17px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+.co-stage-ask {
+  font-size: 12px;
+  color: var(--muted);
+}
+.co-aside-actions {
+  gap: 14px;
+}
+/* Passing on a name is quiet until it is hovered: a decision, not a call to action. */
+.co-pass {
+  color: var(--muted);
+}
+.co-pass:hover {
+  color: var(--red);
+}
+.co-dlg-actions {
+  justify-content: flex-end;
+}
+.co-aside-foot {
+  flex: none;
+  margin: 0;
+  padding: 14px 16px;
+  border-top: 1px solid var(--line);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+/* The fold. On a phone the aside comes first, collapsed to its stage header, and this summary is
+   the toggle. On a desktop there is nothing to toggle: the summary is hidden and a closed <details>
+   is kept visible through its ::details-content pseudo-element. A browser without that
+   pseudo-element keeps the toggle at every width, so the checklist is never unreachable. */
+.co-fold {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+.co-fold > summary {
+  display: flex;
+  justify-content: space-between;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--line);
+  list-style: none;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+  cursor: pointer;
+}
+.co-fold > summary::-webkit-details-marker {
+  display: none;
+}
+.co-fold > summary::after {
+  content: '▾';
+}
+.co-fold[open] > summary::after {
+  content: '▴';
+}
+@supports selector(details::details-content) {
+  @media (min-width: 901px) {
+    .co-fold > summary {
+      display: none;
+    }
+    .co-fold:not([open])::details-content {
+      content-visibility: visible;
+    }
+  }
+}
+
+/* --- The checklist -------------------------------------------------------------------------- */
+
+.chk-stage {
+  border-bottom: 1px solid var(--line);
+}
+.chk-stage-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 10px 16px 6px;
+  list-style: none;
+}
+details.chk-stage > .chk-stage-head {
+  cursor: pointer;
+  transition: background-color 140ms var(--ease);
+}
+details.chk-stage > .chk-stage-head::-webkit-details-marker {
+  display: none;
+}
+details.chk-stage > .chk-stage-head:hover {
+  background: var(--surface-2);
+}
+.chk-stage-n {
+  min-width: 16px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.chk-stage-name {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--muted);
+}
+.is-current .chk-stage-name {
+  color: var(--ink);
+}
+.chk-opt {
+  font-size: 11px;
+  color: var(--ghost);
+}
+.chk-stage-done {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--muted);
+}
+.chk-none {
+  margin: 0;
+  padding: 0 16px 10px 40px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.chk-items {
+  padding: 0 16px 8px;
+}
+
+.chk-item > summary {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 6px 0;
+  list-style: none;
+  cursor: pointer;
+}
+.chk-item > summary::-webkit-details-marker {
+  display: none;
+}
+/* The box: teal and ticked when satisfied, a dash when waived, empty otherwise. */
+.chk-box {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border: 1.5px solid var(--line-2);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--surface);
+  transition:
+    background-color 140ms var(--ease),
+    border-color 140ms var(--ease);
+}
+.chk-box svg {
+  opacity: 0;
+}
+.chk-box.is-done {
+  background: var(--teal);
+  border-color: var(--teal);
+}
+.chk-box.is-done svg {
+  opacity: 1;
+}
+.chk-box.is-waived {
+  background: transparent;
+  border-color: var(--line-2);
+}
+.chk-dash {
+  width: 8px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--muted);
+}
+/* The label and, beneath it, what answered the requirement. They share the middle column so the
+   count on the right stays on the first line however far the evidence wraps. */
+.chk-main {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 1px;
+}
+.chk-label {
+  font-size: 13px;
+  line-height: 1.4;
+}
+.is-done > summary .chk-label {
+  color: var(--muted);
+}
+.chk-count {
+  font-size: 11px;
+  line-height: 18px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+/* What satisfied it, read without opening anything. Two lines at most: the item's own list is the
+   long form, and a checklist whose rows run to five lines stops being scannable. */
+.chk-ev {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  /* A filename can arrive with no spaces in it; the pane must not scroll sideways for it. */
+  overflow-wrap: anywhere;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+.chk-ev-link {
+  color: var(--navy);
+  text-decoration: none;
+}
+.chk-ev-link:hover {
+  color: var(--teal);
+  text-decoration: underline;
+}
+/* Amber is pending: what is still owed reads differently from what is already there. */
+.chk-short {
+  color: var(--amber);
+}
+
+/* The long form, inside the item: every piece named and dated. */
+.chk-ev-list {
+  display: grid;
+  gap: 3px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+  line-height: 1.45;
+}
+.chk-ev-list li {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+}
+.chk-ev-at {
+  margin-left: auto;
+  flex: none;
+  font-size: 11px;
+  color: var(--ghost);
+}
+.chk-ev-more {
+  color: var(--muted);
+}
+.chk-body {
+  display: grid;
+  gap: 8px;
+  margin: 2px 0 8px 28px;
+  animation: rise 0.25s var(--ease);
+}
+.chk-note {
+  display: grid;
+  gap: 8px;
+}
+.chk-note textarea {
+  min-height: 64px;
+  background: var(--surface-2);
+}
+.chk-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+.chk-actions label {
+  cursor: pointer;
+}
+.chk-waive > summary {
+  display: inline-flex;
+  list-style: none;
+}
+.chk-waive > summary::-webkit-details-marker {
+  display: none;
+}
+.chk-waive form {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+}
+.chk-waive input {
+  flex: 1;
+  min-width: 0;
+}
+.chk-reason {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+.chk-hint {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+

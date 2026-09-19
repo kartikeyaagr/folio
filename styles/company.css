@@ -30,10 +30,6 @@
   color: var(--red);
 }
 
-/* --- The aside ------------------------------------------------------------------------------ */
-@supports selector(details::details-content) {
-}
-
 /* --- Financials ----------------------------------------------------------------------------- */
 /* A hatch inside a fact tile: the reason should not inherit the figure's weight. */
 .fact-v .blank-why {
@@ -43,25 +39,6 @@
 /* --- Files ---------------------------------------------------------------------------------- */
 .co-search .field {
   width: 100%;
-}
-
-/* --- Forensics ------------------------------------------------------------------------------ */
-.co-fx > .box-head {
-  margin-bottom: 6px;
-}
-.fx-controls .field {
-  flex: 1;
-  min-width: 200px;
-  height: 32px;
-}
-
-/* --- IC memo -------------------------------------------------------------------------------- */
-/* Controls inside the document keep the chrome face; the serif is for the prose. */
-.co-memo-doc .field,
-.co-memo-doc .btn,
-.co-memo-doc .hint,
-.co-memo-doc .lbl {
-  font-family: var(--font);
 }
 
 /* --- Small screens: the aside comes first, folded ------------------------------------------- */

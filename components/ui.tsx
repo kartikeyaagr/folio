@@ -253,26 +253,6 @@ export function Chip({ children, tone = 'neutral' }: { children: ReactNode; tone
   return <span className={`chip chip-${tone}`}>{children}</span>;
 }
 
-/** A filter with a count. `<a>` so it stays URL-driven. */
-export function Pill({
-  href,
-  current,
-  children,
-  count,
-}: {
-  href: string;
-  current: boolean;
-  children: ReactNode;
-  count?: number | string;
-}) {
-  return (
-    <a href={href} className="pill" aria-current={current ? 'true' : undefined}>
-      {children}
-      {count !== undefined && <span className="pill-n">{count}</span>}
-    </a>
-  );
-}
-
 /** A segmented control of links, the value in the URL. */
 export function Seg({
   options,
