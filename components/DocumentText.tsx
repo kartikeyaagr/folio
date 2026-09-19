@@ -76,7 +76,7 @@ export function DocumentText({ text }: { text: string }) {
         </button>
       </div>
 
-      <div className="doc-body-read">
+      <div className="prose doc-body-read">
         {pieces.map((piece, i) =>
           i % 2 === 1 ? (
             <mark

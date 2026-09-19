@@ -10,7 +10,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
-import { evaluateSheet } from '../sheet/evaluate.ts';
+import { evaluateSheet, evaluateWorkbook } from '../sheet/evaluate.ts';
 import { readDocx } from './docx.ts';
 import { csvToSheet, readUpload, UnsupportedFile } from './index.ts';
 import { readWorkbook } from './xlsx.ts';
@@ -33,10 +33,55 @@ test('something that is not a zip is refused rather than half-read', () => {
 
 // ---- Excel ------------------------------------------------------------------------------------------
 
-test('a workbook comes in as one grid per sheet', () => {
-  // Importing tab one of four in silence is the loss this system exists to prevent.
+test('a workbook comes in as one document with every tab on it', () => {
+  // Importing tab one of four in silence is the loss this system exists to prevent — and so is
+  // importing all four as four unrelated documents, which is what this did until tabs existed.
   const sheets = readWorkbook(fixture('model.xlsx'));
   assert.deepEqual(sheets.map((s) => s.name), ['Model', 'Notes']);
+});
+
+// ---- tabs that read each other ----------------------------------------------------------------
+
+test('a formula that reaches another tab is kept live, not frozen to its last value', () => {
+  // The whole point of the change. `Inputs!B2` could not even be tokenised before, so the importer
+  // found every such formula unreadable and wrote the number Excel last showed in its place: a
+  // model that had already stopped moving by the time it finished uploading.
+  const sheets = readWorkbook(fixture('linked.xlsx'));
+  const model = sheets.find((s) => s.name === 'Model')!;
+
+  assert.equal(model.cells['B1'], '=Inputs!B2*(1+Inputs!B1)', 'a reference across tabs survives');
+  assert.equal(model.cells['B2'], '=SUM(Inputs!B1:B2)', 'so does a range across tabs');
+  assert.equal(model.formulasKept, 3);
+  assert.equal(model.formulasFlattened, 0);
+});
+
+test('a tab whose name has a space is reachable, quoted', () => {
+  const sheets = readWorkbook(fixture('linked.xlsx'));
+  const model = sheets.find((s) => s.name === 'Model')!;
+  assert.equal(model.cells['B3'], "='Q1 FY26'!A1*2");
+  assert.ok(sheets.some((s) => s.name === 'Q1 FY26'));
+});
+
+test('an imported workbook computes what Excel was showing, across its tabs', () => {
+  const sheets = readWorkbook(fixture('linked.xlsx'));
+  const values = evaluateWorkbook({ sheets: sheets.map((s) => ({ name: s.name, cells: s.cells })) });
+  const model = values[sheets.findIndex((s) => s.name === 'Model')]!;
+
+  assert.equal(model['B1'], 1120, '1000 x 1.12, read off the Inputs tab');
+  assert.equal(model['B2'], 1000.12, '0.12 + 1000, a range on another tab');
+  assert.equal(model['B3'], 84, "42 x 2, through a quoted tab name");
+});
+
+test('tabs are matched to their grids by relationship id, not by file number', () => {
+  // linked.xlsx lists Model first but stores it in sheet2.xml, which is what happens to any
+  // workbook whose tabs have ever been dragged. Taking them positionally would put the Inputs
+  // numbers under the name Model — and since a reference resolves BY name, every cross-sheet
+  // formula in the workbook would then quietly read the wrong tab.
+  const sheets = readWorkbook(fixture('linked.xlsx'));
+  const inputs = sheets.find((s) => s.name === 'Inputs')!;
+  assert.equal(inputs.cells['A1'], 'Growth');
+  assert.equal(inputs.cells['B2'], '1000');
+  assert.equal(sheets.find((s) => s.name === 'Model')!.cells['A1'], 'Revenue');
 });
 
 test('text, numbers and formulas each arrive as themselves', () => {

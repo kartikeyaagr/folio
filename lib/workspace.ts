@@ -6,10 +6,12 @@
  * so the fund kept its notes in Google Docs and its models in Excel — the two things
  * `docs/specs/v2-system-map.md` says in its first paragraph that this system replaces.
  *
- * **A spreadsheet is a document whose body is a grid.** Same table, same versioning, same
- * attribution, same archive. Every save is a new `document_versions` row, so a model's history is
- * kept for the same reason a memo's is: a number in an investment case is worth little without
- * being able to see what it was last quarter and who changed it.
+ * **A spreadsheet is a document whose body is a workbook.** Same table, same versioning, same
+ * attribution, same archive — and tabs, because a model keeps its assumptions on one and its
+ * output on another, and `lib/sheet/book.ts` says what happened when those arrived as two
+ * documents. Every save is a new `document_versions` row, so a model's history is kept for the
+ * same reason a memo's is: a number in an investment case is worth little without being able to
+ * see what it was last quarter and who changed it.
  *
  * **Archived, not deleted.** `archived_at` is the delete, and the rows stay. A note somebody wrote
  * about a company they then passed on is exactly the note worth finding two years later, and A8's
@@ -22,6 +24,7 @@ import { dirname } from 'node:path';
 
 import { readTxn, writeTxn, type Client } from './db.ts';
 import { pathFor } from './ingest/attachments.ts';
+import { bodyOf, DEFAULT_SHEET_NAME } from './sheet/book.ts';
 
 export type DocKind = 'note' | 'memo' | 'meeting' | 'checklist' | 'sheet';
 
@@ -100,7 +103,8 @@ export interface DocSummary {
 }
 
 export interface DocDetail extends DocSummary {
-  /** `{text}` for prose, `{cells}` for a sheet. Whatever the last save wrote. */
+  /** `{text}` for prose, `{sheets}` for a spreadsheet. Whatever the last save wrote — read a
+   *  spreadsheet's through `lib/sheet/book.ts`, which also understands the older `{cells}`. */
   body: Record<string, unknown>;
   createdByName: string | null;
 }
@@ -279,7 +283,10 @@ export async function createDocument(
   const title = input.title.trim();
   if (!title) throw new TitleRequired('A document needs a title.');
   const id = randomBytes(16).toString('hex');
-  const body = input.kind === 'sheet' ? { cells: {} } : { text: '' };
+  // A new spreadsheet opens on one empty tab, named as Excel names it. Never `{cells}`: that
+  // shape is read for the rows that already have it and written by nothing.
+  const body =
+    input.kind === 'sheet' ? bodyOf([{ name: DEFAULT_SHEET_NAME, cells: {} }]) : { text: '' };
 
   await writeTxn(actorId, async (c) => {
     await c.query(
@@ -328,7 +335,7 @@ export async function renameDocument(id: string, title: string, actorId: string)
   });
 }
 
-/** The delete. Reversible on purpose — see the note at the top of this file. */
+/** The everyday delete. Reversible on purpose — see the note at the top of this file. */
 export async function archiveDocument(id: string, actorId: string, archived = true): Promise<void> {
   await writeTxn(actorId, async (c) => {
     const { rowCount } = await c.query(
@@ -336,6 +343,43 @@ export async function archiveDocument(id: string, actorId: string, archived = tr
       [id, archived],
     );
     if (!rowCount) throw new NoSuchDocument('That document no longer exists.');
+  });
+}
+
+/**
+ * The real delete: the row, every version of it, and its place in search.
+ *
+ * Archiving is still what the desk should reach for, and it stays the default action on both
+ * screens — the argument at the top of this file has not changed, and a note about a company the
+ * fund passed on is still the note worth finding in two years. This exists because that argument
+ * covers *writing*, and an import that went wrong is not writing. A workbook that arrived as
+ * eleven documents, a file uploaded against the wrong company, a test model: archiving those does
+ * not tidy the record, it files clutter under a heading that says it was worth keeping.
+ *
+ * **Out of search in the same transaction it leaves the table.** `sources` has no foreign key to
+ * `documents` — it is keyed `(kind, ref_id)` across five unrelated kinds — so nothing removes it
+ * automatically. `lib/retrieval/reap.ts` would catch it on its next run, because a deleted document
+ * stops satisfying `DOCUMENTS_SELECT`, but "on its next run" is a window in which a deleted
+ * document is still answering questions. Its chunks go with it, cascading from `sources.id`.
+ *
+ * What is deliberately left behind: the uploaded file itself. `attachments` is content-addressed,
+ * so the same bytes uploaded twice are one row that more than one document may point at, and
+ * deleting it here could empty a document nobody asked about. The screens say so before you commit.
+ *
+ * **Irreversible from the app, not from the database.** The audit trigger writes the deleted row to
+ * `audit_log.before` — body and all, attributed — for the document and for every version cascaded
+ * with it, verified on a real delete 16-Sep-2026. So this is recoverable by hand and by somebody
+ * who means it, which is the right amount of recoverable; what the dialog must not do is claim it
+ * is gone forever, because that would be the one kind of inaccuracy this system exists to refuse.
+ */
+export async function deleteDocument(id: string, actorId: string): Promise<void> {
+  await writeTxn(actorId, async (c) => {
+    const { rowCount } = await c.query('SELECT 1 FROM documents WHERE id = $1', [id]);
+    if (!rowCount) throw new NoSuchDocument('That document no longer exists.');
+
+    await c.query("DELETE FROM sources WHERE kind = 'document_version' AND ref_id = $1", [id]);
+    // document_versions cascades from here (0011's FK), so the history goes with the document.
+    await c.query('DELETE FROM documents WHERE id = $1', [id]);
   });
 }
 

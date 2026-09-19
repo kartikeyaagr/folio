@@ -16,7 +16,9 @@
  */
 
 import { readTxn } from '../db.ts';
-import { callKey, DATA_FUNCTION_NAMES, literal, NA, type Lookups, type Value } from './evaluate.ts';
+import {
+  callKey, DATA_FUNCTION_NAMES, literal, NA, type Grid, type Lookups, type Value,
+} from './evaluate.ts';
 import { callsIn, parseFormula } from './parse.ts';
 
 /** What each function takes, and one line on what it answers. Rendered in the sheet's help. */
@@ -65,32 +67,40 @@ interface Call {
   args: string[];
 }
 
-/** Every data call in a grid, canonicalised and deduplicated. */
-export function collectCalls(cells: Record<string, string>): Call[] {
+/**
+ * Every data call in a workbook, canonicalised and deduplicated.
+ *
+ * Across every tab, into one map. `=FIN("PRAJIND","revenue","FY26")` on the Inputs tab and the
+ * same call on the Model tab are one question, asked once — and the map `evaluateWorkbook` is
+ * handed is workbook-wide for the same reason its cell namespace is.
+ */
+export function collectCalls(sheets: readonly Grid[]): Call[] {
   const found = new Map<string, Call>();
-  for (const raw of Object.values(cells)) {
-    if (!raw.trimStart().startsWith('=')) continue;
-    let tree;
-    try {
-      tree = parseFormula(raw.trimStart());
-    } catch {
-      continue; // A formula that will not parse has no calls to resolve; the cell reports it.
-    }
-    for (const node of callsIn(tree)) {
-      if (node.t !== 'call' || !isDataFunction(node.name)) continue;
-      // Literal arguments only. A data call whose company is itself computed cannot be resolved
-      // before evaluation, and guessing would fetch the wrong company's figure in silence.
-      const args: string[] = [];
-      let literalOnly = true;
-      for (const a of node.args) {
-        if (a.t === 'str') args.push(a.v);
-        else if (a.t === 'num') args.push(String(a.v));
-        else literalOnly = false;
+  for (const sheet of sheets) {
+    for (const raw of Object.values(sheet.cells)) {
+      if (!raw.trimStart().startsWith('=')) continue;
+      let tree;
+      try {
+        tree = parseFormula(raw.trimStart());
+      } catch {
+        continue; // A formula that will not parse has no calls to resolve; the cell reports it.
       }
-      if (!literalOnly) continue;
-      const key = callKey(node.name.toUpperCase(), args);
-      if (key !== null && !found.has(key)) {
-        found.set(key, { key, name: node.name.toUpperCase(), args });
+      for (const node of callsIn(tree)) {
+        if (node.t !== 'call' || !isDataFunction(node.name)) continue;
+        // Literal arguments only. A data call whose company is itself computed cannot be resolved
+        // before evaluation, and guessing would fetch the wrong company's figure in silence.
+        const args: string[] = [];
+        let literalOnly = true;
+        for (const a of node.args) {
+          if (a.t === 'str') args.push(a.v);
+          else if (a.t === 'num') args.push(String(a.v));
+          else literalOnly = false;
+        }
+        if (!literalOnly) continue;
+        const key = callKey(node.name.toUpperCase(), args);
+        if (key !== null && !found.has(key)) {
+          found.set(key, { key, name: node.name.toUpperCase(), args });
+        }
       }
     }
   }
@@ -182,9 +192,9 @@ async function answer(c: Client, call: Call, symbol: string): Promise<Value> {
   }
 }
 
-/** Everything a grid needs to be evaluated: its own cells, plus the figures they ask this box for. */
-export async function lookupsFor(cells: Record<string, string>): Promise<Lookups> {
-  return resolveCalls(collectCalls(cells));
+/** Everything a workbook needs: its own cells, plus the figures every tab asks this box for. */
+export async function lookupsFor(sheets: readonly Grid[]): Promise<Lookups> {
+  return resolveCalls(collectCalls(sheets));
 }
 
 export { literal };

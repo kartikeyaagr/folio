@@ -356,9 +356,9 @@ test('a sheet document_version: chunkCells offsets slice back against textFor\'s
     );
     const indexable = await textFor(c, rows[0]!.id);
     assert.ok(indexable, 'the sheet must register and resolve');
-    assert.ok(indexable!.cells, 'a sheet body must come back with its parsed cells, not just text');
+    assert.ok(indexable!.sheets, 'a sheet body must come back with its parsed tabs, not just text');
 
-    const pieces = chunkCells(indexable!.cells!);
+    const pieces = chunkCells(indexable!.sheets!);
     assert.ok(pieces.length > 0);
     for (const p of pieces) {
       assert.equal(

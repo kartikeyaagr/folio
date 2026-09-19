@@ -71,7 +71,9 @@ export function AppHeader({
           </svg>
         </Link>
       )}
-      <h1 className="app-title">{title}</h1>
+      {/* A node, not a string: `/doc/[id]` hands this an editable title. Everything else hands it
+          the words, and gets the same heading it always had. */}
+      {typeof title === 'string' ? <h1 className="app-title">{title}</h1> : title}
       <span className="app-sub">{subtitle}</span>
       <CompanySearch search={searchCompanies} />
       <span className="app-date">{todayLabel()}</span>

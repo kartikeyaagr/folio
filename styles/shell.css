@@ -231,6 +231,43 @@
   white-space: nowrap;
   margin: 0;
 }
+/* The title, renamed where it is written. A button until it is clicked, so a stray keystroke
+   cannot land in the one field a document is found by — `components/TitleEdit.tsx` has the rest. */
+.app-title-edit {
+  padding: 2px 6px;
+  margin: 0 -6px;
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: text;
+  transition:
+    background-color 120ms var(--ease),
+    border-color 120ms var(--ease);
+}
+.app-title-edit:hover:not(:disabled) {
+  border-color: var(--line);
+  background: var(--surface-2);
+}
+.app-title-edit:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.app-title-input {
+  min-width: 320px;
+  max-width: 46vw;
+  padding: 2px 6px;
+  margin: 0 -6px;
+  border: 1px solid var(--navy);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  color: inherit;
+  font: inherit;
+  outline: none;
+}
+
 .app-sub {
   flex: 1 1 0;
   min-width: 0;

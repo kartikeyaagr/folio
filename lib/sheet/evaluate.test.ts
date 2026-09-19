@@ -10,8 +10,11 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { columnName, columnIndex, parseRef, expandRange } from './cells.ts';
-import { parseFormula, BadFormula } from './parse.ts';
-import { evaluateSheet, isCellError, literal, NA, type CellError, type Lookups } from './evaluate.ts';
+import { parseFormula, printFormula, renameSheetIn, BadFormula } from './parse.ts';
+import {
+  evaluateSheet, evaluateWorkbook, isCellError, literal, NA,
+  type CellError, type Grid, type Lookups,
+} from './evaluate.ts';
 
 const at = (cells: Record<string, string>, lookups?: Lookups) => {
   const v = evaluateSheet({ cells, ...(lookups ? { lookups } : {}) });
@@ -175,4 +178,105 @@ test('a small model computes the way its author would', () => {
   assert.equal(v('B3'), 200);
   assert.equal(v('B4'), 0.2);
   assert.equal(v('B6'), 1);
+});
+
+// ---- tabs ----------------------------------------------------------------------------------------
+
+/** A two-tab workbook, indexed the way `evaluateWorkbook` answers: parallel to the tabs. */
+const book = (sheets: Grid[]) => {
+  const values = evaluateWorkbook({ sheets });
+  return (name: string, ref: string) => values[sheets.findIndex((s) => s.name === name)]?.[ref];
+};
+
+test('a formula reaches another tab by name', () => {
+  const v = book([
+    { name: 'Inputs', cells: { B1: '0.12', B2: '1000' } },
+    { name: 'Model', cells: { B1: '=Inputs!B2*(1+Inputs!B1)', B2: '=SUM(Inputs!B1:B2)' } },
+  ]);
+  assert.equal(v('Model', 'B1'), 1120);
+  assert.equal(v('Model', 'B2'), 1000.12, 'a range carries its tab too');
+});
+
+test('a tab is found however it was capitalised, and quoted when its name has a space', () => {
+  // Excel matches a sheet reference case-insensitively, and so does this — a person retyping
+  // `=inputs!B1` has not made a mistake worth an error.
+  const v = book([
+    { name: 'Q1 FY26', cells: { A1: '42' } },
+    { name: 'Model', cells: { A1: "='q1 fy26'!A1*2" } },
+  ]);
+  assert.equal(v('Model', 'A1'), 84);
+});
+
+test('a reference to a tab that is not there is #REF!, and says which', () => {
+  // The state a rename or a delete leaves behind. Never a zero: a model whose missing input reads
+  // as nought still produces a margin and a valuation, and neither would be marked.
+  const v = book([{ name: 'Model', cells: { A1: '=Gone!B2' } }]);
+  const err = v('Model', 'A1');
+  assert.equal(code(err), '#REF!');
+  assert.match((err as CellError).detail, /Gone/);
+});
+
+test('a loop that goes through another tab is still a loop', () => {
+  // The visiting set is keyed by tab AND address, or a cycle that leaves the sheet and comes back
+  // recurses until the stack gives out.
+  const v = book([
+    { name: 'A', cells: { A1: '=B!A1' } },
+    { name: 'B', cells: { A1: '=A!A1' } },
+  ]);
+  assert.equal(code(v('A', 'A1')), '#CYCLE!');
+});
+
+test('one grid on its own still evaluates, and its cross-sheet references are #REF!', () => {
+  // `evaluateSheet` is the single-grid wrapper the importer and the tests use. A formula naming a
+  // tab in a workbook of one has nothing to name.
+  const v = evaluateSheet({ cells: { A1: '2', A2: '=A1*3', A3: '=Other!A1' } });
+  assert.equal(v['A2'], 6);
+  assert.equal(code(v['A3']), '#REF!');
+});
+
+test('two tabs with one name resolve to the first, rather than to whichever', () => {
+  const v = book([
+    { name: 'Dup', cells: { A1: '1' } },
+    { name: 'Dup', cells: { A1: '2' } },
+    { name: 'Model', cells: { A1: '=Dup!A1' } },
+  ]);
+  assert.equal(v('Model', 'A1'), 1);
+});
+
+// ---- renaming a tab, and the formulas that named it ----------------------------------------------
+
+test('a formula prints back to itself, brackets and all', () => {
+  // The printer exists for renaming, and a printer that drops a bracket changes the answer in a
+  // cell nobody edited. `(2+3)*4` is 20; `2+3*4` is 14.
+  for (const src of [
+    '=(2+3)*4', '=2+3*4', '=2^3^2', '=(2^3)^2', '=10-(4-1)', '=10-4-1',
+    '=SUM(A1:B3,C1)', '=IF(A1>0,"yes","no")', '=-A1', '=-(A1+B1)', '=A1&"x"',
+  ]) {
+    const printed = `=${printFormula(parseFormula(src))}`;
+    assert.equal(
+      evaluateSheet({ cells: { A1: '5', B1: '2', C1: '1', A2: '3', A3: '4', B2: '6', B3: '7', Z1: printed } })['Z1'],
+      evaluateSheet({ cells: { A1: '5', B1: '2', C1: '1', A2: '3', A3: '4', B2: '6', B3: '7', Z1: src } })['Z1'],
+      `${src} printed to ${printed} and changed its answer`,
+    );
+  }
+});
+
+test('renaming a tab moves every reference that named it, and nothing else', () => {
+  assert.equal(renameSheetIn('=Inputs!B2*(1+Inputs!B1)', 'Inputs', 'Assumptions'),
+    '=Assumptions!B2*(1+Assumptions!B1)');
+  assert.equal(renameSheetIn('=SUM(Inputs!B1:B2)', 'inputs', 'Assumptions'),
+    '=SUM(Assumptions!B1:B2)', 'matched however it was capitalised');
+  assert.equal(renameSheetIn('=A1+B1', 'Inputs', 'Assumptions'), null, 'untouched formulas stay as typed');
+  assert.equal(renameSheetIn('=Other!A1', 'Inputs', 'Assumptions'), null);
+});
+
+test('a new name that needs quoting gets them, and one that does not is left bare', () => {
+  assert.equal(renameSheetIn('=Inputs!B2', 'Inputs', 'Q1 FY26'), "='Q1 FY26'!B2");
+  assert.equal(renameSheetIn("='Q1 FY26'!A1", 'Q1 FY26', 'Q1'), '=Q1!A1');
+  assert.equal(renameSheetIn('=Inputs!B2', 'Inputs', "Don't"), "='Don''t'!B2", 'the apostrophe doubles');
+});
+
+test('a formula that will not parse is left exactly as the author typed it', () => {
+  // Rewriting is best-effort and must never damage a cell it does not understand.
+  assert.equal(renameSheetIn('=SUM(', 'Inputs', 'Assumptions'), null);
 });
