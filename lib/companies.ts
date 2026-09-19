@@ -9,6 +9,7 @@
 
 import { randomBytes } from 'node:crypto';
 import { readTxn, writeTxn, type Client } from './db.ts';
+import { announce } from './ingest/backfill.ts';
 import { linkFilingsIn } from './ingest/filings.ts';
 
 export const STATUSES = ['watching', 'working', 'holding', 'exited', 'passed'] as const;
@@ -138,6 +139,12 @@ export async function addCompany(symbol: string, actorId: string): Promise<Compa
     // is a company whose history is attached — attributed to the person who added it, because they
     // are what caused the write.
     await linkFilingsIn(c, id);
+
+    // The row is the queue entry; this is only the doorbell. `jobs/backfill-company.ts --watch`
+    // starts the fetch in under a second instead of at the next ten-minute tick, and if nothing is
+    // listening the notification is discarded and the timer picks the name up exactly as before —
+    // which is the whole reason the queue is a column and not a message.
+    await announce(c, s.symbol);
 
     const { rows } = await c.query<Row>(`${SELECT_COMPANY} WHERE c.id = $1`, [id]);
     return toCompany(rows[0]!);

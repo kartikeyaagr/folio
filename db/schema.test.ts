@@ -121,10 +121,12 @@ test('every audited table carries the trigger', async () => {
       -- 384 into after on every row;
       -- rule_observations is append-only evidence written by the distiller in the same transaction
       -- as the prompt_rules candidate it supports, and that candidate is audited — auditing the
-      -- evidence for an audited decision records the decision twice.
+      -- evidence for an audited decision records the decision twice;
+      -- index_levels is prices' argument exactly: unchanging exchange facts, written only by the
+      -- ingest jobs, provenance in ingestion_runs. Four closes a trading day, never corrected.
       AND c.relname NOT IN ('actors', 'audit_log', 'schema_migrations', 'prices', 'ingestion_runs',
                             'news_items', 'news_matched_items', 'chunks', 'chat_tool_calls',
-                            'exemplars', 'rule_observations')
+                            'exemplars', 'rule_observations', 'index_levels')
       AND NOT EXISTS (
         SELECT 1 FROM pg_trigger t WHERE t.tgrelid = c.oid AND t.tgname = 'audit'
       )`);

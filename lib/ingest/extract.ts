@@ -9,7 +9,7 @@
  */
 
 import { randomBytes } from 'node:crypto';
-import { readFile } from 'node:fs/promises';
+import { access, readFile } from 'node:fs/promises';
 
 import { extractText, getDocumentProxy } from 'unpdf';
 
@@ -58,6 +58,16 @@ export interface ExtractResult {
   extracted: number;
   documents: number;
   scanned: number;
+  /**
+   * Rows that claim bytes the store does not have.
+   *
+   * Counted apart from `failed` because re-running changes nothing: there is no text to extract
+   * from a file that is not there, and the repair lives in `clearMissingBytes`, which re-fetches
+   * whatever a filing still points at. What reaches here is what even that could not get back — an
+   * attachment whose archive URL has since died, or one that never had a filing behind it.
+   * Treating these as failures made PRAJIND's backfill unable to finish over six documents.
+   */
+  missing: number;
   failed: number;
 }
 
@@ -88,10 +98,15 @@ export interface Row {
  */
 export async function promoteTranscript(c: Client, row: Row, text: string): Promise<boolean> {
   const id = randomBytes(16).toString('hex');
+  // **The title is what it is, not what the file was called.**
+  // `TEGA_21022022190439_Earnings_call_transcript.pdf` is an exchange upload key: it repeats the
+  // symbol the page already shows, buries the date in fourteen undelimited digits, and differs
+  // between two filings of the same thing. Every screen that lists documents carries the company
+  // and the date in their own columns, so the name has one job left and one word does it.
   await c.query(
     `INSERT INTO documents (id, company_id, title, kind, created_by, from_attachment)
-     VALUES ($1, $2, $3, 'transcript', 'system:ingest', $4)`,
-    [id, row.company_id, row.filename, row.sha256],
+     VALUES ($1, $2, 'Transcript', 'transcript', 'system:ingest', $3)`,
+    [id, row.company_id, row.sha256],
   );
   await c.query(
     `INSERT INTO document_versions (document_id, body, written_by, written_at)
@@ -148,7 +163,11 @@ export async function writeExtracted(row: Row, text: string): Promise<boolean> {
  *
  * Exported so the date resolution can be tested without a real PDF on disk — see extract.test.ts.
  */
-export async function pendingAttachments(c: Client, limit: number): Promise<Row[]> {
+export async function pendingAttachments(
+  c: Client,
+  limit: number,
+  companyId?: string | null,
+): Promise<Row[]> {
   const { rows } = await c.query<Row>(
     `SELECT sha256, company_id, filename, kind, announced_at
        FROM (
@@ -158,11 +177,15 @@ export async function pendingAttachments(c: Client, limit: number): Promise<Row[
            LEFT JOIN filings f ON f.attachment_sha256 = a.sha256
           WHERE a.extracted_text IS NULL
             AND a.media_type LIKE '%pdf%'
+            -- Scoped when the caller is filling in one name. An unscoped pass orders by added_at
+            -- across the whole corpus and is capped, so the backfill of a name with hundreds of
+            -- documents cannot finish inside one call — and nothing runs this on a timer.
+            AND ($2::text IS NULL OR a.company_id = $2)
           ORDER BY a.sha256, f.announced_at DESC NULLS LAST
        ) x
       ORDER BY added_at DESC
       LIMIT $1`,
-    [limit],
+    [limit, companyId ?? null],
   );
   return rows;
 }
@@ -182,15 +205,32 @@ export async function pendingAttachments(c: Client, limit: number): Promise<Row[
  * extraction had stopped. `pdfText` now strips the NUL, which fixes that one instance; this fixes
  * the class, since a NUL byte is not the only write Postgres can reject.
  */
-export async function extractPending(limit = 100): Promise<ExtractResult> {
-  const pending = await serviceTxn('system:ingest', (c) => pendingAttachments(c, limit));
+export async function extractPending(
+  limit = 100,
+  companyId?: string | null,
+): Promise<ExtractResult> {
+  const pending = await serviceTxn('system:ingest', (c) =>
+    pendingAttachments(c, limit, companyId),
+  );
 
   let extracted = 0;
   let documents = 0;
   let scanned = 0;
+  let missing = 0;
   let failed = 0;
 
   for (const row of pending) {
+    // Asked of the disk before the parser. `pdfText` would raise ENOENT and be counted as a fault,
+    // which is what it looks like from inside — but a row with no file is a fact about the store,
+    // not about this run, and it is offered again on every pass because `extracted_text` stays
+    // null. Six of PRAJIND's did exactly that until this existed.
+    try {
+      await access(pathFor(row.sha256));
+    } catch {
+      missing++;
+      continue;
+    }
+
     let text: string;
     try {
       text = await pdfText(row.sha256);
@@ -218,5 +258,5 @@ export async function extractPending(limit = 100): Promise<ExtractResult> {
     if (made) documents++;
   }
 
-  return { pending: pending.length, extracted, documents, scanned, failed };
+  return { pending: pending.length, extracted, documents, scanned, missing, failed };
 }

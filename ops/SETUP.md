@@ -279,7 +279,14 @@ sudo systemctl enable --now \
   trisula-backup-verify.timer \
   trisula-heartbeat.timer
 
+# Not a timer: a long-running watcher. `addCompany` announces on `trisula_backfill` inside the
+# transaction that inserts the row, so a name followed at 10:02 starts fetching at 10:02 rather
+# than at 10:10. The timer above stays enabled and is still the guarantee — a NOTIFY with nobody
+# listening is discarded, and this unit being down is exactly when that happens.
+sudo systemctl enable --now trisula-backfill-watch.service
+
 systemctl list-timers 'trisula-*'
+systemctl status trisula-backfill-watch
 ```
 
 One unit is not a timer and is enabled separately, because it stays up:

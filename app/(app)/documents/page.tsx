@@ -1,6 +1,7 @@
 import Link from 'next/link';
 
 import { allDocuments, INGESTED, KIND_LABEL } from '@/lib/workspace.ts';
+import { periodName } from '@/lib/files.ts';
 import { AppHeader, Blank, Card, Chip, Empty, Seg } from '@/components/ui.tsx';
 
 import { requireUser } from '../../_lib/session.ts';
@@ -70,14 +71,19 @@ export default async function DocumentsPage({
                 <thead>
                   <tr>
                     <th>Title</th><th>Company</th><th>Kind</th>
-                    <th className="num">Versions</th><th>Last saved</th><th>By</th>
+                    <th className="num">Versions</th><th>Date</th><th>By</th>
                   </tr>
                 </thead>
                 <tbody>
                   {docs.map((d) => (
                     <tr key={d.id} className={d.archivedAt ? 'pf-void' : undefined}>
                       <td className="cell-wrap">
-                        <Link href={`/doc/${d.id}`}><b>{d.title}</b></Link>
+                        {/* A quarterly document is named for its quarter: "Sept 2026 Transcript",
+                            not seventeen rows reading "Transcript". Composed here rather than stored
+                            — see periodName. A document somebody wrote keeps the title they gave it. */}
+                        <Link href={`/doc/${d.id}`}>
+                          <b>{d.fromAttachment ? periodName(d.kind, d.documentDate) : d.title}</b>
+                        </Link>
                       </td>
                       <td>
                         {d.symbol ? (
@@ -96,8 +102,18 @@ export default async function DocumentsPage({
                         )}
                       </td>
                       <td className="num">{d.versions}</td>
-                      <td className="num">{when(d.updatedAt)}</td>
-                      <td>{d.updatedByName ?? <Blank why="Saved before authorship was recorded" />}</td>
+                      {/* One column, two facts, and the cell says which. A document the exchange published is
+                          dated when it was released — for a transcript, the date of the call (0042) —
+                          and one written here is dated when it was last saved. Never
+                          `documents.updated_at`, which moves when the row is touched rather than
+                          when somebody wrote in it. */}
+                      <td
+                        className="num"
+                        title={d.fromAttachment ? 'Released by the exchange' : 'Last saved here'}
+                      >
+                        {when(d.documentDate)}
+                      </td>
+                      <td>{d.updatedByName ?? <Blank why="Written before saves were attributed" />}</td>
                     </tr>
                   ))}
                 </tbody>

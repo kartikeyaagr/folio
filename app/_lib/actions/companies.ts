@@ -59,16 +59,19 @@ export async function followCompany(form: FormData): Promise<void> {
 
   try {
     const company = await addCompany(symbol, user.userId);
-    // Says what happened and as whom. `addCompany` attaches any filings already held for the name
-    // in the same transaction, so the count is a fact at the moment of writing rather than a
-    // promise about a later job.
-    // Says what actually happened rather than what a reader would assume. `addCompany` attaches
-    // the filings already stored for the symbol, which is whatever the 14-day announcement window
-    // happened to catch — not the company's history. Fetching that is one call to NSE, which does
-    // not belong inside a request, so the command is named rather than the gap left silent.
+    // Says what actually happened rather than what a reader would assume. `addCompany` attaches the
+    // filings already stored for the symbol, which is whatever the 14-day announcement window
+    // happened to catch — not the company's history.
+    //
+    // It used to name `backfill-filings.ts` for a person to type. `0035` built the queue precisely
+    // to remove that sentence, and `trisula-backfill-company.timer` drains it every ten minutes, so
+    // the instruction had been wrong since the unit shipped — and it named the narrower job, which
+    // fetches announcements and none of the results, documents, actions, shareholding or prices the
+    // name is also owed. The name is in the queue the moment this row exists; the table says where
+    // it has got to.
     await flash(
       `Now following ${company.symbol} — ${company.name}, added by ${user.email}. ` +
-        `For its filing history: pnpm exec tsx jobs/backfill-filings.ts --symbol ${company.symbol}`,
+        'Its history, results, documents and prices are queued and arrive within the hour.',
     );
   } catch (err) {
     // Both of these are things a person did, not faults: say so in place and leave the page

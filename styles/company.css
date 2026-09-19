@@ -1031,24 +1031,31 @@ details.chk-stage > .chk-stage-head:hover {
   border-radius: 999px;
   background: var(--surface-2);
 }
-.chart-ranges a {
+/* Buttons since 17-Sep-2026, when the range stopped being a navigation: nothing is fetched, the
+   whole history is already on the page and this only chooses how much of it to draw. The reset is
+   explicit because a <button> inherits none of an <a>'s typography and all of a form control's. */
+.chart-ranges button {
   padding: 3px 10px;
+  border: 0;
   border-radius: 999px;
+  background: none;
   color: var(--ink-2);
+  font: inherit;
   font-size: 11.5px;
   font-weight: 600;
-  text-decoration: none;
+  line-height: 1.4;
+  cursor: pointer;
   transition: background 0.15s var(--ease), color 0.15s var(--ease);
 }
-.chart-ranges a:hover {
+.chart-ranges button:hover {
   background: var(--surface);
   color: var(--ink);
 }
-.chart-ranges a:focus-visible {
+.chart-ranges button:focus-visible {
   outline: 2px solid var(--navy);
   outline-offset: 1px;
 }
-.chart-ranges a[aria-current='true'] {
+.chart-ranges button[aria-pressed='true'] {
   background: var(--navy);
   color: var(--on-navy);
 }
@@ -1072,6 +1079,69 @@ details.chk-stage > .chk-stage-head:hover {
 }
 .chart-svg .line.is-down {
   stroke: var(--red);
+}
+/* The market, behind the company. Grey and thinner on purpose: it is the thing being compared
+   against, never the subject, and a second saturated line makes a reader work out which is which
+   every time they look. Dashed so it stays legible where the two overlap. */
+.chart-svg .line.is-bench {
+  stroke: var(--ghost);
+  stroke-width: 1.25;
+  stroke-dasharray: 4 3;
+}
+
+/* The crosshair. `pointer-events: none` on the group, because the dots sit under the pointer and a
+   circle that swallowed the move event would make the readout stick as you crossed it. */
+.chart-cross {
+  pointer-events: none;
+}
+.chart-cross line {
+  stroke: var(--ghost);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+  stroke-dasharray: 2 2;
+}
+.chart-cross circle {
+  stroke: var(--surface);
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
+}
+.chart-cross circle.is-up {
+  fill: var(--teal);
+}
+.chart-cross circle.is-down {
+  fill: var(--red);
+}
+.chart-cross circle.is-bench {
+  fill: var(--ghost);
+}
+.chart-svg {
+  cursor: crosshair;
+}
+
+/* The benchmark's own move, beside the company's. Muted, because it is context for the number to
+   its left rather than a number in its own right. */
+.chart-bench-read {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.chart-bench-note {
+  color: var(--muted);
+}
+.chart-bench select {
+  padding: 3px 6px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--ink-2);
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.chart-bench select:focus-visible {
+  outline: 2px solid var(--navy);
+  outline-offset: 1px;
 }
 .chart-foot {
   display: flex;

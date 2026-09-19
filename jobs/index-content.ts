@@ -146,13 +146,11 @@ async function watch(): Promise<void> {
     timer = setTimeout(() => void pass(why), SETTLE_MS);
   };
 
-  const stop = await listen(
-    CHANNEL,
-    () => bump('saved'),
+  const stop = await listen(CHANNEL, () => bump('saved'), {
     // Anything committed while the socket was down was never announced. Sweep on reconnect rather
     // than waiting up to ten minutes to discover it.
-    () => bump('reconnected'),
-  );
+    onReconnect: () => bump('reconnected'),
+  });
   const sweep = setInterval(() => void pass('sweep'), SWEEP_MS);
 
   for (const sig of ['SIGINT', 'SIGTERM']) {

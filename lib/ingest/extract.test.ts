@@ -216,3 +216,34 @@ test('pendingAttachments leaves announced_at null for an attachment with no fili
     assert.equal(orphan!.announced_at, null);
   });
 });
+
+/**
+ * The on-add backfill's half of `pendingAttachments`.
+ *
+ * Unscoped, the queue is ordered `added_at DESC` across the whole corpus and capped by the caller's
+ * limit, so a newly followed name — whose history has just been attached and is therefore the
+ * *oldest* material in it — sorts below everybody else's backlog and its documents are never read.
+ * Measured 17-Sep-2026: adding TEGA put 480 unfetched attachments behind an existing 268, against
+ * one capped pass of 500. Nothing collects the remainder; `jobs/ingest-attachments.ts` has no timer.
+ */
+test('pendingAttachments narrows to one company when the backfill asks it to', async () => {
+  await serviceTxn('system:ingest', async (c) => {
+    await c.query("INSERT INTO companies (id, symbol, name) VALUES ('c2','TEGA','Tega Industries Limited')");
+    // Older than everything already queued, which is exactly the shape that loses an unscoped race.
+    await c.query(
+      `INSERT INTO attachments (sha256, company_id, filename, media_type, bytes, kind, added_by, added_at)
+       VALUES ('sha_tega','c2','TEGA_Transcript_Q1.pdf','application/pdf',100,'transcript',
+               'system:ingest', now() - interval '16 years')`,
+    );
+
+    const mine = await pendingAttachments(c, 1, 'c2');
+    assert.deepEqual(mine.map((r) => r.sha256), ['sha_tega']);
+
+    // The same limit unscoped reaches something else entirely — the point of the narrowing.
+    const everyone = await pendingAttachments(c, 1);
+    assert.notEqual(everyone[0]?.sha256, 'sha_tega');
+
+    // An imported PDF belongs to no company and must not be dragged into one name's backfill.
+    assert.equal((await pendingAttachments(c, 100, 'c2')).length, 1);
+  });
+});

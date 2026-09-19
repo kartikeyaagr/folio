@@ -1,9 +1,9 @@
 # Architecture
 
 How Trisula is put together, and why it is put together that way. Accurate against the tree at the
-time of writing: **57 migrations, 48 tables, 6 agents, 24 job entry points, 19 systemd timers, 18
-routes, 642 tests.** Every number here was counted, not remembered; if you change the shape, count
-again rather than editing around it.
+time of writing: **RECOUNT migrations, RECOUNT tables, 6 agents, RECOUNT job entry points, RECOUNT systemd
+timers, RECOUNT long-running watchers, RECOUNT routes, RECOUNT tests.** Every number here was counted, not
+remembered; if you change the shape, count again rather than editing around it.
 
 For the product argument — what was built, what was deliberately cut, and on whose authority — see
 the private `docs/specs/`. This file describes the machine.
@@ -94,8 +94,16 @@ saying who did it, which is why `audit_log` can be trusted rather than hoped at.
 Fourteen sources behind nine ingest jobs, all writing through `lib/ingest/*`:
 
 securities master · exchange filings and announcements · attachments and their extracted PDF text ·
-bhavcopy EOD prices · XBRL fundamentals · shareholding patterns and holders · insider transactions ·
-corporate actions · the calendar · annual reports.
+bhavcopy EOD prices · **index closes** · XBRL fundamentals · shareholding patterns and holders ·
+insider transactions · corporate actions · the calendar · annual reports.
+
+**Index closes ride with the bhavcopy**, in the same loop of the same job from the same archive
+host. NSE's per-index history endpoint answers 503 — measured 17-Sep-2026, the same answer every
+per-symbol historical endpoint gives — but `ind_close_all_DDMMYYYY.csv` carries all 166 indices for
+one trading day, so the walk that fetches a day's prices fetches its index levels in one more
+request. Four are kept (`lib/ingest/indices.ts`): Smallcap 250, Midcap 150, Nifty 500, Nifty 50.
+`index_levels` is its own table because an index is not a security — no ISIN, no symbol, and not
+filtered against `companies` — and carries no audit trigger for the reason `prices` carries none.
 
 Two rules govern all of them.
 
@@ -112,7 +120,46 @@ cost this system two real alerts.
 
 `companies` is the universe. Nearly every ingest job filters to followed names, so adding a company
 is what makes the machine fetch its history — `companies.backfilled_at` is a queue drained by
-`jobs/backfill-company.ts` on a timer.
+`jobs/backfill-company.ts`. **Eight steps, all per-symbol**: the announcement history, the annual
+reports, the documents those filings point at and the text inside them, the results (both the old
+feed and Integrated Filing), the corporate actions, the shareholding pattern, the insider and pledge
+disclosures back to 2015, and the price series.
+
+`addCompany` announces on `trisula_backfill` inside the transaction that inserts the row, so
+`trisula-backfill-watch.service` starts the fetch in about a second. The ten-minute timer stays
+enabled and remains the guarantee: a `NOTIFY` with nobody listening is discarded, and the watcher
+being down is exactly when that matters. The watcher drains the whole queue on every wake and never
+trusts the symbol in the payload.
+
+**A step ends three ways, not two** (`lib/ingest/backfill.ts`). `gap` is the exchange having nothing
+for this name — a company listed in 2021 has no sixteen years of annual reports — and does not hold
+the queue. `error` is the box or the feed, and the name stays queued: it is the same line
+`lib/agents/queue.ts` draws between a model refusing a subject and a machine with no credential. An
+exception is always `error`, because a step that threw does not know what the exchange holds. Only
+when nothing broke is `backfilled_at` written, which is what the column says it means. Three
+attempts, then the name leaves the queue by that bound rather than by being called finished, and
+`/companies` shows where every name has got to. `backfill_started_at` is the lease, so two passes
+never run over one name.
+
+**The offer document is the one thing no feed serves.** NSE has no endpoint for an RHP or DRHP and
+SEBI's draft index holds 2.3% of NSE Emerge names; both were probed live, in Sep 2026, twice. They
+arrive through the import dialog, which takes 32MB PDFs and keeps the bytes.
+
+**A filed document is read as the PDF it is.** `lib/files.ts` lists what the company published —
+one row per document, named for its period and its type (`Sept 2026 Transcript`, `Aug 2026 PPT`),
+with the exchange's own date beside it — and the link opens the original through
+`app/api/attachment/[sha]`. The name is composed at render, not stored: `to_char(…, 'Mon')` gives
+`Sep` where `Intl` under `en-IN` gives `Sept`, so a title written by SQL and one written by
+TypeScript would disagree for one month a year. The extracted text is not a second document: it is what the
+agents read and what retrieval searches, and nothing else. Until 17-Sep-2026 a transcript existed
+twice, as the PDF and as a `documents` row holding its text, and the page showed the second while
+the first was unreachable from any screen.
+
+Three layers of deduplication, because bytes, text and rows fail differently. The store is
+content-addressed, so identical bytes are one file. `register.ts` collapses the filing fan-out by
+sha and then again by the hash of the text, so a corrected re-filing — new signature, same words —
+is indexed once, keeping the earliest. And a document promoted from an attachment is not indexed at
+all, because the attachment already carries those words: 35 transcripts, 2,063 duplicate chunks.
 
 ### News
 
@@ -334,6 +381,16 @@ Three standing rules, all of which have cost something to learn:
 
 - **State lives in the URL.** `?tab=`, `?filter=`, `?scope=`, plain links. Pages stay server
   components and a refresh lands where you were.
+
+  **One exception, argued in `components/PriceChart.tsx`:** the price chart's range is component
+  state. It was `?range=` until 17-Sep-2026, so looking at five years and then at one month
+  re-rendered the whole company page twice — the documents panel, the shareholding, the coverage
+  form, none of which change — to redraw a line over closes the browser could already have had. The
+  page now loads the whole history once (`priceHistory`, ~270 closes a name today) and `windowOf`
+  slices it in the browser. What the rule protects is a deliberately-chosen filter surviving a
+  refresh; a chart zoom is a lens on data already on the page, costs one click to restore, and falls
+  back to the whole history rather than an arbitrary slice. `?archived=` on the same page still
+  lives in the URL and still should.
 - **Where the system declines to answer, render `<Blank why="…" />`.** Never a zero: an empty cell
   reads as broken, a dash reads as not-applicable, and a zero reads as a measured fact — the most
   dangerous of the three.

@@ -8,6 +8,8 @@
 
 import { readTxn } from './db.ts';
 import type { Company } from './companies.ts';
+import { INDICES } from './ingest/indices.ts';
+import type { History } from './prices.ts';
 
 export interface CompanyListRow extends Company {
   sector: string | null;
@@ -16,6 +18,19 @@ export interface CompanyListRow extends Company {
   lastClose: string | null;
   filings30: number;
   news30: number;
+  /**
+   * Where the name is in the backfill queue — `filling in`, `waiting`, `not filled in`, or null
+   * once its history has arrived.
+   *
+   * Rendered because without it the two states are indistinguishable on this screen. A name added
+   * an hour ago whose history has not been fetched yet shows an empty last close, no filings and no
+   * news; so does a name whose backfill gave up three attempts ago. TEGA sat in exactly the first
+   * state from 16-Sep-2026 and the table said nothing about it. `<Blank why="No price row joins
+   * this name yet" />` is true and answers the wrong question.
+   */
+  backfill: string | null;
+  /** What the last attempt could not do. The `why` behind the word above. */
+  backfillNote: string | null;
 }
 
 /**
@@ -37,7 +52,19 @@ export async function companyList(): Promise<CompanyListRow[]> {
                 WHERE f.company_id = co.id AND f.announced_at > now() - interval '30 days') AS "filings30",
               (SELECT count(*)::int FROM news_matches m
                 WHERE m.company_id = co.id AND m.state = 'confirmed'
-                  AND m.created_at > now() - interval '30 days') AS "news30"
+                  AND m.created_at > now() - interval '30 days') AS "news30",
+              -- The lease and the bound are lib/ingest/backfill.ts's, repeated here rather than
+              -- imported because a read model must not import a job's module to render a word.
+              -- They are asserted equal in lib/ingest/backfill.test.ts, so a change to one fails.
+              CASE
+                WHEN co.backfilled_at IS NOT NULL AND co.backfill_error IS NOT NULL
+                  THEN 'filled in, with gaps'
+                WHEN co.backfilled_at IS NOT NULL THEN NULL
+                WHEN co.backfill_attempts >= 3 THEN 'not filled in'
+                WHEN co.backfill_started_at > now() - interval '90 minutes' THEN 'filling in'
+                ELSE 'waiting'
+              END AS backfill,
+              co.backfill_error AS "backfillNote"
          FROM companies co
          LEFT JOIN users u ON u.id = co.covered_by
          LEFT JOIN holdings h ON h.company_id = co.id
@@ -120,6 +147,67 @@ export async function companyPage(symbol: string): Promise<CompanyPage | null> {
           WHERE company_id = $1 AND on_date >= current_date - 30 ORDER BY on_date DESC LIMIT 10`,
       ),
       aliases: await rows('SELECT alias, kind FROM company_aliases WHERE company_id = $1 ORDER BY kind, alias'),
+    };
+  });
+}
+
+/**
+ * The whole price history for one name, in one read.
+ *
+ * **All of it, not a window of it.** Changing the chart's range used to be a navigation: the range
+ * was a query parameter, the page re-rendered on the server, and looking at five years and then at
+ * one month cost two round trips to redraw a line over data the browser could already have had.
+ * A five-year history for one name is about 1,250 closes — roughly 30KB of JSON, once — and
+ * `windowOf` slices it in the browser from there.
+ *
+ * That is a deliberate exception to `CLAUDE.md`'s "state lives in the URL", argued in `windowOf`.
+ */
+export async function priceHistory(companyId: string): Promise<History> {
+  return readTxn(async (c) => {
+    const { rows: span } = await c.query<{ from: string | null; to: string | null; n: string }>(
+      `SELECT min(p.on_date)::text AS from, max(p.on_date)::text AS to, count(*)::text AS n
+         FROM prices p
+         JOIN companies co ON (p.isin IS NOT NULL AND p.isin = co.isin) OR p.symbol = co.symbol
+        WHERE co.id = $1`,
+      [companyId],
+    );
+
+    const { rows } = await c.query<{ on: string; close: string }>(
+      `SELECT p.on_date::text AS on, p.close::text AS close
+         FROM prices p
+         JOIN companies co ON (p.isin IS NOT NULL AND p.isin = co.isin) OR p.symbol = co.symbol
+        WHERE co.id = $1
+        ORDER BY p.on_date`,
+      [companyId],
+    );
+
+    const { rows: today } = await c.query<{ d: string }>(
+      "SELECT (current_date AT TIME ZONE 'Asia/Kolkata')::date::text AS d",
+    );
+
+    // Every benchmark, whole, in one read — for the same reason the prices are: the chart switches
+    // between them, and a round trip per switch is what this page just stopped doing. Four indices
+    // over a five-year walk is ~5,000 rows, which is the same order as the prices beside them.
+    const { rows: levels } = await c.query<{ name: string; on: string; close: string }>(
+      `SELECT name, on_date::text AS on, close::text AS close
+         FROM index_levels WHERE name = ANY($1::text[]) ORDER BY name, on_date`,
+      [INDICES.map((i) => i.name)],
+    );
+
+    return {
+      points: rows.map((r) => ({ on: r.on, close: Number(r.close) })),
+      heldFrom: span[0]?.from ?? null,
+      heldTo: span[0]?.to ?? null,
+      heldCount: Number(span[0]?.n ?? 0),
+      asOf: today[0]!.d,
+      // INDICES' order is the order the picker offers, benchmark first.
+      indices: INDICES.map((i) => ({
+        name: i.name,
+        label: i.label,
+        points: levels
+          .filter((l) => l.name === i.name)
+          .map((l) => ({ on: l.on, close: Number(l.close) })),
+      })).filter((i) => i.points.length > 0),
     };
   });
 }
