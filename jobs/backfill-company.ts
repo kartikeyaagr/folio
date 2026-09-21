@@ -436,12 +436,18 @@ async function watch(priceDays: number): Promise<void> {
 }
 
 async function main(): Promise<void> {
-  const flags = readFlags(['symbol', 'price-days']);
+  // `watch` is declared here, not read off `process.argv` below it. `readFlags` parses with
+  // `strict: true`, so an undeclared `--watch` threw BadUsage — "Unknown option '--watch'" —
+  // before the dispatch that reads it could run. `trisula-backfill-watch.service` has invoked
+  // exactly that command since it was written, so the watcher never started: every name added
+  // waited for the ten-minute timer instead of being filled in on the NOTIFY. Nothing was lost,
+  // because the timer is what guarantees the work, but the second half of the design was dead.
+  const flags = readFlags(['symbol', 'price-days'], ['watch']);
   const only = flags.str('symbol')?.trim().toUpperCase();
   const priceDays = Number(flags.str('price-days') ?? 400);
   if (!Number.isFinite(priceDays) || priceDays < 1) throw new Error('--price-days must be positive');
 
-  if (process.argv.includes('--watch')) {
+  if (flags.bool('watch')) {
     if (only) throw new Error('--watch drains the whole queue; --symbol is for a single run');
     return watch(priceDays);
   }
