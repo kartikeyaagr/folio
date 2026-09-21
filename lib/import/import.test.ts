@@ -194,3 +194,42 @@ test('plain text comes in as a note', async () => {
   assert.equal(r.kind, 'note');
   assert.match(r.kind === 'note' ? r.text : '', /Something I thought/);
 });
+
+test('a file with a NUL in it is binary, whatever it decodes to', async () => {
+  // The only check was the ratio of U+FFFD replacement characters, and a run of NUL bytes
+  // produces none of those — `Buffer.alloc(64).toString('utf8')` is 64 valid characters. So a
+  // binary file imported as a note: measured before the fix, 64 NULs straight into a document
+  // body.
+  //
+  // That body is what `/api/export/[id]` renders into a `.docx`, and XML 1.0 cannot carry a NUL
+  // at all, so the export came back as a file Word refuses to open with "unreadable content".
+  // The writer now strips them; this stops them arriving. A NUL is the same signal `grep` uses
+  // to call a file binary, and for the same reason: text does not contain one.
+  const NUL = String.fromCharCode(0);
+  await assert.rejects(
+    () => readUpload('x.bin', Buffer.alloc(64)),
+    UnsupportedFile,
+    'a file of NUL bytes is not a document',
+  );
+  await assert.rejects(
+    () => readUpload('notes.txt', Buffer.concat([Buffer.from('Report '), Buffer.alloc(40)])),
+    UnsupportedFile,
+    'nor is one that starts out looking like text',
+  );
+
+  // Text still imports, including the three control characters that legitimately appear in it.
+  const ok = await readUpload('notes.txt', Buffer.from('Line one\tcolumn\r\nLine two\n'));
+  assert.equal(ok.kind, 'note');
+  assert.ok(ok.kind === 'note' && ok.text.includes('Line two'));
+  assert.ok(!(ok.kind === 'note' && ok.text.includes(NUL)));
+});
+
+test('a workbook named .docx is read as a workbook, which is what the comment promises', async () => {
+  // "Both Office formats are zips; which one is decided by what is inside, not by the extension."
+  // It was decided by the extension: `ext === 'docx'` went straight to `readDocx`, and only an
+  // unrecognised extension got the try-the-other-one fallback that was sitting right below it.
+  // A renamed file should not lie — the same rule `lib/workspace.ts` states when it sniffs an
+  // upload's magic number rather than trusting its name.
+  const out = await readUpload('model.docx', fixture('model.xlsx'));
+  assert.equal(out.kind, 'sheet', 'read as what it is, not as what it is called');
+});
