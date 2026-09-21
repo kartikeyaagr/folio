@@ -172,3 +172,19 @@ test('each typeface names a font Word has', () => {
   // it was meant to be anything else.
   for (const f of FACES) assert.match(f.word, /^[A-Za-z ]+$/);
 });
+
+test('a date-formatted cell holding an impossible number renders instead of throwing', () => {
+  // `Number.isFinite` is not the same question as "a Date can hold this". Past ±8.64e15 ms the
+  // Date is Invalid and `toISOString()` throws RangeError — and `display` is called straight from
+  // the render in `SheetEditor.tsx`, so one such cell took the whole sheet down rather than
+  // showing one bad value. A formula can reach that magnitude without anybody typing it.
+  const fmt = { style: 'date' } as const;
+  assert.doesNotThrow(() => display(1e20, fmt));
+  assert.equal(display(1e20, fmt), String(1e20), 'falls back to the number itself');
+  assert.doesNotThrow(() => display(-1e20, fmt));
+
+  // A real date still renders as one, so the guard is not refusing everything. The string
+  // branch and the number branch must agree, which is the property worth pinning.
+  assert.equal(display(Date.parse('2026-03-31'), fmt), display('2026-03-31', fmt));
+  assert.notEqual(display(Date.parse('2026-03-31'), fmt), String(Date.parse('2026-03-31')));
+});
