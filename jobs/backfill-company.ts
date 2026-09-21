@@ -355,6 +355,8 @@ async function drain(only: string | undefined, priceDays: number): Promise<void>
   });
 
   const done: string[] = [];
+  /** Set in the `finally`, thrown after it — see the note there on why it cannot be thrown inside. */
+  let terminal: string | null = null;
   try {
     for (const t of targets) {
       console.log(`\n${t.symbol} — ${t.name} (attempt ${t.attempts})`);
@@ -382,10 +384,19 @@ async function drain(only: string | undefined, priceDays: number): Promise<void>
     // reason: `queued again` is NSE having a bad ten minutes and the ninety-minute retry is the
     // answer to it, while `out of attempts` is the terminal state nothing will ever revisit. Waking
     // somebody over the first would train them to ignore the alert that matters.
-    if (stuck.length > 0) {
-      throw new Error(`${stuck.join('; ')} — nothing will retry these without a person`);
-    }
+    //
+    // **Recorded here and thrown after the block, never inside it.** A `throw` in a `finally`
+    // replaces whatever the `try` was already throwing, so a run that died on a refused
+    // connection reported "out of attempts" instead — the operator is shown the symptom and the
+    // cause is gone. That is L6 exactly: error-handling code must not run in the state the error
+    // created. The `ingestion_runs` update above still happens either way, which is the only
+    // reason this block is a `finally` at all.
+    if (stuck.length > 0) terminal = `${stuck.join('; ')} — nothing will retry these without a person`;
   }
+
+  // Reached only when the loop completed. If it threw, that exception is already on its way out
+  // and is the one worth seeing.
+  if (terminal) throw new Error(terminal);
 }
 
 /**
