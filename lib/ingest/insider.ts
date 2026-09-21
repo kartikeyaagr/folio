@@ -65,12 +65,28 @@ export function pitDate(value: unknown): string | null {
   return nseDate(value);
 }
 
-/** The same, keeping the time when there is one, because two disclosures can share a day. */
+/**
+ * The same, keeping the time when there is one, because two disclosures can share a day.
+ *
+ * **The offset is not decoration.** `insider_transactions.disclosed_at` is `timestamptz`, so a
+ * string with no zone is resolved against the session's TimeZone — which L19 measured as
+ * `Etc/UTC` on the VM. NSE publishes IST, so a disclosure filed at 15:23 was stored as 15:23 UTC
+ * and read back as 20:53 IST: every timed disclosure 5h30m late, and anything after 18:30 IST on
+ * the following day. It passed unnoticed because a developer's laptop runs in IST, where the
+ * session zone happens to be the right one and the round trip looks clean.
+ *
+ * `dates.ts`'s `nseTimestamp` has appended `+05:30` for this reason since it was written; this
+ * was a second, private copy of the same job that did not. Kept separate rather than folded into
+ * `nseTimestamp` because that one returns a `Date` and this one hands Postgres a string.
+ *
+ * The date-only form is anchored too. Midnight UTC is 05:30 IST, so the day survived either way,
+ * but a value that names its zone cannot be re-interpreted by whatever box reads it next.
+ */
 function pitTimestamp(value: unknown): string | null {
   const day = pitDate(value);
   if (!day) return null;
   const t = /(\d{2}:\d{2})(?::(\d{2}))?\s*$/.exec(String(value));
-  return t ? `${day}T${t[1]}:${t[2] ?? '00'}` : day;
+  return t ? `${day}T${t[1]}:${t[2] ?? '00'}+05:30` : `${day}T00:00:00+05:30`;
 }
 
 export function parseInsider(rows: Record<string, unknown>[]): InsiderRow[] {

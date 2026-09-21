@@ -129,11 +129,30 @@ test('re-fetching stores nothing new', async () => {
   assert.equal(await count(), 2, 'the disclosure id is the identity');
 });
 
+test('a disclosed time names its zone, because the column resolves one either way', () => {
+  // This is the guard, and it is a string assertion rather than a database one on purpose.
+  //
+  // `disclosed_at` is `timestamptz`, so Postgres resolves a zone-less string using the session's
+  // TimeZone. NSE publishes IST; L19 measured the VM's session as `Etc/UTC`. So the old
+  // zone-less `2025-12-10T15:23` was stored 5h30m late on the server, and anything after 18:30
+  // IST landed on the following day — while the round-trip test below passed on a laptop in IST,
+  // because there the session zone happened to be the right one. An assertion that depends on
+  // where it runs is not a guard.
+  //
+  // `dates.ts`'s `nseTimestamp` appends the offset for exactly this reason and says so;
+  // `pitTimestamp` was a second, private copy that did not.
+  const rows = parseInsider(TRANSFER);
+  assert.equal(rows[0]!.disclosedAt, '2025-12-10T15:23:00+05:30');
+  assert.equal(rows[1]!.disclosedAt, '2025-12-10T15:20:00+05:30');
+});
+
 test('the disclosed time survives, because two filings can share a day', async () => {
   await storeInsider(CO, parseInsider(TRANSFER));
   const times = await readTxn(async (c) => {
+    // Read back in IST explicitly. Rendering in the session zone asks the box what it thinks the
+    // time was, which is the question that went wrong in the first place.
     const { rows } = await c.query<{ t: string }>(
-      `SELECT to_char(disclosed_at, 'YYYY-MM-DD HH24:MI') AS t
+      `SELECT to_char(disclosed_at AT TIME ZONE 'Asia/Kolkata', 'YYYY-MM-DD HH24:MI') AS t
          FROM insider_transactions ORDER BY disclosed_at`,
     );
     return rows.map((r) => r.t);
