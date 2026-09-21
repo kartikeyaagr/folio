@@ -105,3 +105,51 @@ test('every flag a systemd unit passes is one the job it runs will accept', asyn
   // A test that silently checks nothing is the failure mode this whole file is about.
   assert.ok(checked >= 2, `expected to check at least the two watchers, checked ${checked}`);
 });
+
+test('a timer that names a wall-clock time names the zone it means', async () => {
+  // `trisula-distil-rules.timer` said `OnCalendar=*-*-* 19:30` and was the only one of fifteen
+  // without `Asia/Kolkata`. systemd reads a bare time in the *manager's* zone, which on this VM
+  // is UTC, so "once a day, after the desk has closed" fired at 01:00 IST the next morning.
+  //
+  // Same family as the insider-disclosure bug fixed on this branch: a time with no zone is read
+  // in whatever zone the box happens to have, and this box is not in the one the fund works in.
+  // A periodic interval — `*:0/10`, every ten minutes — is zone-independent and is skipped.
+  const { readdir, readFile } = await import('node:fs/promises');
+  const units = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'ops', 'systemd');
+
+  let checked = 0;
+  for (const file of (await readdir(units)).filter((f) => f.endsWith('.timer'))) {
+    for (const line of (await readFile(path.join(units, file), 'utf8')).split('\n')) {
+      const m = /^OnCalendar=(.+)$/.exec(line.trim());
+      if (!m) continue;
+      const spec = m[1]!;
+      if (!/\d{4}|\*-\*-\*|Mon|Tue|Wed|Thu|Fri|Sat|Sun/.test(spec)) continue; // a bare interval
+      checked++;
+      assert.match(spec, /\s[A-Za-z]+\/[A-Za-z_]+$/, `${file} schedules a wall-clock time without a timezone: ${spec}`);
+    }
+  }
+  assert.ok(checked >= 10, `expected to check most of the timers, checked ${checked}`);
+});
+
+test('StartLimit lives in [Unit], where systemd still reads it', async () => {
+  // Moved out of [Service] in systemd v229, and silently ignored if left there. Both watchers had
+  // it in [Service] until 21-Sep-2026, each under a comment explaining that without it a crash
+  // loop never reaches `failed` — so neither property held, and `trisula-backfill-watch`'s
+  // `OnFailure=trisula-alert@%n.service` could never fire. Exactly §2.6's "a crash-looping
+  // service reaches nobody", with the fix written into the wrong section.
+  const { readdir, readFile } = await import('node:fs/promises');
+  const units = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'ops', 'systemd');
+
+  let checked = 0;
+  for (const file of (await readdir(units)).filter((f) => f.endsWith('.service'))) {
+    let section = '';
+    for (const line of (await readFile(path.join(units, file), 'utf8')).split('\n')) {
+      const trimmed = line.trim();
+      if (trimmed.startsWith('[')) section = trimmed;
+      if (!/^StartLimit(IntervalSec|Burst)=/.test(trimmed)) continue;
+      checked++;
+      assert.equal(section, '[Unit]', `${file} sets ${trimmed.split('=')[0]} in ${section}, where systemd ignores it`);
+    }
+  }
+  assert.ok(checked >= 2, `expected both watchers to set it, found ${checked}`);
+});

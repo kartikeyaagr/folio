@@ -14,6 +14,14 @@ After=postgresql.service
 # misses, so a transient database blip here is not something to wake anybody for. A watcher that is
 # genuinely dead shows up as indexing lag on /admin, which is the figure that already means this.
 
+# In [Unit], not [Service]: systemd moved these in v229 and ignores them in the old place without
+# complaining. They sat in [Service] until 21-Sep-2026, so the property their comment below claims
+# — that a crash loop eventually reaches `failed` rather than restarting every ten seconds forever
+# — has never actually held here. This unit raises no alert by choice, but `failed` is still what
+# `systemctl status` shows and what tells a dying watcher from a working one.
+StartLimitIntervalSec=300
+StartLimitBurst=10
+
 [Service]
 Type=simple
 User=trisula
@@ -23,10 +31,9 @@ ExecStart=/usr/bin/pnpm exec tsx jobs/index-content.ts --watch
 
 Restart=always
 RestartSec=10
-# Without these a crash loop restarts every 10s forever and the unit never reaches `failed`, so
-# nothing downstream can tell a working watcher from one that has been dying all night.
-StartLimitIntervalSec=300
-StartLimitBurst=10
+# The rate limit that makes a crash loop end in `failed` rather than restarting every 10s forever
+# is StartLimitIntervalSec/StartLimitBurst, in [Unit] at the top of this file. Without it nothing
+# downstream can tell a working watcher from one that has been dying all night.
 
 # It loads the 130MB ONNX embedder and holds it for the life of the process — that is the point of
 # staying up, and the same argument jobs/index-content.ts makes for doing both queues in one run.

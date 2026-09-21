@@ -10,7 +10,10 @@ Description=Distil recurring corrections into candidate rules
 # queue, a correct drainer and no timer at all, so "the toast still says a thing a human must do,
 # which is exactly what the migration set out to remove". A learning loop with no schedule is that
 # failure with a longer fuse.
-OnCalendar=*-*-* 19:30
+# Asia/Kolkata, explicitly. This was the only one of the fifteen OnCalendar lines in ops/systemd
+# without a timezone, and systemd reads a bare time in the manager's — which on this VM is UTC, so
+# "after the desk has closed" fired at 01:00 IST the following morning.
+OnCalendar=*-*-* 19:30:00 Asia/Kolkata
 Persistent=true
 Unit=trisula-job@distil-rules.service
 

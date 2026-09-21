@@ -2,7 +2,11 @@
 Description=Financial results XBRL
 
 [Timer]
-OnCalendar=*-*-* 08:15,20:15 Asia/Kolkata
+# Twice a day, morning and evening. Written `08:15,20:15` until 21-Sep-2026, which is not two
+# times — systemd splits the clock on colons into hour:minute:second, so that reads as hour 08,
+# minutes 15 and 20, second 15: two runs five minutes apart each morning and nothing in the
+# evening at all. The list belongs in the hour field.
+OnCalendar=*-*-* 08,20:15:00 Asia/Kolkata
 Persistent=true
 Unit=trisula-job@ingest-fundamentals.service
 
