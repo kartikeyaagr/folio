@@ -6,9 +6,16 @@
 #   ./ops/provision.sh [profile]        # profile defaults to "trisula"
 #
 # Safe to re-run. Every step checks for what it would create and reuses it, so a half-finished run
-# is resumed rather than duplicated. The one thing it will not do is change something that already
-# exists with different settings — it reports the difference and stops, because silently reshaping
-# a security group is how a box ends up reachable from somewhere nobody chose.
+# is resumed rather than duplicated. It will not reshape something that already exists into what
+# the constants below describe — a key pair under this name that is not this laptop's key, or an
+# instance launched with a different type, disk or role, is reported and the run stops, because
+# quietly adopting a box somebody else built is how a file ends up describing a machine that does
+# not exist.
+#
+# One deliberate exception, and it goes the safe way: ingress to port 22 is narrowed to the
+# address this script is running from, and anything else that could reach 22 is revoked and
+# named. The group's own description is "SSH from one operator address only", and leaving last
+# month's address in place beside this month's was how that stopped being true.
 set -euo pipefail
 
 PROFILE="${1:-trisula}"
@@ -73,12 +80,50 @@ echo "$AMI"
 # Imported, never created. `create-key-pair` has AWS generate the private half and hand it back
 # over the wire; importing means the private key never leaves the laptop it was made on.
 say "key pair"
-if aws ec2 describe-key-pairs --region "$REGION" --key-names "$KEY_NAME" >/dev/null 2>&1; then
-  echo "$KEY_NAME already imported"
-else
+# Compared by fingerprint, because a name is not an identity. `describe-key-pairs` succeeding says
+# only that something called "trisula" exists in this region — not that it is the key on this
+# laptop. Launching against somebody else's key pair produces an instance that boots, passes every
+# status check, and cannot be logged into, and the error you get at that point is "Permission
+# denied (publickey)", which reads as a problem with the local key rather than with the remote one.
+#
+# Every spelling, accepted on any, because AWS records the fingerprint differently per key type
+# and its own two documents disagree for RSA: `aws ec2 describe-key-pairs help` says an imported
+# RSA key is "the MD5 public key fingerprint as specified in section 4 of RFC4716" — the MD5 of
+# the SSH wire blob, which `ssh-keygen -E md5` prints — while the console's verify-a-fingerprint
+# page gives the MD5 of the DER public key. For ed25519, the key the die above tells you to make,
+# both say the base64 SHA-256 that `ssh-keygen -l` prints. Matching on any of the three is a match
+# on the same key material; picking one and being wrong is a false alarm on the right key.
+fingerprints() {
+  ssh-keygen -l -f "$1"        | awk '{print $2}' | sed 's/^SHA256://'
+  ssh-keygen -l -E md5 -f "$1" | awk '{print $2}' | sed 's/^MD5://'
+  # Converted to a file first, and hashed only if the conversion produced anything. ssh-keygen
+  # cannot convert ed25519 to PKCS8 at all — "unsupported key type ED25519" — and piping that
+  # failure straight into openssl hashes an empty stream, which yields
+  # d4:1d:8c:d9:8f:00:b2:04:e9:80:09:98:ec:f8:42:7e for every ed25519 key on earth — the md5 of
+  # the empty string, wearing the shape of a fingerprint. The first draft of this check printed
+  # exactly that in its mismatch message, 21-Sep-2026.
+  local der; der="$(mktemp)"
+  ssh-keygen -e -m PKCS8 -f "$1" 2>/dev/null | openssl pkey -pubin -outform DER >"$der" 2>/dev/null || true
+  if [ -s "$der" ]; then openssl md5 -c <"$der" | awk '{print $NF}'; fi
+  rm -f "$der"
+}
+LOCAL_FPS="$(fingerprints "$PUBKEY")"
+REMOTE_FP="$(aws ec2 describe-key-pairs --region "$REGION" --key-names "$KEY_NAME" \
+  --query 'KeyPairs[0].KeyFingerprint' --output text 2>/dev/null || true)"
+
+if [ -z "$REMOTE_FP" ] || [ "$REMOTE_FP" = "None" ]; then
   aws ec2 import-key-pair --region "$REGION" --key-name "$KEY_NAME" \
     --public-key-material "fileb://$PUBKEY" >/dev/null
   echo "imported $KEY_NAME from $PUBKEY"
+elif printf '%s\n' "$LOCAL_FPS" | grep -qxF "$REMOTE_FP"; then
+  echo "$KEY_NAME already imported, and its fingerprint is $PUBKEY's"
+else
+  die "key pair $KEY_NAME exists in $REGION and is NOT $PUBKEY:
+  AWS holds  $REMOTE_FP
+  $PUBKEY is $(printf '%s' "$LOCAL_FPS" | tr '\n' ' ')
+Somebody imported a different key under this name, or this is not the laptop that imported it.
+Nothing was changed. Either import the local key under a different KEY_NAME, or — after checking
+that no running instance depends on it — delete the AWS key pair and re-run."
 fi
 
 # --- Security group ----------------------------------------------------------------------------
@@ -100,17 +145,40 @@ else
   echo "reusing $SG"
 fi
 
-if aws ec2 describe-security-group-rules --region "$REGION" \
-     --filters "Name=group-id,Values=$SG" \
-     --query "SecurityGroupRules[?CidrIpv4=='$MYIP/32' && FromPort==\`22\`]" --output text | grep -q .; then
+sg_rules() {  # one JMESPath filter, applied to this group's rules
+  aws ec2 describe-security-group-rules --region "$REGION" \
+    --filters "Name=group-id,Values=$SG" --query "$1" --output text
+}
+
+# Replaced, not added to. The old version authorized the new address and printed a NOTE that
+# earlier rules were left in place — advice nobody had to act on, so every address this laptop has
+# ever had stayed on port 22. A home connection renumbers on a router reboot; a year of those is a
+# list of strangers' addresses with SSH open, and the group's own description one screen up
+# promises "SSH from one operator address only".
+#
+# Authorize first, revoke second. The other order shuts the door before opening it, and a failure
+# between the two leaves a box nobody can reach.
+WANTED="SecurityGroupRules[?!IsEgress && CidrIpv4=='$MYIP/32' && IpProtocol=='tcp' && FromPort==\`22\` && ToPort==\`22\`]"
+if sg_rules "$WANTED.SecurityGroupRuleId" | grep -q .; then
   echo "ssh from $MYIP/32 already allowed"
 else
   aws ec2 authorize-security-group-ingress --region "$REGION" --group-id "$SG" \
     --ip-permissions "IpProtocol=tcp,FromPort=22,ToPort=22,IpRanges=[{CidrIp=$MYIP/32,Description=operator}]" >/dev/null
   echo "allowed ssh from $MYIP/32"
-  echo "NOTE: earlier rules are left in place. Review them if your address has changed:"
-  aws ec2 describe-security-group-rules --region "$REGION" --filters "Name=group-id,Values=$SG" \
-    --query 'SecurityGroupRules[?!IsEgress].[CidrIpv4,FromPort]' --output text
+fi
+
+# Everything else that can reach 22: another CIDR, an IPv6 range, a referenced group, a port range
+# that spans 22 without naming it. The `-1` arm is the all-protocols rule, which carries FromPort
+# -1 and so is invisible to any numeric range test — the one an audit misses.
+STALE="SecurityGroupRules[?!IsEgress && CidrIpv4!='$MYIP/32' && (IpProtocol=='-1' || (FromPort<=\`22\` && ToPort>=\`22\`))]"
+STALE_IDS="$(sg_rules "$STALE.SecurityGroupRuleId")"
+if [ -n "$STALE_IDS" ]; then
+  echo "revoking ingress to port 22 from anywhere that is not $MYIP/32:"
+  sg_rules "$STALE.[SecurityGroupRuleId,IpProtocol,FromPort,ToPort,CidrIpv4,CidrIpv6]"
+  # Unquoted on purpose: --security-group-rule-ids takes a list, and --output text separates them.
+  # shellcheck disable=SC2086
+  aws ec2 revoke-security-group-ingress --region "$REGION" --group-id "$SG" \
+    --security-group-rule-ids $STALE_IDS >/dev/null
 fi
 
 # --- Backup bucket -----------------------------------------------------------------------------
@@ -160,6 +228,37 @@ EXISTING="$(aws ec2 describe-instances --region "$REGION" \
 if [ -n "$EXISTING" ] && [ "$EXISTING" != "None" ]; then
   ID="$EXISTING"
   echo "reusing $ID — this script will not launch a second one. Terminate it first if you want a rebuild."
+
+  # Reusing means inheriting whatever the box actually is, which is not necessarily what the
+  # constants at the top of this file say. The settings compared here are each load-bearing
+  # somewhere else in the setup: §7's backup story assumes the instance profile is attached, §1
+  # assumes the root volume is encrypted, and IMDSv2 is what keeps a request-forgery bug on the
+  # web app from reading the role's credentials. An instance that predates any of those decisions
+  # would be adopted silently and then relied on, so compare, report every difference at once
+  # rather than one per re-run, and stop without changing anything.
+  IFS=$'\t' read -r CUR_TYPE CUR_PROFILE CUR_SGS CUR_TOKENS CUR_ROOTDEV <<<"$(
+    aws ec2 describe-instances --region "$REGION" --instance-ids "$ID" --output text \
+      --query 'Reservations[0].Instances[0].[InstanceType, IamInstanceProfile.Arn,
+                 join(`,`, SecurityGroups[].GroupId), MetadataOptions.HttpTokens, RootDeviceName]')"
+  ROOT_VOL="$(aws ec2 describe-instances --region "$REGION" --instance-ids "$ID" --output text \
+    --query "Reservations[0].Instances[0].BlockDeviceMappings[?DeviceName=='$CUR_ROOTDEV'].Ebs.VolumeId | [0]")"
+  IFS=$'\t' read -r CUR_GB CUR_VTYPE CUR_ENC <<<"$(
+    aws ec2 describe-volumes --region "$REGION" --volume-ids "$ROOT_VOL" --output text \
+      --query 'Volumes[0].[Size,VolumeType,Encrypted]')"
+
+  DIFFS=()
+  [ "$CUR_TYPE" = "$INSTANCE_TYPE" ]      || DIFFS+=("instance type is $CUR_TYPE, wanted $INSTANCE_TYPE")
+  [ "${CUR_PROFILE##*/}" = "$ROLE_NAME" ] || DIFFS+=("instance profile is ${CUR_PROFILE##*/}, wanted $ROLE_NAME")
+  [ "$CUR_SGS" = "$SG" ]                  || DIFFS+=("security groups are $CUR_SGS, wanted $SG and nothing else")
+  [ "$CUR_GB" = "$VOLUME_GB" ]            || DIFFS+=("root volume is ${CUR_GB}GB, wanted ${VOLUME_GB}GB")
+  [ "$CUR_VTYPE" = gp3 ]                  || DIFFS+=("root volume is $CUR_VTYPE, wanted gp3")
+  [ "$CUR_ENC" = True ]                   || DIFFS+=("root volume is not encrypted")
+  [ "$CUR_TOKENS" = required ]            || DIFFS+=("IMDS HttpTokens is $CUR_TOKENS, wanted required (IMDSv2)")
+  [ ${#DIFFS[@]} -eq 0 ] || die "instance $ID is not the instance this script would have launched:
+$(printf '  - %s\n' "${DIFFS[@]}")
+Nothing was changed. Bring it into line by hand, or terminate it and re-run to get the instance
+described at the top of this file."
+  echo "matches: $INSTANCE_TYPE, ${VOLUME_GB}GB encrypted gp3, $SG, $ROLE_NAME, IMDSv2 required"
 else
   ID="$(aws ec2 run-instances --region "$REGION" \
     --image-id "$AMI" --instance-type "$INSTANCE_TYPE" --key-name "$KEY_NAME" \

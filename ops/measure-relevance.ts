@@ -111,17 +111,64 @@ async function bestTsRank(c: Client, query: string): Promise<FtsRow | null> {
 
 const TOP_N = 5;
 
+/**
+ * Why this script refuses an empty corpus rather than printing twenty `n/a` lines: the twenty
+ * numbers below are what a floor on cosine similarity gets argued from, and a run against nothing
+ * produces a page that looks like a measurement and is not. Zero items is a failure here for the
+ * same reason it is in every job — and this one is worse than a job, because a job's silence is
+ * read by a machine and this output is read by a person about to decide something.
+ *
+ * Both counts are taken because they name different causes: nothing indexed at all, against a
+ * corpus indexed under some other model.
+ */
+async function corpusSize(c: Client): Promise<{ total: number; embedded: number }> {
+  const { rows } = await c.query<{ total: number; embedded: number }>(
+    `SELECT count(*)::int AS total,
+            count(*) FILTER (WHERE embedding IS NOT NULL AND embed_model = $1)::int AS embedded
+       FROM chunks`,
+    [EMBED_MODEL],
+  );
+  return rows[0]!;
+}
+
+function noCorpusDiagnostic(total: number): string {
+  if (total === 0) {
+    return (
+      'measure-relevance: `chunks` is empty — there is no corpus to measure against.\n' +
+      '  Index one first:  pnpm exec tsx jobs/index-content.ts --all\n' +
+      '  If you expected a corpus, DATABASE_URL is pointing at the wrong database.'
+    );
+  }
+  return (
+    `measure-relevance: ${total} chunks, and not one of them carries an embedding for ` +
+    `${EMBED_MODEL}.\n` +
+    '  Either the indexer has not reached them:  pnpm exec tsx jobs/index-content.ts --all\n' +
+    `  or they were embedded under a different model, in which case EMBED_MODEL moved and every ` +
+    'vector needs rebuilding — a migration, not a re-run of this script.'
+  );
+}
+
 async function main(): Promise<void> {
-  await readTxn(async (c) => {
+  // One transaction, so the guard and the twenty measurements see the same snapshot: a corpus
+  // that was there when it was counted cannot be gone by the time it is queried.
+  const refusal = await readTxn(async (c) => {
+    const { total, embedded } = await corpusSize(c);
+    if (embedded === 0) return noCorpusDiagnostic(total);
+
     for (const q of QUESTIONS) {
       const [cosRows, fts] = await Promise.all([topCosine(c, q.text, TOP_N), bestTsRank(c, q.text)]);
       const top = cosRows[0];
       console.log(`\n${q.id} [Part ${q.part}] ${q.text}`);
+      // `n/a`, not `0.00000`. No full-text hit at all and a hit that scored zero are different
+      // findings, and printing the second for the first is the mistake `<Blank why=…>` exists to
+      // prevent everywhere else in this system: a zero reads as a measured fact.
       console.log(
         `  best cosine=${top ? top.cosine.toFixed(4) : 'n/a'}` +
-          `  best ts_rank=${fts ? fts.rank.toFixed(5) : '0.00000'}`,
+          `  best ts_rank=${fts ? fts.rank.toFixed(5) : 'n/a'}`,
       );
       if (fts) console.log(`  top hit (ts_rank): ${fts.title}`);
+      // Unreachable while the guard above holds, since both read the same snapshot. Kept as the
+      // line that would say so if that ever stopped being true.
       if (cosRows.length === 0) {
         console.log('  top hit (cosine): none — no embedded chunk in the corpus at all');
         continue;
@@ -131,8 +178,14 @@ async function main(): Promise<void> {
         console.log(`     ${r.text.replace(/\s+/g, ' ').slice(0, 300)}`);
       });
     }
+    return null;
   });
+
   await closePool();
+  if (refusal !== null) {
+    console.error(refusal);
+    process.exit(1);
+  }
 }
 
 main().catch((err: unknown) => {
