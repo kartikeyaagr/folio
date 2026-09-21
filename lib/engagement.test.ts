@@ -125,3 +125,23 @@ test('a story only one outlet ran claims nothing', async () => {
   await story('n2', 'Only here');
   assert.deepEqual((await newsFor(ANA))[0]?.alsoIn, []);
 });
+
+test('a match two people engaged with is still one match in the tier counts', async () => {
+  // `confirmed` was `count(*)` over a LEFT JOIN to `engagement`, so a match with two engagement
+  // rows counted twice while `dismissed` beside it used `count(DISTINCT …)` and counted once.
+  // Three people share this desk and each keeps their own read/dismissed state — two rows on one
+  // story is the ordinary case, not the corner one.
+  //
+  // The damage is that the two columns stop being comparable, which is the only thing this
+  // function is for: its own comment says "a tier that people dismiss most of the time is a tier
+  // that is not working". Inflating the denominator makes a failing tier look acceptable.
+  await story('n1', 'One story, two readers', 'sector_term');
+  await mark('news', 'n1', 'read', ANA);
+  await mark('news', 'n1', 'dismissed', BO);
+
+  assert.deepEqual(
+    (await dismissalsByTier()).find((t) => t.tier === 'sector_term'),
+    { tier: 'sector_term', confirmed: 1, dismissed: 1 },
+    'one confirmed match, dismissed by one of the two who saw it',
+  );
+});

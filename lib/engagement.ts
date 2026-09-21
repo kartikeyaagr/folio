@@ -123,8 +123,14 @@ export async function dismissalsByTier(): Promise<
 > {
   return readTxn(async (c) => {
     const { rows } = await c.query<{ tier: string; confirmed: number; dismissed: number }>(
+      // `count(DISTINCT m.id)`, not `count(*)`. The LEFT JOIN fans a match out to one row per
+      // engagement, and three people share this desk each keeping their own read/dismissed
+      // state — so a story two of them touched counted twice. `dismissed` beside it was already
+      // distinct, which is what made the two columns quietly incomparable, and comparing them is
+      // the only thing this function is for: a tier inflated on the left looks better at
+      // dismissing than it is.
       `SELECT m.tier,
-              count(*)::int AS confirmed,
+              count(DISTINCT m.id)::int AS confirmed,
               count(DISTINCT e.subject_ref) FILTER (WHERE e.state = 'dismissed')::int AS dismissed
          FROM news_matches m
          LEFT JOIN engagement e ON e.subject_kind = 'news' AND e.subject_ref = m.id
