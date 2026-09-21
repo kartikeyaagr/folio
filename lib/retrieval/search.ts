@@ -124,6 +124,30 @@ const SHARED_FILTER = `
        AND ($7::text IS NULL OR s.kind = $7)
        AND ($8::timestamptz IS NULL OR c.occurred_at >= $8)`;
 
+/**
+ * How a typed question becomes a `tsquery`, in one place because a test reads it too.
+ *
+ * `websearch_to_tsquery` ANDs its terms; this ORs them instead, exactly as v2 did
+ * (`trisula_intel/agents/desk_analyst.py`) — "what has management said about the auditor" must
+ * surface a page that mentions the auditor and never the word "management". NULL when the query
+ * is entirely stop-words, so the `@@` below matches nothing rather than raising on an empty
+ * tsquery.
+ *
+ * **A negated term is left alone, because the rewrite inverts it.** websearch turns
+ * `auditor -management` into `'auditor' & !'manag'`, and replacing the `&` gives
+ * `'auditor' | !'manag'` — true of every document that merely lacks the word. Measured in psql:
+ * the vector for "bhavcopy prices index" matches the OR-ed form and not the original, so a
+ * negated search returned most of the corpus down the full-text path and dragged the fused
+ * ranking with it. Where somebody has asked to exclude a word, websearch's own AND/NOT structure
+ * is already the right answer.
+ */
+export const FTS_QUERY = `CASE
+    WHEN websearch_to_tsquery('english', $5)::text = '' THEN NULL
+    WHEN websearch_to_tsquery('english', $5)::text LIKE '%!%'
+         THEN websearch_to_tsquery('english', $5)
+    ELSE replace(websearch_to_tsquery('english', $5)::text, ' & ', ' | ')::tsquery
+  END`;
+
 const SQL = `
   WITH v AS (
     SELECT c.id, row_number() OVER (ORDER BY c.embedding <=> $1::vector) AS rank
@@ -134,14 +158,7 @@ const SQL = `
      LIMIT $4
   ),
   q AS (
-    -- websearch_to_tsquery ANDs its terms by default; OR them instead, exactly as v2 did
-    -- (trisula_intel/agents/desk_analyst.py) — "what has management said about the auditor"
-    -- must surface a page that mentions the auditor and never the word "management". NULL when
-    -- the query is entirely stop-words, so '@@' below matches nothing rather than raising on an
-    -- empty tsquery.
-    SELECT CASE WHEN websearch_to_tsquery('english', $5)::text = '' THEN NULL
-                ELSE replace(websearch_to_tsquery('english', $5)::text, ' & ', ' | ')::tsquery
-           END AS query
+    SELECT ${FTS_QUERY} AS query
   ),
   f AS (
     SELECT c.id, row_number() OVER (ORDER BY ts_rank(c.fts, q.query) DESC) AS rank
