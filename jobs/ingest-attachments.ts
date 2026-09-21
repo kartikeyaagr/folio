@@ -22,9 +22,9 @@ import { readFlags } from './_args.ts';
 import { runJob } from './_run.ts';
 
 
-  const flags = readFlags(['limit']);
-  const limit = Number(flags.str('limit') ?? 200);
-  if (!Number.isFinite(limit) || limit < 1) throw new Error('--limit must be a positive number');
+const flags = readFlags(['limit']);
+const limit = Number(flags.str('limit') ?? 200);
+if (!Number.isFinite(limit) || limit < 1) throw new Error('--limit must be a positive number');
 
 await runJob('nse_attachments', async () => {
   console.log(`storing under ${attachmentDir()}`);

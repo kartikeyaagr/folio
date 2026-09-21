@@ -27,28 +27,28 @@ import { runJob } from './_run.ts';
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-  const flags = readFlags(['days', 'symbol']);
-  const days = Number(flags.str('days') ?? 90);
-  if (!Number.isFinite(days) || days < 1) throw new Error('--days must be a positive number');
+const flags = readFlags(['days', 'symbol']);
+const days = Number(flags.str('days') ?? 90);
+if (!Number.isFinite(days) || days < 1) throw new Error('--days must be a positive number');
 
-  const only = flags.str('symbol')?.trim().toUpperCase();
+const only = flags.str('symbol')?.trim().toUpperCase();
 
-  // Which days are already held. Asked once rather than per day: a set membership test beats 1,250
-  // round trips to answer a question the database can answer in one.
-  //
-  // **Scoped to the symbol when one is named.** `storePrices` keeps only followed companies, so a
-  // day fetched before a name was followed holds nothing for it — and a global "already held" set
-  // would skip exactly the days a newly added company needs. Getting this wrong would make the
-  // on-add backfill a no-op that reported success.
-  const held = await readTxn(async (c) => {
-    const { rows } = await c.query<{ day: string }>(
-      `SELECT DISTINCT to_char(p.on_date, 'YYYY-MM-DD') AS day
-         FROM prices p
-        WHERE $1::text IS NULL OR p.symbol = $1`,
-      [only ?? null],
-    );
-    return new Set(rows.map((r) => r.day));
-  });
+// Which days are already held. Asked once rather than per day: a set membership test beats 1,250
+// round trips to answer a question the database can answer in one.
+//
+// **Scoped to the symbol when one is named.** `storePrices` keeps only followed companies, so a
+// day fetched before a name was followed holds nothing for it — and a global "already held" set
+// would skip exactly the days a newly added company needs. Getting this wrong would make the
+// on-add backfill a no-op that reported success.
+const held = await readTxn(async (c) => {
+  const { rows } = await c.query<{ day: string }>(
+    `SELECT DISTINCT to_char(p.on_date, 'YYYY-MM-DD') AS day
+       FROM prices p
+      WHERE $1::text IS NULL OR p.symbol = $1`,
+    [only ?? null],
+  );
+  return new Set(rows.map((r) => r.day));
+});
 
 await runJob('nse_bhavcopy_backfill', async () => {
   // Re-primed rather than opened once. A first run died at "fetch failed" after about seventy

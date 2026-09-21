@@ -15,9 +15,9 @@ import { readFlags } from './_args.ts';
 import { runJob } from './_run.ts';
 
 
-  const flags = readFlags(['days']);
-  const days = Number(flags.str('days') ?? 30);
-  if (!Number.isFinite(days) || days < 1) throw new Error('--days must be a positive number');
+const flags = readFlags(['days']);
+const days = Number(flags.str('days') ?? 30);
+if (!Number.isFinite(days) || days < 1) throw new Error('--days must be a positive number');
 
 await runJob('nse_corporate_actions', async () => {
   const r = await ingestCorporateActions(days);
