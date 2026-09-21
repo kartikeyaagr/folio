@@ -196,10 +196,16 @@ export function SheetToolbar({
       </span>
 
       <span className="sheet-tools-group">
-        {/* Wrapping is the grid's default, so this button turns it off — pressed means "clip". */}
+        {/*
+          Wrapping is the grid's default, so this button turns it off — pressed means "clip".
+          `aria-pressed` read `clip !== true` until 21-Sep-2026, which is the opposite of both
+          the sentence above it and the title beside it: a clipped cell announced "not pressed"
+          and a wrapping one announced "pressed". The comment said what was meant and the
+          expression did the reverse, which is the only way this survives review.
+        */}
         <button
           type="button" className="sheet-tool" disabled={disabled}
-          aria-pressed={format?.clip !== true} title={format?.clip ? 'Clipped — press to wrap' : 'Wrapping — press to clip'}
+          aria-pressed={format?.clip === true} title={format?.clip ? 'Clipped — press to wrap' : 'Wrapping — press to clip'}
           onClick={() => onPatch({ clip: format?.clip ? undefined : true })}
         >{WRAP_ICON}</button>
         <button

@@ -43,14 +43,27 @@ export function CompanySearch({ search }: { search: (query: string) => Promise<C
       setOpen(false);
       return;
     }
+    // The debounce stops most requests being made; it does nothing about the ones already in
+    // flight. Clearing the timeout cannot recall a `search()` that has already left, so typing
+    // "PRAJ" while "PRA" is still resolving showed PRA's names under a box reading PRAJ whenever
+    // the slower answer landed second — which is the ordinary case, the shorter query matching
+    // more rows. The flag is what makes the last query the one on screen rather than the last
+    // reply.
+    let current = true;
     const t = setTimeout(() => {
-      search(q).then((rows) => {
-        setHits(rows);
-        setSel(0);
-        setOpen(true);
-      });
+      search(q).then(
+        (rows) => {
+          if (!current) return;
+          setHits(rows);
+          setSel(0);
+          setOpen(true);
+        },
+        // A failed lookup closes the list rather than leaving the previous query's names under a
+        // box that has moved on. Unhandled, this was also a console rejection nobody would see.
+        () => { if (current) setOpen(false); },
+      );
     }, 150);
-    return () => clearTimeout(t);
+    return () => { current = false; clearTimeout(t); };
   }, [query, search]);
 
   useEffect(() => {
