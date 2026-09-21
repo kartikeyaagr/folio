@@ -27,9 +27,9 @@ const sha256 = (value: string): string => createHash('sha256').update(value).dig
 
 /** Constant-time compare of two hex digests, so a wrong guess leaks no timing signal. */
 function digestsEqual(a: string, b: string): boolean {
-  const x = Buffer.from(a, 'hex');
-  const y = Buffer.from(b, 'hex');
-  return x.length === y.length && timingSafeEqual(x, y);
+  const aBytes = Buffer.from(a, 'hex');
+  const bBytes = Buffer.from(b, 'hex');
+  return aBytes.length === bBytes.length && timingSafeEqual(aBytes, bBytes);
 }
 
 // ------------------------------------------------------------------------------------------------

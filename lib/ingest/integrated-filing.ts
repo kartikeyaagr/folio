@@ -22,9 +22,9 @@ const INTEGRATED_PAGE = 20;
 const ddmm = (iso: string): string => iso.split('-').reverse().join('-');
 
 const mid = (from: string, to: string): string => {
-  const a = Date.parse(from);
-  const b = Date.parse(to);
-  return new Date(a + Math.floor((b - a) / 2)).toISOString().slice(0, 10);
+  const fromMs = Date.parse(from);
+  const toMs = Date.parse(to);
+  return new Date(fromMs + Math.floor((toMs - fromMs) / 2)).toISOString().slice(0, 10);
 };
 
 const dayAfter = (iso: string): string =>

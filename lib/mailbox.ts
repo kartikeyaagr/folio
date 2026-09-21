@@ -50,11 +50,11 @@ function key(): Buffer {
         '`openssl rand -base64 32` and put it in /etc/trisula/trisula.env. See ops/SETUP.md §9b.',
     );
   }
-  const k = Buffer.from(raw, 'base64');
-  if (k.length !== 32) {
-    throw new NoMailboxKey(`MAILBOX_KEY must decode to 32 bytes; got ${k.length}. Use \`openssl rand -base64 32\`.`);
+  const aesKey = Buffer.from(raw, 'base64');
+  if (aesKey.length !== 32) {
+    throw new NoMailboxKey(`MAILBOX_KEY must decode to 32 bytes; got ${aesKey.length}. Use \`openssl rand -base64 32\`.`);
   }
-  return k;
+  return aesKey;
 }
 
 /** `iv.tag.ciphertext`, base64 each. */
@@ -82,9 +82,9 @@ export function seal(plain: string): string {
 export function open(sealed: string): string {
   const [iv, tag, ct] = sealed.split('.');
   if (!iv || !tag || !ct) throw new MailboxRefused('stored mailbox secret is not in the expected shape');
-  const k = key();
+  const aesKey = key();
   try {
-    const decipher = createDecipheriv(ALGORITHM, k, Buffer.from(iv, 'base64'));
+    const decipher = createDecipheriv(ALGORITHM, aesKey, Buffer.from(iv, 'base64'));
     decipher.setAuthTag(Buffer.from(tag, 'base64'));
     // Raises on a bad tag rather than returning plausible bytes, which is the whole reason for GCM.
     return Buffer.concat([decipher.update(Buffer.from(ct, 'base64')), decipher.final()]).toString('utf8');

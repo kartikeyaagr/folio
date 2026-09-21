@@ -59,11 +59,11 @@ const list = <T>(v: T | T[] | undefined): T[] => (v === undefined ? [] : Array.i
 const textOf = (v: unknown): string => {
   if (v === null || v === undefined) return '';
   if (typeof v === 'object') {
-    const o = v as Record<string, unknown>;
-    if ('#text' in o) return String(o['#text']);
+    const record = v as Record<string, unknown>;
+    if ('#text' in record) return String(record['#text']);
     // Rich text: a run per formatting change, which is presentation and not content.
-    if ('r' in o) return list(o['r'] as Record<string, unknown>[]).map((run) => textOf(run['t'])).join('');
-    if ('t' in o) return textOf(o['t']);
+    if ('r' in record) return list(record['r'] as Record<string, unknown>[]).map((run) => textOf(run['t'])).join('');
+    if ('t' in record) return textOf(record['t']);
     return '';
   }
   return String(v);

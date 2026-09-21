@@ -33,15 +33,15 @@ export const dynamic = 'force-dynamic';
  * The agent that did that is gone (`0053`); the narrowness stays, because agents 1, 2 and 6 still
  * carry extra fields on their sources and stringifying those whole is still the honest rendering.
  */
-function sourceLine(s: unknown): string {
-  if (s !== null && typeof s === 'object') {
-    const o = s as Record<string, unknown>;
-    const keys = Object.keys(o).sort();
+function sourceLine(source: unknown): string {
+  if (source !== null && typeof source === 'object') {
+    const record = source as Record<string, unknown>;
+    const keys = Object.keys(record).sort();
     if (keys.length === 2 && keys[0] === 'kind' && keys[1] === 'ref') {
-      return `${String(o['kind'])} ${String(o['ref'])}`;
+      return `${String(record['kind'])} ${String(record['ref'])}`;
     }
   }
-  return JSON.stringify(s);
+  return JSON.stringify(source);
 }
 
 export default async function ReviewPage() {

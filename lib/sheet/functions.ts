@@ -59,33 +59,33 @@ export function callFunction(name: string, args: Node[], ctx: Context): Value {
     return branch === undefined ? false : ctx.evaluate(branch);
   }
 
-  const vs = ctx.spread(args);
-  const first = vs.find(isCellError);
+  const values = ctx.spread(args);
+  const first = values.find(isCellError);
 
   switch (name) {
     case 'SUM': case 'AVERAGE': case 'MIN': case 'MAX': case 'PRODUCT': case 'STDEV': {
-      const ns = numbers(vs);
-      if (isCellError(ns)) return ns;
-      if (name === 'SUM') return ns.reduce((a, b) => a + b, 0);
-      if (name === 'PRODUCT') return ns.reduce((a, b) => a * b, 1);
-      if (ns.length === 0) return DIV0();
-      if (name === 'AVERAGE') return ns.reduce((a, b) => a + b, 0) / ns.length;
-      if (name === 'MIN') return Math.min(...ns);
-      if (name === 'MAX') return Math.max(...ns);
-      const mean = ns.reduce((a, b) => a + b, 0) / ns.length;
-      if (ns.length < 2) return DIV0();
-      return Math.sqrt(ns.reduce((t, x) => t + (x - mean) ** 2, 0) / (ns.length - 1));
+      const numericValues = numbers(values);
+      if (isCellError(numericValues)) return numericValues;
+      if (name === 'SUM') return numericValues.reduce((a, b) => a + b, 0);
+      if (name === 'PRODUCT') return numericValues.reduce((a, b) => a * b, 1);
+      if (numericValues.length === 0) return DIV0();
+      if (name === 'AVERAGE') return numericValues.reduce((a, b) => a + b, 0) / numericValues.length;
+      if (name === 'MIN') return Math.min(...numericValues);
+      if (name === 'MAX') return Math.max(...numericValues);
+      const mean = numericValues.reduce((a, b) => a + b, 0) / numericValues.length;
+      if (numericValues.length < 2) return DIV0();
+      return Math.sqrt(numericValues.reduce((t, x) => t + (x - mean) ** 2, 0) / (numericValues.length - 1));
     }
     case 'COUNT': {
-      const ns = numbers(vs);
-      return isCellError(ns) ? ns : ns.length;
+      const numericValues = numbers(values);
+      return isCellError(numericValues) ? numericValues : numericValues.length;
     }
     case 'COUNTA':
-      return vs.filter((v) => v !== '').length;
+      return values.filter((v) => v !== '').length;
     case 'ROUND': {
       if (first) return first;
-      const n = num(vs[0] ?? 0);
-      const d = num(vs[1] ?? 0);
+      const n = num(values[0] ?? 0);
+      const d = num(values[1] ?? 0);
       if (isCellError(n)) return n;
       if (isCellError(d)) return d;
       const f = 10 ** d;
@@ -93,18 +93,18 @@ export function callFunction(name: string, args: Node[], ctx: Context): Value {
     }
     case 'ABS': case 'SQRT': case 'LN': {
       if (first) return first;
-      const n = num(vs[0] ?? 0);
+      const n = num(values[0] ?? 0);
       if (isCellError(n)) return n;
       if (name === 'ABS') return Math.abs(n);
       if (name === 'SQRT') return n < 0 ? VALUE('the square root of a negative') : Math.sqrt(n);
       return n <= 0 ? VALUE('the log of a non-positive number') : Math.log(n);
     }
     case 'CONCAT':
-      return vs.map(text).join('');
+      return values.map(text).join('');
     case 'IFERROR':
-      return vs[0] !== undefined && isCellError(vs[0]) ? (vs[1] ?? '') : (vs[0] ?? '');
+      return values[0] !== undefined && isCellError(values[0]) ? (values[1] ?? '') : (values[0] ?? '');
     case 'ISBLANK':
-      return vs[0] === '' || vs[0] === undefined;
+      return values[0] === '' || values[0] === undefined;
     default:
       break;
   }
@@ -112,7 +112,7 @@ export function callFunction(name: string, args: Node[], ctx: Context): Value {
   // A data function: its answer was resolved before evaluation. Anything else is a typo, and
   // saying so is the difference between "no such function" and "we hold no such figure".
   if (!DATA_FUNCTION_NAMES.has(name)) return NAME(name);
-  const key = callKey(name, vs);
+  const key = callKey(name, values);
   if (key === null) return NA('this call’s arguments are computed, so it cannot be looked up');
   return key in ctx.lookups ? ctx.lookups[key]! : NA('this figure was not resolved');
 }

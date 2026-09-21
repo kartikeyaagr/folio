@@ -48,13 +48,13 @@ function sections(value: unknown): CompanySection[] {
   if (!Array.isArray(value)) return [];
   return value.flatMap((v, index): CompanySection[] => {
     if (typeof v !== 'object' || v === null) return [];
-    const r = v as Record<string, unknown>;
-    if (typeof r['symbol'] !== 'string') return [];
+    const record = v as Record<string, unknown>;
+    if (typeof record['symbol'] !== 'string') return [];
     return [{
       index,
-      symbol: r['symbol'],
-      what_happened: lines(r['what_happened']),
-      why_it_matters: typeof r['why_it_matters'] === 'string' ? r['why_it_matters'] : '',
+      symbol: record['symbol'],
+      what_happened: lines(record['what_happened']),
+      why_it_matters: typeof record['why_it_matters'] === 'string' ? record['why_it_matters'] : '',
     }];
   });
 }

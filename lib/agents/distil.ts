@@ -87,10 +87,10 @@ async function unaccounted(c: Client): Promise<Correction[]> {
  * Every number in it was measured by the line above it. It says what happened and declines to say
  * what it means, which is the reader's job and the reason this is not a sentence a model wrote.
  */
-export function finding(field: string, os: Observation[]): string {
-  const mean = os.reduce((sum, o) => sum + o.distance, 0) / os.length;
-  const n = os.length;
-  const drafts = new Set(os.map((o) => o.draft_id)).size;
+export function finding(field: string, observations: Observation[]): string {
+  const mean = observations.reduce((sum, o) => sum + o.distance, 0) / observations.length;
+  const n = observations.length;
+  const drafts = new Set(observations.map((o) => o.draft_id)).size;
   // Both numbers, because they are no longer the same number. A brief has many positions of one
   // field, so nine corrections across three drafts and nine across one are different evidence —
   // the second is one analyst working one document, which is not a pattern.
@@ -144,23 +144,23 @@ export async function distil(): Promise<Distillation> {
 
     const groups = new Map<string, Observation[]>();
     for (const o of observations) {
-      const k = key(o.agent_key, o.shape);
-      groups.set(k, [...(groups.get(k) ?? []), o]);
+      const groupKey = key(o.agent_key, o.shape);
+      groups.set(groupKey, [...(groups.get(groupKey) ?? []), o]);
     }
 
     const open = await alreadyOpen(c);
     let raised = 0;
 
-    for (const [k, os] of groups) {
+    for (const [groupKey, groupObservations] of groups) {
       // Distinct DRAFTS, not distinct corrections. §7's pattern is "every quarter, for four
       // quarters" — something that recurs across the agent's work. Before a correction could reach
       // inside a draft, one draft could only ever contribute one correction per field and the two
       // counts were the same number; now a single brief can carry twenty, and three of those is
       // one analyst having a careful morning.
-      if (new Set(os.map((o) => o.draft_id)).size < MIN_OBSERVATIONS) continue;
+      if (new Set(groupObservations.map((o) => o.draft_id)).size < MIN_OBSERVATIONS) continue;
       // One candidate per field at a time. Two open candidates for `guidance_delta` would ask the
       // same person the same question twice, and the second would be answered by the first.
-      if (open.has(k)) continue;
+      if (open.has(groupKey)) continue;
 
       const ruleId = rowId();
       await c.query(
@@ -168,11 +168,11 @@ export async function distil(): Promise<Distillation> {
          VALUES ($1, $2, 'distilled', $3, 'candidate')`,
         // The shape, not one position: a candidate is a question about `by_company[].why_it_matters`
         // and never about the third company in one particular week's brief.
-        [ruleId, os[0]!.agent_key, finding(os[0]!.shape, os)],
+        [ruleId, groupObservations[0]!.agent_key, finding(groupObservations[0]!.shape, groupObservations)],
       );
       // Every unaccounted observation in the group, not just the first three: they are all evidence
       // for the same finding, and leaving the extras loose would raise a duplicate next run.
-      for (const o of os) {
+      for (const o of groupObservations) {
         await c.query(
           'INSERT INTO rule_observations (rule_id, draft_id, field, distance) VALUES ($1,$2,$3,$4)',
           [ruleId, o.draft_id, o.field, o.distance.toFixed(3)],

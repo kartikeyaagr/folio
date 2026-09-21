@@ -221,12 +221,12 @@ export async function embed(texts: string[]): Promise<number[][]> {
       token_type_ids: new Tensor('int64', BigInt64Array.from(ids.map(() => 0n)), [1, ids.length]),
     });
     const hidden = r['last_hidden_state']!;
-    const data = hidden.data as Float32Array;
+    const hiddenValues = hidden.data as Float32Array;
     // CLS pooling: bge uses the first token, not a mean over all of them. Getting this wrong
     // produces vectors that look fine and cluster wrongly.
-    const cls = Array.from(data.slice(0, EMBED_DIM));
-    const norm = Math.hypot(...cls);
-    out.push(cls.map((x) => x / norm));
+    const clsVector = Array.from(hiddenValues.slice(0, EMBED_DIM));
+    const norm = Math.hypot(...clsVector);
+    out.push(clsVector.map((x) => x / norm));
   }
   return out;
 }
