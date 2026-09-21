@@ -82,10 +82,19 @@ function toggleWrap(text: string, start: number, end: number, wrap: string): Edi
   };
 }
 
-/** The lines a selection touches, even where it starts and ends mid-line. */
+/**
+ * The lines a selection touches, even where it starts and ends mid-line.
+ *
+ * The `end - 1` is the whole subtlety. A triple-click and a shift+Down both leave the caret at
+ * the *start* of the line after the one selected, so searching for the next break from `end`
+ * found the break below that — and marking one paragraph as a quote marked two. Backing up one
+ * character keeps a selection that ends on a line break inside the line it came from. An empty
+ * selection must not back up, or a caret sitting at the start of a line would take the line
+ * above instead.
+ */
 function lineSpan(text: string, start: number, end: number): { from: number; to: number } {
   const from = text.lastIndexOf('\n', start - 1) + 1;
-  const nextBreak = text.indexOf('\n', end);
+  const nextBreak = text.indexOf('\n', end > start ? end - 1 : end);
   return { from, to: nextBreak === -1 ? text.length : nextBreak };
 }
 
@@ -100,7 +109,16 @@ function togglePrefix(text: string, start: number, end: number, mark: Mark): Edi
   // Off only when every line already carries it — a mixed selection turns all of them on, which is
   // what a person pressing the button on a mixed selection meant. Indexed by position, not by
   // `indexOf`: two identical lines in a list are common and would both resolve to the first.
-  const allHave = lines.every((line, i) => ANY_PREFIX.exec(line)?.[2] === wanted(i));
+  //
+  // **A numbered line counts whatever its number is.** This compared each line against
+  // `${i + 1}. ` counted from the start of the *selection*, so selecting the second and third
+  // items of a list measured "2. " against a wanted "1. ", decided the list was not a list, and
+  // renumbered it instead of clearing it. Pressing the button on a numbered list has to turn it
+  // off wherever in the list you happen to be standing.
+  const carried = (line: string): string | undefined => ANY_PREFIX.exec(line)?.[2];
+  const allHave = numbered
+    ? lines.every((line) => /^\d+[.)]\s+$/.test(carried(line) ?? ''))
+    : lines.every((line, i) => carried(line) === wanted(i));
 
   const next = lines.map((line, i) => {
     const bare = line.replace(ANY_PREFIX, '$1');
