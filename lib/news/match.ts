@@ -51,7 +51,10 @@ const FURNITURE = new Set([
  * The part of a name that identifies it.
  *
  * "Tega Industries Limited" becomes "Tega". "Ecos (India) Mobility & Hospitality Limited" becomes
- * "Mobility Hospitality", which is why the stoplist matters more than the stripping does.
+ * **"Ecos Mobility Hospitality"** — the stoplist takes "India" and "Limited" and leaves "Ecos",
+ * which is not furniture. This said "Mobility Hospitality" until 21-Sep-2026, carried over from
+ * v2's docstring, and `match.test.ts:84` has recorded that it "does not and never did" since the
+ * behaviour was ported. The test was measured and the comment was inherited; the test is right.
  */
 export function distinctive(name: string): string {
   return name

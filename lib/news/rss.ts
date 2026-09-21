@@ -49,9 +49,27 @@ function decode(text: string): string {
   return decodeHTML(text.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1')).trim();
 }
 
-/** Strip markup from a summary. Publishers put whole articles, images and trackers in there. */
+/**
+ * Strip markup from a title or summary. Publishers put whole articles, images and trackers there.
+ *
+ * **A tag, not merely a pair of angle brackets.** This stripped `<[^>]*>` until 21-Sep-2026, and
+ * because entities are decoded first — they have to be, since publishers routinely escape their
+ * markup as `&lt;p&gt;` and the existing test pins that — a headline's own `&lt;` had already
+ * become a real `<` by the time the regex ran. Any later `&gt;` closed the imaginary tag and
+ * everything between them was deleted, silently, on the two fields that matter most: the
+ * headline is what `match.ts` runs over and what the desk reads.
+ *
+ *   before:  "Praj PAT &lt; estimates, guidance &gt; consensus"  ->  "Praj PAT consensus"
+ *   before:  "Revenue &lt; 500 crore &gt; last year"             ->  "Revenue last year"
+ *
+ * Requiring a tag name after the bracket separates the two cases, because `< estimates` opens
+ * with a space and `<p` does not. The genuinely ambiguous input — a comparison written with no
+ * space, `PAT <estimates>` — is indistinguishable from markup by anything short of a parser, and
+ * is left to be stripped.
+ */
+const TAG = /<\/?[a-z][a-z0-9-]*(?:\s[^>]*)?\/?>/gi;
 const plain = (html: string): string =>
-  decode(html.replace(/<[^>]*>/g, ' ')).replace(/\s+/g, ' ').trim();
+  decode(html).replace(TAG, ' ').replace(/\s+/g, ' ').trim();
 
 function tag(block: string, ...names: string[]): string | null {
   for (const name of names) {

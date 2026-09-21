@@ -91,3 +91,40 @@ test('a feed with no items is empty, and a page that is not a feed is an error',
   assert.deepEqual(parseFeed(rss('')), []);
   assert.throws(() => parseFeed('<html><body>Access denied</body></html>'), NotAFeed);
 });
+
+test('an angle bracket in a headline is text, not markup that eats the rest of it', () => {
+  // `tag` decoded entities and `plain` then stripped `<[^>]*>` from the result, so a `&lt;` with
+  // any later `&gt;` swallowed everything between them. Measured before the fix:
+  //   "Praj PAT &lt; estimates, guidance &gt; consensus"  ->  "Praj PAT consensus"
+  //   "Revenue &lt; 500 crore &gt; last year, says …"     ->  "Revenue last year, says …"
+  // Silent, and on the two fields that matter most: the headline is what `match.ts` runs over and
+  // what the desk reads. A comparison in a results headline is not an exotic input.
+  //
+  // Entities must be decoded first — publishers escape their markup as `&lt;p&gt;` and the first
+  // test in this file pins that — so the separation has to come from the pattern instead: a tag
+  // needs a tag name after the bracket, and `< estimates` opens with a space.
+  const lt = `&${'lt'};`;
+  const gt = `&${'gt'};`;
+  const items = parseFeed(
+    `<rss><channel><item>`
+    + `<title>Praj PAT ${lt} estimates, guidance ${gt} consensus</title>`
+    + `<link>https://example.com/1</link>`
+    + `<description>Revenue ${lt} 500 crore ${gt} last year</description>`
+    + `</item></channel></rss>`,
+  );
+  assert.equal(items[0]!.title, 'Praj PAT < estimates, guidance > consensus');
+  assert.equal(items[0]!.summary, 'Revenue < 500 crore > last year');
+});
+
+test('real markup in a summary is still stripped, which is the other half of the rule', () => {
+  // The constraint the narrow regex has to satisfy in both directions: a `<p>` and an `<img>`
+  // still go, whether they arrived as tags or escaped as `&lt;p&gt;` the way the first test in
+  // this file pins. Only a bracket with no tag name after it survives.
+  const items = parseFeed(
+    `<rss><channel><item>`
+    + `<title>A headline</title><link>https://example.com/2</link>`
+    + `<description><![CDATA[<p>Text with <b>markup</b> and an <img src="x"> image.</p>]]></description>`
+    + `</item></channel></rss>`,
+  );
+  assert.equal(items[0]!.summary, 'Text with markup and an image.');
+});
