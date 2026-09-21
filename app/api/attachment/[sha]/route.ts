@@ -74,6 +74,11 @@ export async function GET(
       // `inline` so a PDF opens in the browser beside the extracted text rather than landing in
       // Downloads. The filename is quoted because NSE's carry spaces and commas.
       'Content-Disposition': `inline; filename="${row.filename.replace(/["\\]/g, '')}"`,
+      // Serve the type we recorded, never the one a browser guesses. Uploads are sniffed to
+      // `application/pdf` or `application/octet-stream` by their magic number, but these bytes
+      // also arrive from NSE, and `inline` plus a sniffed type is how a downloaded file executes
+      // in this origin rather than being read in it.
+      'X-Content-Type-Options': 'nosniff',
       // The name is the content's own hash, so the bytes can never change under it.
       'Cache-Control': 'private, max-age=31536000, immutable',
     },

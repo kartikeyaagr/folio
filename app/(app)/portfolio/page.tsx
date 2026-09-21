@@ -263,7 +263,18 @@ export default async function PortfolioPage({
                           </td>
                           <td className="num">{value !== null ? crore(value) : <Blank why="No close held" />}</td>
                           <td className="num">
-                            {value !== null ? signedPct(((value - cost) / cost) * 100) : <Blank why="No close held" />}
+                            {/*
+                              A nil-cost holding — bonus shares, a transfer in at no cost — divides
+                              by zero here. `signedPct` already refuses to print Infinity and gives
+                              a dash, which is the wrong refusal: CLAUDE.md's rule is that a dash
+                              reads as not-applicable when the truth is that there is nothing to
+                              measure against. Two different silences, each saying which it is.
+                            */}
+                            {value === null
+                              ? <Blank why="No close held" />
+                              : cost === 0
+                                ? <Blank why="No cost base to measure against" />
+                                : signedPct(((value - cost) / cost) * 100)}
                           </td>
                           <td className="num">{crore(h.realisedGain)}</td>
                         </tr>
