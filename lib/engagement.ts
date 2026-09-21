@@ -15,6 +15,18 @@ import { readTxn, writeTxn } from './db.ts';
 export type SubjectKind = 'news' | 'alert' | 'filing';
 export type EngagementState = 'read' | 'dismissed';
 
+/**
+ * Record that one person has read or dismissed one thing. Last write wins: marking read after
+ * dismissing brings the item back, the same as `clear` does.
+ *
+ * **For news, `subjectRef` is the match id and not the article id.** `newsFor` selects `m.id` from
+ * `news_matches` and joins engagement on it, so one article matched to two companies carries two
+ * rows, and dismissing it under one name leaves it standing under the other. That is the right
+ * reading of a dismissal — "this matched *this* company and should not have" is a judgement about
+ * one match, which is what `dismissalsByTier` then counts. The trap is that `subject_ref` is a
+ * bare text column with no foreign key, across three unrelated kinds: the wrong id writes a row
+ * that nothing will ever join to, and nothing anywhere will say so.
+ */
 export async function mark(
   kind: SubjectKind,
   subjectRef: string,

@@ -117,13 +117,6 @@ export async function pendingCount(): Promise<number> {
   });
 }
 
-/**
- * Approve or reject, attributed to the admin who decided.
- *
- * A rejection needs a reason — the schema enforces it too. Approving does **not** create the
- * account: it records that somebody said yes, and the panel then shows the `seed-user` command to
- * run on the box. Keeping account creation on the VM is the whole reason this is only a request.
- */
 export class NotApproved extends Error {}
 
 /**
@@ -154,6 +147,17 @@ export async function approvedRequest(id: string): Promise<{ email: string; name
   return { email: r.email, name: r.name };
 }
 
+/**
+ * Approve or reject, attributed to the admin who decided.
+ *
+ * A rejection needs a reason — the schema enforces it too. Approving does **not** create the
+ * account: it records that somebody said yes, and the panel then shows the `seed-user` command to
+ * run on the box. Keeping account creation on the VM is the whole reason this is only a request.
+ *
+ * Only a pending request can be decided. Two admins deciding the same one at once ends with the
+ * second raising `NoSuchRequest` rather than overwriting the first's judgement and note — which is
+ * why the update is guarded and its result checked rather than fired and forgotten.
+ */
 export async function decideRequest(
   id: string,
   decision: 'approved' | 'rejected',

@@ -43,6 +43,20 @@ export interface CashRow {
   note: string | null;
 }
 
+/**
+ * The book as this screen reads it: quantity, weighted-average cost, realised gain, last close.
+ *
+ * **There is a second exported `holdings()` one import away, in `lib/book.ts`, returning a
+ * different `HoldingRow`.** That one marks to market — `cost`, `close`, `pricedOn`, `marketValue`
+ * — and has no caller outside `lib/book.test.ts`; `/portfolio` reads this one. Two exports sharing
+ * a name and two row types sharing a name is how `lib/portfolio-view.test.ts` comes to import
+ * `holdings` from `./book.ts` while testing this module. Check which file an import resolved to
+ * before trusting a column to be there.
+ *
+ * `quantity > 0` hides a name replayed down to nothing. The row itself survives — `replayCompany`
+ * deletes a holding only when the realised gain is zero as well — so an exited name's realised
+ * gain is kept and simply is not on this screen.
+ */
 export async function holdings(): Promise<HoldingRow[]> {
   return readTxn(async (c) => {
     const { rows } = await c.query<HoldingRow>(
@@ -85,6 +99,18 @@ export async function transactions(limit = 200): Promise<TransactionRow[]> {
   });
 }
 
+/**
+ * The most recent ledger lines, and the balance of the whole ledger.
+ *
+ * **`balance` is not the sum of `rows`.** The rows stop at `limit`; the balance counts every row
+ * there has ever been, because that is the cash position the screen states. Past a hundred lines
+ * the two visibly disagree, and it is the rows that cannot be added up, not the balance.
+ *
+ * It is also not the same string `cashBalance()` in `lib/book.ts` returns for the same money.
+ * `cash_ledger.amount` is `numeric(20,4)` and this hands back the sum as it comes, so a balance of
+ * minus ten thousand reads `-10000.0000` here and `-10000.00` there, which casts to
+ * `numeric(20,2)` first. Compare the two as numbers; never as text.
+ */
 export async function cash(limit = 100): Promise<{ rows: CashRow[]; balance: string }> {
   return readTxn(async (c) => {
     const { rows } = await c.query<CashRow>(

@@ -177,13 +177,6 @@ export async function issueRecoveryCodes(userId: string, actorId: string): Promi
 // Login
 // ------------------------------------------------------------------------------------------------
 
-/**
- * Verifies a password and issues a session, or returns null.
- *
- * A missing user still costs an Argon2id verification against a dummy hash, so "no such account"
- * and "wrong password" take the same time and the response cannot be used to enumerate who works
- * here.
- */
 // Computed at first use, not written down. A hand-written constant risks being malformed, and a
 // malformed hash makes verify() throw and return early — which would defeat the very timing
 // equivalence it exists for.
@@ -215,6 +208,18 @@ export class TooManyAttempts extends Error {
 const PER_EMAIL: Limit = { max: 8, windowMs: 15 * 60 * 1000 };
 const PER_ADDRESS: Limit = { max: 30, windowMs: 15 * 60 * 1000 };
 
+/**
+ * Verifies a password and issues a session, or returns null.
+ *
+ * A missing user still costs an Argon2id verification against a dummy hash, so "no such account"
+ * and "wrong password" take the same time and the response cannot be used to enumerate who works
+ * here.
+ *
+ * **Null is not the only refusal.** A rate-limited caller gets a thrown `TooManyAttempts` carrying
+ * the seconds to wait, and the two shapes are different on purpose: null is "that is not the
+ * password", which a page must not elaborate on, while the throw is the one refusal it can safely
+ * explain, because you caused the limit yourself. Both callers branch on them separately.
+ */
 export async function login(
   email: string,
   password: string,

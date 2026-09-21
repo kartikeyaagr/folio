@@ -283,6 +283,13 @@ export async function confirmAction(actionId: string, actorId: string): Promise<
   if (companyId) await replayCompany(companyId, actorId);
 }
 
+/**
+ * Money into or out of the fund, with no company behind it.
+ *
+ * **The sign comes from `kind`, never from the caller.** `amount` is read through `Math.abs`, so
+ * −50,000 out and 50,000 out both store −50,000, and a caller cannot double-negate a withdrawal
+ * into a subscription. No replay follows: a capital flow moves cash and touches no position.
+ */
 export async function recordCapital(
   kind: 'capital_in' | 'capital_out',
   amount: number,

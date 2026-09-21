@@ -27,6 +27,15 @@
 import { createTransport } from 'nodemailer';
 import { rowId, serviceTxn } from './db.ts';
 
+/**
+ * After five tries a queued mail stops being offered, and that one number means three things.
+ *
+ * `drainOutbox` stops claiming the row; `waiting` in `lib/digest.ts` excludes it, so one address
+ * that keeps bouncing does not hold up the rest of that person's envelope forever; and
+ * `undeliverable` below is defined as everything past it. Raising it makes all three more patient
+ * at once. The row is never deleted at any count — an undeliverable notification is something a
+ * person should be able to find, with its `last_error` still on it.
+ */
 export const MAX_SEND_ATTEMPTS = 5;
 
 export interface Mail {

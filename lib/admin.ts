@@ -237,6 +237,15 @@ export interface AdminRule {
   active: boolean;
 }
 
+/**
+ * The global rules only — this and `setAlertRule` below both filter `company_id IS NULL`.
+ *
+ * `alert_rules` has carried a `company_id` since migration 0013 and both evaluators honour it,
+ * skipping a rule whose company is not the subject's. Nothing seeds one today, so the filter costs
+ * nothing yet; the day one exists it will be invisible on this panel and impossible to switch off
+ * from a screen. Widening the read alone would be worse than the gap — a list showing a rule the
+ * toggle beside it silently declines to change.
+ */
 export async function listAlertRules(): Promise<AdminRule[]> {
   return readTxn(async (c) => {
     const { rows } = await c.query<AdminRule>(
