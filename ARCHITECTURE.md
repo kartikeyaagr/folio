@@ -2,7 +2,7 @@
 
 How Trisula is put together, and why it is put together that way. Accurate against the tree at the
 time of writing: **62 migrations, 50 tables, 6 agents, 24 job entry points, 19 systemd timers, two
-long-running watchers, 18 pages and 4 route handlers, 814 tests.** Every number here was counted,
+long-running watchers, 18 pages and 4 route handlers, 837 tests.** Every number here was counted,
 not remembered; if you change the shape, count again rather than editing around it.
 
 For the product argument — what was built, what was deliberately cut, and on whose authority — see
@@ -441,7 +441,7 @@ export DATABASE_URL=postgres:///trisula_v3_dev
 pnpm install
 pnpm fetch-model                 # ~130 MB, bge-small-en-v1.5, validated on download
 pnpm exec tsx db/migrate.ts      # one transaction each, checksummed
-pnpm check                       # lint + typecheck + 814 tests
+pnpm check                       # lint + typecheck + 837 tests
 pnpm dev                         # port 3100
 ```
 
@@ -456,8 +456,9 @@ with it stopped — the suite was 616 tests then — and those same three files 
 either way. It looks like a broken test and it is a resource conflict.
 
 Measured again 21-Sep-2026, which narrows it: a dev server belonging to a *different* worktree, on
-the same port, did **not** reproduce it — 814/814 passed with one running. The conflict is over the
-ONNX session in this checkout, not over the port, so it is your own `pnpm dev` that has to stop.
+the same port, did **not** reproduce it — 814/814 passed with one running, the suite being 814
+that morning. The conflict is over the ONNX session in this checkout, not over the port, so it is
+your own `pnpm dev` that has to stop.
 
 Jobs run as `pnpm exec tsx jobs/<name>.ts`. Deployment, backup, and the systemd units are in
 `ops/SETUP.md`.
