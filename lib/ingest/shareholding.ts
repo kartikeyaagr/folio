@@ -42,6 +42,21 @@ export interface Submission {
   xbrlUrl: string;
 }
 
+/**
+ * One quarter's pattern, in two different denominators.
+ *
+ * `promoterPct`, `publicPct`, `fiiPct` and `diiPct` are percentages of the company. `pledgePct`
+ * and `encumberedPct` are percentages of the *promoter's holding* — ZEEL's promoter owns 3.99% of
+ * the company and the pledge element reads 5.38% — so the six do not share a base, and the last
+ * two can be neither added to nor compared against the first four. The header above holds the
+ * measurement.
+ *
+ * Zero and null say different things here. Zero is the filing's own flag declaring nothing
+ * encumbered; null is a company that has encumbered something and did not break the promoter line
+ * down, which is a prompt to go and read the filing. And `pledgePct` is not all of
+ * `encumberedPct`: Vedanta's June 2026 filing pledges nothing and has 99.99% of the promoter stake
+ * encumbered by other means.
+ */
 export interface Shareholding {
   asOf: string;
   promoterPct: number | null;
@@ -218,6 +233,14 @@ export async function storeShareholding(companyId: string, s: Shareholding): Pro
 export interface ShareholdingResult {
   /** Named holders stored. Zero on a filing that names nobody is possible and not a failure. */
   named: number;
+  /**
+   * Rows in NSE's exchange-wide submissions index, which is not a fact about any one company.
+   *
+   * It cannot be zero while the exchange is up, so a caller that reads it as "did this work" has
+   * written a step that cannot fail. The backfill's shareholding step did exactly that until
+   * 17-Sep-2026 and marked AERON and TCL complete with no row in `shareholding_patterns` between
+   * them. Zero here is a dead feed; what this name actually got is `stored` and `named`.
+   */
   submissions: number;
   ours: number;
   stored: number;
@@ -225,7 +248,6 @@ export interface ShareholdingResult {
   failed: number;
 }
 
-/** Fetch the index, then one XBRL per followed name that filed. */
 /**
  * Replace the named holders for one quarter.
  *
@@ -250,6 +272,7 @@ export async function storeHolders(companyId: string, asOf: string, holders: Hol
   });
 }
 
+/** Fetch the index, then one XBRL per followed name that filed. */
 export async function ingestShareholding(): Promise<ShareholdingResult> {
   const session = await NseSession.open();
   const index = await fetchIndex(session);

@@ -44,6 +44,8 @@ const num = (v: string | undefined): string | null => {
   return Number.isFinite(Number(t)) ? t : null;
 };
 
+export class UnreadableBhavcopy extends Error {}
+
 /**
  * Extract the single CSV from the bhavcopy zip.
  *
@@ -53,8 +55,6 @@ const num = (v: string | undefined): string | null => {
  * — which those four bytes appearing inside a compressed stream would have defeated. `lib/import`
  * reads the directory instead, and now both go through it.
  */
-export class UnreadableBhavcopy extends Error {}
-
 export function unzipSingle(buf: Buffer): string {
   // Not a NoBhavcopy: the archive answered 200 with something that is not a zip, which is a broken
   // feed rather than a day with no trading. A captive portal and an error page both land here.
@@ -89,6 +89,20 @@ export function parseBhavcopy(csv: string): PriceRow[] {
   return out;
 }
 
+/**
+ * A day's closes, addressed by the **UTC** calendar day of `on`.
+ *
+ * The archive filename is built from `on`'s UTC parts and `storePrices` takes `on_date` from
+ * `toISOString()`, so the two agree — but only if the caller means UTC too. A Date at local
+ * midnight does not: in IST `new Date(2026, 8, 4)` is 2026-09-03T18:30:00Z and this fetches the
+ * 3rd, silently and plausibly. It is the same edge `lib/db.ts` pins type parser 1082 against, a
+ * `date` column read back as a local-midnight Date and pushed a day backwards by `toISOString()`.
+ * `jobs/ingest-eod.ts` builds every day with an explicit trailing Z for this reason.
+ *
+ * `NoBhavcopy` is the exchange not having published for that day, and only a 404 raises it. That
+ * is the one exemption to this system's zero-is-a-failure rule that this file carries, and the
+ * caller is told about it by name rather than left to infer a holiday from an empty list.
+ */
 export async function fetchBhavcopy(on: Date, session?: NseSession): Promise<PriceRow[]> {
   const s = session ?? (await NseSession.open());
   const url = URL_TEMPLATE.replace('{yyyymmdd}', yyyymmdd(on));
