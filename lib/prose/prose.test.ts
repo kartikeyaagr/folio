@@ -198,3 +198,34 @@ test('a body from before typography existed reads as the default', () => {
     size: DEFAULT_SIZE,
   });
 });
+
+test('toggling off part of a numbered list removes the numbers, it does not renumber them', () => {
+  // `allHave` compared each line's prefix against `${i + 1}. `, counting from the start of the
+  // *selection* rather than of the list. Select the second and third items of a numbered list
+  // and press the button: line "2. " was measured against a wanted "1. ", so `allHave` was false
+  // and the branch that adds prefixes ran — renumbering 2 and 3 to 1 and 2 instead of removing
+  // them. Pressing "numbered list" on a numbered list has to turn it off wherever you are in it.
+  const text = '1. alpha\n2. beta\n3. gamma';
+  const from = text.indexOf('2.');
+  const out = applyMark(text, from, text.length, 'number');
+  assert.equal(out.text, '1. alpha\nbeta\ngamma');
+});
+
+test('a whole numbered list still toggles off, and a plain selection still numbers', () => {
+  assert.equal(applyMark('1. a\n2. b', 0, 8, 'number').text, 'a\nb');
+  assert.equal(applyMark('a\nb', 0, 3, 'number').text, '1. a\n2. b');
+});
+
+test('a selection ending at the start of the next line does not take that line with it', () => {
+  // A triple-click, and shift+Down, both leave the caret at the *start* of the following line.
+  // `lineSpan` looked for the next newline from `end`, which for a selection ending on a line
+  // break is the break after the line below — so marking one paragraph as a quote marked two.
+  const text = 'alpha\nbeta\ngamma';
+  const out = applyMark(text, 0, 6, 'quote'); // "alpha\n", caret at the start of "beta"
+  assert.equal(out.text, '> alpha\nbeta\ngamma', 'beta is untouched');
+
+  // An empty selection still takes the line the caret sits on, which is the other half.
+  assert.equal(applyMark(text, 2, 2, 'quote').text, '> alpha\nbeta\ngamma');
+  // And a selection genuinely spanning two lines still takes both.
+  assert.equal(applyMark(text, 0, 8, 'quote').text, '> alpha\n> beta\ngamma');
+});

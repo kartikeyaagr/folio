@@ -29,10 +29,10 @@ export interface Typography {
 
 /** Read a body's typography, falling back to what `.prose` already does. */
 export function typographyOf(body: unknown): Typography {
-  const b = typeof body === 'object' && body !== null ? (body as Record<string, unknown>) : {};
-  const face = FACES.some((f) => f.value === b['face']) ? (b['face'] as Face) : DEFAULT_FACE;
-  const size = (SIZES as readonly number[]).includes(b['size'] as number)
-    ? (b['size'] as number)
+  const bodyRecord = typeof body === 'object' && body !== null ? (body as Record<string, unknown>) : {};
+  const face = FACES.some((f) => f.value === bodyRecord['face']) ? (bodyRecord['face'] as Face) : DEFAULT_FACE;
+  const size = (SIZES as readonly number[]).includes(bodyRecord['size'] as number)
+    ? (bodyRecord['size'] as number)
     : DEFAULT_SIZE;
   return { face, size };
 }

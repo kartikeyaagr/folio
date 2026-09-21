@@ -4,7 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { serviceTxn, type Client } from '../db.ts';
 import { embed, toVector, EMBED_MODEL } from './embed.ts';
-import { search, MAX_PER_SOURCE } from './search.ts';
+import { search, FTS_QUERY, MAX_PER_SOURCE } from './search.ts';
 import { createTestDatabase, dropTestDatabase } from '../../db/testing.ts';
 
 const DB = `trisula_search_${process.pid}`;
@@ -166,4 +166,36 @@ test('chunks embedded by another model are never returned', async () => {
   // cosine distance.
   await serviceTxn('system:index', (c) => c.query(`UPDATE chunks SET embed_model = 'some-other-model'`));
   assert.deepEqual(await search('revenue'), []);
+});
+
+test('a negated term keeps websearch\'s own structure, because OR-ing it inverts the question', async () => {
+  // Reads the same `FTS_QUERY` the real query does, rather than a second copy of it — L38's rule,
+  // and the reason that expression is exported at all.
+  //
+  // `websearch_to_tsquery` gives `'auditor' & !'manag'`. Replacing the `&` gives
+  // `'auditor' | !'manag'`, which is true of every document that merely lacks the word: a page
+  // about bhavcopy prices matched. The full-text path then returned most of the corpus and
+  // dragged the fused ranking with it.
+  const sql = FTS_QUERY.replaceAll('$5', '$1');
+  const ask = (q: string) => serviceTxn('system:index', async (c) => {
+    const { rows } = await c.query<{ q: string | null }>(`SELECT ${sql}::text AS q`, [q]);
+    return rows[0]!.q;
+  });
+
+  assert.equal(await ask('auditor -management'), "'auditor' & !'manag'", 'left alone');
+  // The OR rewrite still applies where nothing is negated — that is what it is for.
+  assert.equal(await ask('management auditor'), "'manag' | 'auditor'");
+  // And the empty case still yields NULL rather than an empty tsquery that would raise.
+  assert.equal(await ask('the and of'), null);
+
+  // The property that actually matters, asserted against Postgres rather than by reading the SQL:
+  // an unrelated document must not match a negated query.
+  const matches = await serviceTxn('system:index', async (c) => {
+    const { rows } = await c.query<{ m: boolean }>(
+      `SELECT to_tsvector('english', 'bhavcopy prices index') @@ (${sql}) AS m`,
+      ['auditor -management'],
+    );
+    return rows[0]!.m;
+  });
+  assert.equal(matches, false, 'a page about prices is not an answer to a question about auditors');
 });

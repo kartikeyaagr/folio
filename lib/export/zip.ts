@@ -20,6 +20,19 @@ const END = 0x06054b50;
 /** Deflate. Stored (0) is allowed by the format but nothing here is small enough to want it. */
 const DEFLATED = 8;
 
+/**
+ * Bit 11 of the general-purpose flags: this entry's name is UTF-8.
+ *
+ * Names are written with `Buffer.from(name, 'utf8')` and the flag word said nothing, so a reader
+ * was entitled by the spec to decode anything outside ASCII as CP437 and show mojibake. Nothing in
+ * this tree can reach it today — `zip()`'s only caller is `toDocx`, whose six entry names are
+ * ASCII constants — but it costs a word, and the first caller that puts a document title into an
+ * entry name should not have to find the bug first. Every other bit stays clear: no encryption
+ * (bit 0) and no data descriptor (bit 3), because every entry's size is known before it is
+ * written.
+ */
+const UTF8_NAMES = 0x0800;
+
 /** CRC-32, which the format requires and `node:zlib` does not expose. */
 const TABLE = (() => {
   const t = new Uint32Array(256);
@@ -65,7 +78,7 @@ export function zip(entries: readonly Entry[]): Buffer {
     const local = Buffer.alloc(30);
     local.writeUInt32LE(LOCAL, 0);
     local.writeUInt16LE(20, 4); // version needed: 2.0, which is deflate
-    local.writeUInt16LE(0, 6); // no flags: no data descriptor, no encryption
+    local.writeUInt16LE(UTF8_NAMES, 6); // and nothing else: no data descriptor, no encryption
     local.writeUInt16LE(DEFLATED, 8);
     local.writeUInt16LE(DOS_EPOCH.time, 10);
     local.writeUInt16LE(DOS_EPOCH.date, 12);
@@ -80,7 +93,7 @@ export function zip(entries: readonly Entry[]): Buffer {
     central.writeUInt32LE(CENTRAL, 0);
     central.writeUInt16LE(20, 4); // version made by
     central.writeUInt16LE(20, 6); // version needed
-    central.writeUInt16LE(0, 8);
+    central.writeUInt16LE(UTF8_NAMES, 8); // the same word; the two headers must agree
     central.writeUInt16LE(DEFLATED, 10);
     central.writeUInt16LE(DOS_EPOCH.time, 12);
     central.writeUInt16LE(DOS_EPOCH.date, 14);

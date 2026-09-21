@@ -198,7 +198,18 @@ export function display(v: Value | undefined, f: Format | undefined): string {
     case 'number': return grouped(v, dp);
     case 'inr': return `₹${grouped(v, dp)}`;
     case 'percent': return `${grouped(v * 100, dp)}%`;
-    case 'date': return readableDate(new Date(v).toISOString().slice(0, 10)) ?? String(v);
+    // `Number.isFinite` above is not enough: a finite number past ±8.64e15 ms is outside the
+    // range a Date can hold, so `new Date(v)` is an Invalid Date and `.toISOString()` throws
+    // RangeError rather than returning anything. `display` is called straight from the render in
+    // `SheetEditor.tsx`, so that throw took the whole sheet down — one cell formatted as a date
+    // and holding a large number, which a formula can produce without anybody typing it.
+    // Falls back to the number, the same way the string branch above falls back to the text.
+    case 'date': {
+      const at = new Date(v);
+      return Number.isNaN(at.getTime())
+        ? String(v)
+        : readableDate(at.toISOString().slice(0, 10)) ?? String(v);
+    }
     default:
       // Enough precision to be useful, not so much that a column of them stops lining up.
       return Math.abs(v) >= 1e9 || (Math.abs(v) < 1e-4 && v !== 0)

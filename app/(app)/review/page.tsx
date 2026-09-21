@@ -33,15 +33,15 @@ export const dynamic = 'force-dynamic';
  * The agent that did that is gone (`0053`); the narrowness stays, because agents 1, 2 and 6 still
  * carry extra fields on their sources and stringifying those whole is still the honest rendering.
  */
-function sourceLine(s: unknown): string {
-  if (s !== null && typeof s === 'object') {
-    const o = s as Record<string, unknown>;
-    const keys = Object.keys(o).sort();
+function sourceLine(source: unknown): string {
+  if (source !== null && typeof source === 'object') {
+    const record = source as Record<string, unknown>;
+    const keys = Object.keys(record).sort();
     if (keys.length === 2 && keys[0] === 'kind' && keys[1] === 'ref') {
-      return `${String(o['kind'])} ${String(o['ref'])}`;
+      return `${String(record['kind'])} ${String(record['ref'])}`;
     }
   }
-  return JSON.stringify(s);
+  return JSON.stringify(source);
 }
 
 export default async function ReviewPage() {
@@ -257,11 +257,21 @@ export default async function ReviewPage() {
                   </button>
                   <form action={reject} className="draft-reject">
                     <input type="hidden" name="id" value={d.id} />
+                    {/*
+                      The placeholder said "required" and nothing enforced it. A rejection with no
+                      reason is the one outcome on this screen the learning loop cannot read: it
+                      records that an agent was wrong and withholds the only evidence of how.
+
+                      `required` stops the empty submit in the browser and nothing more. `reject`
+                      still trims and refuses an empty reason server-side, because a form posted
+                      without the browser is still a form.
+                    */}
                     <input
                       className="field"
                       name="reason"
                       placeholder="Why this is wrong — required"
                       aria-label="Reason for rejecting"
+                      required
                     />
                     <button type="submit" className="btn btn-danger">Reject</button>
                   </form>

@@ -84,19 +84,53 @@ export async function readUpload(filename: string, bytes: Buffer): Promise<Impor
   if (bytes.length === 0) throw new UnsupportedFile('That file is empty.');
 
   // Both Office formats are zips; which one is decided by what is inside, not by the extension.
+  //
+  // It was decided by the extension until 21-Sep-2026: `.docx` went straight to `readDocx` and
+  // `.xlsx` straight to `readWorkbook`, and only an unrecognised name reached the try-the-other
+  // fallback sitting directly below them. So the sentence above was true of `mislabelled.txt`
+  // and false of the two names anybody actually uses. The extension is a hint about which reader
+  // to try first — it usually is right, and trying the right one first is cheaper — and the
+  // bytes decide. Same rule `lib/workspace.ts` states when it sniffs an upload's magic number
+  // rather than trusting its name: a renamed file should not lie.
   if (bytes.subarray(0, 4).equals(ZIP)) {
-    if (ext === 'docx') return { kind: 'note', text: readDocx(bytes) };
-    if (ext === 'xlsx' || ext === 'xlsm') return { kind: 'sheet', sheets: readWorkbook(bytes) };
+    const asNote = (): Imported => ({ kind: 'note', text: readDocx(bytes) });
+    const asSheet = (): Imported => ({ kind: 'sheet', sheets: readWorkbook(bytes) });
+    const [first, second] = ext === 'docx' ? [asNote, asSheet] : [asSheet, asNote];
     try {
-      return { kind: 'sheet', sheets: readWorkbook(bytes) };
-    } catch {
-      return { kind: 'note', text: readDocx(bytes) };
+      return first();
+    } catch (err) {
+      // When neither reader can read it, the *first* refusal is the one to raise. The extension
+      // said which format the file claims to be, so that reader's sentence is the one naming the
+      // real problem: an image-only `.docx` has no text layer, and reporting it as
+      // "No xl/workbook.xml — this is not a spreadsheet" is true of it and useless to anybody.
+      try {
+        return second();
+      } catch {
+        throw err;
+      }
     }
   }
 
   if (bytes.subarray(0, 5).equals(PDF)) return { kind: 'note', text: await pdfToText(bytes) };
 
   const text = bytes.toString('utf8');
+  // A NUL means binary, and nothing else does it as reliably.
+  //
+  // The replacement-ratio test below catches a file of high bytes, because those are invalid
+  // UTF-8. It catches nothing at all in a file of zeros: `Buffer.alloc(64).toString('utf8')` is
+  // sixty-four perfectly valid characters and not one replacement, so a binary file imported as
+  // a note — measured, sixty-four NULs straight into a document body.
+  //
+  // Which then broke the way out: that body is what `/api/export/[id]` renders into a `.docx`,
+  // and XML 1.0 cannot carry a NUL at any depth, so the export came back as a file Word refuses
+  // with "unreadable content" and no explanation. The writer strips them now; this stops them
+  // arriving. It is the same signal `grep` uses to call a file binary, for the same reason.
+  if (text.includes('\u0000')) {
+    throw new UnsupportedFile(
+      `${filename} looks like a binary file rather than a document.`,
+    );
+  }
+
   // A binary file read as UTF-8 is mostly replacement characters; importing it would produce a
   // page of noise under a title that promised a document.
   const replacementRatio = (text.match(/�/g)?.length ?? 0) / Math.max(1, text.length);

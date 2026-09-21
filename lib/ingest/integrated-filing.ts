@@ -17,14 +17,23 @@ import type { ResultsFiling } from './fundamentals.ts';
 
 export type Board = 'equities' | 'sme';
 
+/**
+ * How many rows the endpoint will return for one question, measured 09-Sep-2026.
+ *
+ * PRAJIND over 2015-2026 answers 20; over 2024-2026 it answers 20; over 2025 alone it answers 10
+ * and over 2026 alone 12 — the same eighteen filings, and the wide questions were both truncated
+ * to the same number. There is no page parameter and no total in the response, so a full answer
+ * and a clipped one look identical. Hence the rule below: a window that comes back holding this
+ * many rows is assumed clipped and is split, and only a short answer is believed whole.
+ */
 const INTEGRATED_PAGE = 20;
 
 const ddmm = (iso: string): string => iso.split('-').reverse().join('-');
 
 const mid = (from: string, to: string): string => {
-  const a = Date.parse(from);
-  const b = Date.parse(to);
-  return new Date(a + Math.floor((b - a) / 2)).toISOString().slice(0, 10);
+  const fromMs = Date.parse(from);
+  const toMs = Date.parse(to);
+  return new Date(fromMs + Math.floor((toMs - fromMs) / 2)).toISOString().slice(0, 10);
 };
 
 const dayAfter = (iso: string): string =>

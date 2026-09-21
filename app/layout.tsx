@@ -22,6 +22,12 @@ import './globals.css';
 const sans = Geist({ subsets: ['latin'], variable: '--font-sans', display: 'swap' });
 const mono = Geist_Mono({ subsets: ['latin'], variable: '--font-mono', display: 'swap' });
 
+/**
+ * `robots` is the load-bearing field. This is an internal tool on a private network with no public
+ * signup and no guest access, so nothing here should ever appear in an index — and the header is
+ * cheap insurance against the day something is exposed by accident, which is the only day it
+ * matters. The title and description are what a browser tab and a bookmark show.
+ */
 export const metadata: Metadata = {
   title: 'Trisula Capital',
   description: 'Investment research and portfolio management',

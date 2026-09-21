@@ -13,6 +13,15 @@ Description=Trisula backfill watcher
 After=postgresql.service
 OnFailure=trisula-alert@%n.service
 
+# These belong in [Unit], and sat in [Service] until 21-Sep-2026 where systemd ignores them —
+# they moved sections in v229 and the old placement is silently accepted. So the fix written for
+# §2.6 of the readiness audit, the one whose comment is three lines further down, has never been
+# in force: with the defaults, RestartSec=10 cannot exceed the burst limit, the unit never reaches
+# `failed`, and the OnFailure= above never fires. A watcher dying in a loop reached nobody, which
+# is the exact failure that item is about.
+StartLimitIntervalSec=300
+StartLimitBurst=10
+
 [Service]
 Type=simple
 User=trisula
@@ -25,11 +34,10 @@ ExecStart=/usr/bin/pnpm exec tsx jobs/backfill-company.ts --watch
 # for everything it cannot catch.
 Restart=always
 RestartSec=10
-# Without these, RestartSec=10 can never exceed systemd's default burst limit, so the unit never
-# reaches `failed` and OnFailure= above never fires — the trap §2.6 of the readiness audit found
-# on trisula-web.service.
-StartLimitIntervalSec=300
-StartLimitBurst=10
+# The rate limit that makes the above reachable is StartLimitIntervalSec/StartLimitBurst, and it
+# is in [Unit] at the top of this file, not here. Without it RestartSec=10 can never exceed
+# systemd's default burst, so the unit never reaches `failed` and OnFailure= never fires — the
+# trap §2.6 of the readiness audit found on trisula-web.service.
 
 # Postgres over a unix socket, so it needs no TCP listener.
 Environment=PGHOST=/var/run/postgresql

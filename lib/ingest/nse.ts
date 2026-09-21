@@ -61,12 +61,12 @@ export class NseSession {
   }
 
   private async prime(): Promise<void> {
-    const res = await fetch(BASE, {
+    const response = await fetch(BASE, {
       headers: HEADERS,
       redirect: 'follow',
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });
-    const set = res.headers.getSetCookie?.() ?? [];
+    const set = response.headers.getSetCookie?.() ?? [];
     this.cookie = set.map((c) => c.split(';')[0]).join('; ');
     if (!this.cookie) {
       throw new NseError('NSE returned no cookie; the JSON endpoints will refuse every call');
@@ -92,14 +92,14 @@ export class NseSession {
     for (const [k, v] of Object.entries(params ?? {})) url.searchParams.set(k, v);
 
     const headers = referer ? { ...this.headers(), Referer: referer } : this.headers();
-    const res = await fetch(url, {
+    const response = await fetch(url, {
       headers,
       redirect: 'follow',
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });
-    if (!res.ok) throw new NseError(`${res.status} from ${url.pathname}`, res.status);
+    if (!response.ok) throw new NseError(`${response.status} from ${url.pathname}`, response.status);
 
-    return pickRows<T>(await res.json());
+    return pickRows<T>(await response.json());
   }
 
   /**
@@ -112,14 +112,14 @@ export class NseSession {
    * is a transport fault worth retrying, not a fact about what NSE has at the URL.
    */
   async bytes(url: string): Promise<Buffer> {
-    const res = await fetch(url, {
+    const response = await fetch(url, {
       headers: this.headers(),
       redirect: 'follow',
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });
-    if (!res.ok) throw new NseError(`${res.status} fetching ${url}`, res.status);
-    const buf = Buffer.from(await res.arrayBuffer());
-    const declared = Number(res.headers.get('content-length'));
+    if (!response.ok) throw new NseError(`${response.status} fetching ${url}`, response.status);
+    const buf = Buffer.from(await response.arrayBuffer());
+    const declared = Number(response.headers.get('content-length'));
     if (Number.isFinite(declared) && declared > 0 && buf.length < declared) {
       throw new Error(
         `truncated: ${url} declared content-length ${declared}, delivered ${buf.length} bytes`,
@@ -146,8 +146,8 @@ export function pickRows<T>(payload: unknown): T[] {
   if (payload && typeof payload === 'object') {
     const named = (payload as Record<string, unknown>)['data'];
     if (Array.isArray(named)) return named as T[];
-    const arr = Object.values(payload).find((v) => Array.isArray(v));
-    if (arr) return arr as T[];
+    const positionalRows = Object.values(payload).find((v) => Array.isArray(v));
+    if (positionalRows) return positionalRows as T[];
   }
   return [];
 }

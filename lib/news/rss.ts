@@ -10,6 +10,21 @@
 
 import { decodeHTML } from 'entities';
 
+/**
+ * One entry, from either format.
+ *
+ * `guid` identifies the item **within its own feed and nowhere else**: it is the publisher's
+ * `<guid>` or Atom `<id>` where there is one and the article's own URL where there is not, and
+ * neither is unique across publishers — a wire story picked up by three outlets can arrive under
+ * one id in all three. `poll.ts` keys `news_items` on `(source_key, guid)` and hashes both
+ * together for the row id for exactly that reason. Treating `guid` alone as the key merges two
+ * publishers' rows into one and loses whichever arrived second.
+ *
+ * `publishedAt` is ISO-8601 UTC or null, and null is ordinary rather than exceptional — PIB's feed
+ * carries no dates and no guids at all (`tasks/measured-traps.md`, News). Anything ordering by
+ * time has to decide what to do with those; `news_items` falls back to `fetched_at`, and so does
+ * `match.ts`'s same-story window.
+ */
 export interface FeedItem {
   guid: string;
   url: string;
@@ -34,9 +49,27 @@ function decode(text: string): string {
   return decodeHTML(text.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1')).trim();
 }
 
-/** Strip markup from a summary. Publishers put whole articles, images and trackers in there. */
+/**
+ * Strip markup from a title or summary. Publishers put whole articles, images and trackers there.
+ *
+ * **A tag, not merely a pair of angle brackets.** This stripped `<[^>]*>` until 21-Sep-2026, and
+ * because entities are decoded first — they have to be, since publishers routinely escape their
+ * markup as `&lt;p&gt;` and the existing test pins that — a headline's own `&lt;` had already
+ * become a real `<` by the time the regex ran. Any later `&gt;` closed the imaginary tag and
+ * everything between them was deleted, silently, on the two fields that matter most: the
+ * headline is what `match.ts` runs over and what the desk reads.
+ *
+ *   before:  "Praj PAT &lt; estimates, guidance &gt; consensus"  ->  "Praj PAT consensus"
+ *   before:  "Revenue &lt; 500 crore &gt; last year"             ->  "Revenue last year"
+ *
+ * Requiring a tag name after the bracket separates the two cases, because `< estimates` opens
+ * with a space and `<p` does not. The genuinely ambiguous input — a comparison written with no
+ * space, `PAT <estimates>` — is indistinguishable from markup by anything short of a parser, and
+ * is left to be stripped.
+ */
+const TAG = /<\/?[a-z][a-z0-9-]*(?:\s[^>]*)?\/?>/gi;
 const plain = (html: string): string =>
-  decode(html.replace(/<[^>]*>/g, ' ')).replace(/\s+/g, ' ').trim();
+  decode(html).replace(TAG, ' ').replace(/\s+/g, ' ').trim();
 
 function tag(block: string, ...names: string[]): string | null {
   for (const name of names) {
@@ -80,6 +113,27 @@ export function feedDate(value: string | null): string | null {
   return at.toISOString();
 }
 
+/**
+ * Every usable entry in an RSS or Atom document.
+ *
+ * **Three outcomes, and a caller has to tell them apart.** A document that is not a feed at all —
+ * the 200-with-an-HTML-error-page a moved or blocked URL serves — throws `NotAFeed`. A real feed
+ * root carrying no entries returns `[]`, and that is not a quiet day: `pollOne` records it as a
+ * failed feed, because a publisher's feed is never legitimately empty and an empty one means the
+ * URL now points somewhere else. That is lesson L1, whose clearest instance is the NSE insider
+ * endpoint: zero rows at HTTP 200, which v2 reported as "0 disclosure(s) in the window" every run.
+ *
+ * An entry missing either a link or a title is dropped without comment, so the length returned can
+ * be smaller than the number of `<item>` elements in the document. What comes back is entries
+ * something can be done with, not a count of what the publisher sent.
+ *
+ * `<item>` and `<entry>` are collected in one pass rather than by deciding the format from the
+ * root element; the root is examined only to tell a broken response from an empty feed, and
+ * `rdf:RDF` counts as a feed root alongside `rss` and `feed`.
+ *
+ * The failure this does **not** catch is L23's: a feed that answers with a full, stale history.
+ * Nothing here looks at how old the newest entry is, and nothing downstream does either.
+ */
 export function parseFeed(xml: string): FeedItem[] {
   const blocks = [
     ...xml.matchAll(/<item(?:\s[^>]*)?>([\s\S]*?)<\/item>/gi),

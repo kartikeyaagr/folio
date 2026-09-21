@@ -67,16 +67,25 @@ test('completing a repeating one moves it forward instead of closing it', async 
     { body: 'quarterly review', dueOn: today(), repeats: 'quarterly' }, A,
   );
   await completeReminder(id, A);
-  const row = await readTxn(async (c) => {
+  // Asked of Postgres rather than computed here, because `NEXT.quarterly` is the interval
+  // `3 months` and Postgres's month arithmetic is the definition — 30-Nov plus three months is
+  // 28-Feb, and a JS reimplementation would have to agree with it on every such day or the test
+  // fails once a quarter for a reason that is not the code's fault.
+  const { row, expected } = await readTxn(async (c) => {
     const { rows } = await c.query<{ due_on: string; completed_at: Date | null }>(
       'SELECT due_on, completed_at FROM reminders WHERE id = $1', [id],
     );
-    return rows[0]!;
+    const { rows: want } = await c.query<{ d: string }>(
+      "SELECT to_char((CURRENT_DATE + interval '3 months')::date, 'YYYY-MM-DD') AS d",
+    );
+    return { row: rows[0]!, expected: want[0]!.d };
   });
   assert.equal(row.completed_at, null, 'still live');
-  assert.equal(row.due_on, daysFromNow(0).slice(0, 4) === row.due_on.slice(0, 4)
-    ? row.due_on : row.due_on, 'moved');
-  assert.notEqual(row.due_on, today(), 'and three months out');
+  // This read `assert.equal(row.due_on, <ternary whose branches are both row.due_on>)` until
+  // 21-Sep-2026 — an assertion that compared the value to itself and could not fail, under the
+  // label 'moved'. The only live check beside it was that the date is not today, which a
+  // reminder moved one day forward would also pass.
+  assert.equal(row.due_on, expected, 'exactly three months out');
   assert.equal((await dueReminders()).length, 0);
 });
 

@@ -76,10 +76,9 @@ export function SheetToolbar({
   onStepDp: (by: number) => void;
   onClear: () => void;
 }) {
-  const f = format;
   /** Pressing the control that is already on turns it off, which every one of these needs. */
   const toggle = <K extends keyof Format>(key: K, value: Format[K]): void =>
-    onPatch({ [key]: f?.[key] === value ? undefined : value } as Partial<Format>);
+    onPatch({ [key]: format?.[key] === value ? undefined : value } as Partial<Format>);
 
   return (
     <div className="sheet-tools" role="toolbar" aria-label="Formatting">
@@ -88,22 +87,22 @@ export function SheetToolbar({
       <span className="sheet-tools-group">
         <button
           type="button" className="sheet-tool" disabled={disabled}
-          aria-pressed={f?.bold === true} title="Bold"
+          aria-pressed={format?.bold === true} title="Bold"
           onClick={() => toggle('bold', true)}
         ><b>B</b></button>
         <button
           type="button" className="sheet-tool" disabled={disabled}
-          aria-pressed={f?.italic === true} title="Italic"
+          aria-pressed={format?.italic === true} title="Italic"
           onClick={() => toggle('italic', true)}
         ><i>I</i></button>
         <button
           type="button" className="sheet-tool" disabled={disabled}
-          aria-pressed={f?.underline === true} title="Underline"
+          aria-pressed={format?.underline === true} title="Underline"
           onClick={() => toggle('underline', true)}
         ><u>U</u></button>
         <button
           type="button" className="sheet-tool" disabled={disabled}
-          aria-pressed={f?.strike === true} title="Strikethrough"
+          aria-pressed={format?.strike === true} title="Strikethrough"
           onClick={() => toggle('strike', true)}
         ><s>S</s></button>
       </span>
@@ -114,7 +113,7 @@ export function SheetToolbar({
           <select
             className="field sheet-tool-select sheet-tool-face"
             disabled={disabled}
-            value={f?.face ?? 'sans'}
+            value={format?.face ?? 'sans'}
             onChange={(e) => onPatch({ face: e.target.value as Face })}
           >
             {FACES.map((x) => <option key={x.value} value={x.value}>{x.label}</option>)}
@@ -125,7 +124,7 @@ export function SheetToolbar({
           <select
             className="field sheet-tool-select sheet-tool-size"
             disabled={disabled}
-            value={f?.size ?? 10}
+            value={format?.size ?? 10}
             onChange={(e) => onPatch({ size: Number(e.target.value) })}
           >
             {SIZES.map((n) => <option key={n} value={n}>{n}</option>)}
@@ -137,14 +136,14 @@ export function SheetToolbar({
         {ALIGNS.map((a) => (
           <button
             key={a} type="button" className="sheet-tool" disabled={disabled}
-            aria-pressed={f?.align === a} title={`Align ${a}`}
+            aria-pressed={format?.align === a} title={`Align ${a}`}
             onClick={() => toggle('align', a)}
           >{ALIGN_ICON[a]}</button>
         ))}
         {VALIGNS.map((v) => (
           <button
             key={v} type="button" className="sheet-tool" disabled={disabled}
-            aria-pressed={f?.valign === v} title={`Align ${v}`}
+            aria-pressed={format?.valign === v} title={`Align ${v}`}
             onClick={() => toggle('valign', v)}
           >{VALIGN_ICON[v]}</button>
         ))}
@@ -156,7 +155,7 @@ export function SheetToolbar({
           <select
             className="field sheet-tool-select"
             disabled={disabled}
-            value={f?.style ?? 'auto'}
+            value={format?.style ?? 'auto'}
             onChange={(e) => onPatch({ style: e.target.value as NumberStyle })}
           >
             {STYLES.map((s) => (
@@ -179,7 +178,7 @@ export function SheetToolbar({
         {TONES.map((t) => (
           <button
             key={t} type="button" className={`sheet-swatch cf-ink-${t}`} disabled={disabled}
-            aria-pressed={f?.ink === t} title={`${TONE_LABEL[t]} text`}
+            aria-pressed={format?.ink === t} title={`${TONE_LABEL[t]} text`}
             onClick={() => toggle('ink', t)}
           >A</button>
         ))}
@@ -190,18 +189,24 @@ export function SheetToolbar({
         {TONES.map((t) => (
           <button
             key={t} type="button" className={`sheet-swatch is-fill cf-fill-${t}`} disabled={disabled}
-            aria-pressed={f?.fill === t} title={`${TONE_LABEL[t]} fill`}
+            aria-pressed={format?.fill === t} title={`${TONE_LABEL[t]} fill`}
             onClick={() => toggle('fill', t)}
           />
         ))}
       </span>
 
       <span className="sheet-tools-group">
-        {/* Wrapping is the grid's default, so this button turns it off — pressed means "clip". */}
+        {/*
+          Wrapping is the grid's default, so this button turns it off — pressed means "clip".
+          `aria-pressed` read `clip !== true` until 21-Sep-2026, which is the opposite of both
+          the sentence above it and the title beside it: a clipped cell announced "not pressed"
+          and a wrapping one announced "pressed". The comment said what was meant and the
+          expression did the reverse, which is the only way this survives review.
+        */}
         <button
           type="button" className="sheet-tool" disabled={disabled}
-          aria-pressed={f?.clip !== true} title={f?.clip ? 'Clipped — press to wrap' : 'Wrapping — press to clip'}
-          onClick={() => onPatch({ clip: f?.clip ? undefined : true })}
+          aria-pressed={format?.clip === true} title={format?.clip ? 'Clipped — press to wrap' : 'Wrapping — press to clip'}
+          onClick={() => onPatch({ clip: format?.clip ? undefined : true })}
         >{WRAP_ICON}</button>
         <button
           type="button" className="sheet-tool" disabled={disabled}

@@ -45,12 +45,39 @@ export function parseRef(text: string): CellRef | null {
 export const refName = (ref: CellRef): string => `${columnName(ref.col)}${ref.row + 1}`;
 
 /**
+ * How many cells a rectangle covers, without building it.
+ *
+ * `REF` puts no ceiling on either part — `/^([A-Z]+)([1-9][0-9]*)$/` — so `A1:ZZZ9999999` parses
+ * as happily as `A1:B3`. Formulas are evaluated on the server, so asking the size first is what
+ * stops a typed range from being answered with an allocation instead of a value.
+ */
+export const rangeSize = (a: CellRef, b: CellRef): number =>
+  (Math.abs(a.row - b.row) + 1) * (Math.abs(a.col - b.col) + 1);
+
+/**
+ * The ceiling on a range, in cells.
+ *
+ * Comfortably past any real model on this desk — a full 400-row sheet 60 columns wide is 24,000 —
+ * and far below the point where materialising the rectangle costs anything worth noticing.
+ */
+export const MAX_RANGE_CELLS = 250_000;
+
+/** The top-left of a rectangle, without building the rest of it. */
+export const rangeHead = (a: CellRef, b: CellRef): CellRef =>
+  ({ col: Math.min(a.col, b.col), row: Math.min(a.row, b.row) });
+
+/**
  * Every address in a rectangle, in reading order.
  *
  * Normalised, so `B3:A1` means the same rectangle as `A1:B3`. A person dragging a selection
  * upwards produces the first and means the second.
+ *
+ * Empty past `MAX_RANGE_CELLS`, so a mistyped range cannot allocate its way through the heap.
+ * Callers that can report an error should ask `rangeSize` first and say so — `evaluate.ts` does —
+ * because an empty list is indistinguishable from a range that genuinely holds nothing.
  */
 export function expandRange(a: CellRef, b: CellRef): CellRef[] {
+  if (rangeSize(a, b) > MAX_RANGE_CELLS) return [];
   const out: CellRef[] = [];
   for (let row = Math.min(a.row, b.row); row <= Math.max(a.row, b.row); row++) {
     for (let col = Math.min(a.col, b.col); col <= Math.max(a.col, b.col); col++) {

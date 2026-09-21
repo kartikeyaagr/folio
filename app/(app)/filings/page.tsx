@@ -23,6 +23,27 @@ const SEVERITY_TONE: Record<string, Tone> = {
   critical: 'bad', high: 'bad', normal: 'navy', low: 'neutral',
 };
 
+const DEFAULT_DAYS = 90;
+const MAX_DAYS = 365;
+
+/**
+ * `?days=` is whatever is in the address bar, so it is not a number until this says so.
+ *
+ * Unvalidated, `days=abc` reached `filings()` as NaN and the heading as "NaN days", and
+ * `days=99999` asked Postgres for the entire table under a heading that agreed it had. Anything
+ * that is not a whole number of days from one to a year falls back to the default rather than
+ * being half-honoured: a window that was silently corrected and one that was silently ignored
+ * read identically on the page, and only one of them is what was asked for.
+ *
+ * The single returned value feeds the queries, the subtitle and the filter links below, so a link
+ * followed from a bad URL lands on a good one.
+ */
+function windowDays(raw: string | undefined): number {
+  const asked = Number(raw);
+  if (!Number.isFinite(asked) || asked < 1) return DEFAULT_DAYS;
+  return Math.min(Math.trunc(asked), MAX_DAYS);
+}
+
 export default async function FilingsPage({
   searchParams,
 }: {
@@ -30,7 +51,7 @@ export default async function FilingsPage({
 }) {
   await requireUser();
   const params = await searchParams;
-  const days = Number(params.days ?? 90);
+  const days = windowDays(params.days);
   const all = params.scope === 'all';
   const category = params.category ?? null;
 
@@ -43,8 +64,8 @@ export default async function FilingsPage({
     const next = new URLSearchParams();
     const merged = { category: category ?? undefined, days: String(days), scope: params.scope, ...over };
     for (const [k, v] of Object.entries(merged)) if (v) next.set(k, v);
-    const q = next.toString();
-    return q ? `/filings?${q}` : '/filings';
+    const queryString = next.toString();
+    return queryString ? `/filings?${queryString}` : '/filings';
   };
 
   return (

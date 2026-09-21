@@ -65,12 +65,28 @@ export function pitDate(value: unknown): string | null {
   return nseDate(value);
 }
 
-/** The same, keeping the time when there is one, because two disclosures can share a day. */
+/**
+ * The same, keeping the time when there is one, because two disclosures can share a day.
+ *
+ * **The offset is not decoration.** `insider_transactions.disclosed_at` is `timestamptz`, so a
+ * string with no zone is resolved against the session's TimeZone — which L19 measured as
+ * `Etc/UTC` on the VM. NSE publishes IST, so a disclosure filed at 15:23 was stored as 15:23 UTC
+ * and read back as 20:53 IST: every timed disclosure 5h30m late, and anything after 18:30 IST on
+ * the following day. It passed unnoticed because a developer's laptop runs in IST, where the
+ * session zone happens to be the right one and the round trip looks clean.
+ *
+ * `dates.ts`'s `nseTimestamp` has appended `+05:30` for this reason since it was written; this
+ * was a second, private copy of the same job that did not. Kept separate rather than folded into
+ * `nseTimestamp` because that one returns a `Date` and this one hands Postgres a string.
+ *
+ * The date-only form is anchored too. Midnight UTC is 05:30 IST, so the day survived either way,
+ * but a value that names its zone cannot be re-interpreted by whatever box reads it next.
+ */
 function pitTimestamp(value: unknown): string | null {
   const day = pitDate(value);
   if (!day) return null;
   const t = /(\d{2}:\d{2})(?::(\d{2}))?\s*$/.exec(String(value));
-  return t ? `${day}T${t[1]}:${t[2] ?? '00'}` : day;
+  return t ? `${day}T${t[1]}:${t[2] ?? '00'}+05:30` : `${day}T00:00:00+05:30`;
 }
 
 export function parseInsider(rows: Record<string, unknown>[]): InsiderRow[] {
@@ -132,6 +148,20 @@ export interface InsiderResult {
  *
  * A disclosure is immutable once filed, so a re-fetch of the same `did` updates nothing but the
  * columns NSE can revise. Revisions arrive as their own rows with their own ids.
+ *
+ * **`disclosed_at` is in the set list even though NSE never revises it**, and the distinction is
+ * worth keeping straight: the other four columns are there because the *source* can change, this
+ * one is there because our *reading* of the source can. It did — `pitTimestamp` sent a zone-less
+ * string into a `timestamptz` column until 21-Sep-2026, so every timed disclosure already stored
+ * is 5h30m late on a box whose session zone is UTC. Without this line a re-fetch would leave that
+ * history exactly as it is, because the row already exists and nothing in the old set list
+ * touched the time.
+ *
+ * So the repair is a re-run rather than a migration, which is the safer of the two: a migration
+ * shifting every row back 5h30m is only correct for rows written while the session zone was UTC,
+ * and would move any row written from a laptop in IST *wrong*. Re-fetching cannot double-shift
+ * and needs nobody to work out which rows are which. Date-only rows are unaffected either way —
+ * midnight UTC and midnight IST fall on the same day.
  */
 export async function storeInsider(companyId: string, rows: InsiderRow[]): Promise<InsiderResult> {
   return serviceTxn('system:ingest', async (c) => {
@@ -144,7 +174,8 @@ export async function storeInsider(companyId: string, rows: InsiderRow[]): Promi
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
          ON CONFLICT (id) DO UPDATE SET
            quantity = EXCLUDED.quantity, value = EXCLUDED.value,
-           pct_before = EXCLUDED.pct_before, pct_after = EXCLUDED.pct_after`,
+           pct_before = EXCLUDED.pct_before, pct_after = EXCLUDED.pct_after,
+           disclosed_at = EXCLUDED.disclosed_at`,
         [
           rowId(r), companyId, r.symbol, r.person, r.category, r.kind, r.quantity, r.value,
           r.mode, r.disclosedAt, r.periodStart, r.periodEnd, r.pctBefore, r.pctAfter,

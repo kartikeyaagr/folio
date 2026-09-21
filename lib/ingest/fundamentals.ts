@@ -134,8 +134,24 @@ export interface ResultsFiling {
   symbol: string;
   isin: string | null;
   xbrlUrl: string;
+  /**
+   * What the index says about the period, verbatim, in whatever shape its source writes it:
+   * `01-Oct-2024` from equities, `01-APR-2024` from sme, `qe_Date` from Integrated Filing. Not
+   * parsed, not normalised, and read by nothing downstream.
+   *
+   * Deliberately not trusted rather than merely unused. The period a `fundamentals` row carries
+   * comes from the facts inside the instance, for the reason `./xbrl.ts` opens with: the contexts
+   * declare a quarter's dates over nine months of figures, and an index that agrees with the
+   * context agrees with the wrong thing.
+   */
   periodEnd: string | null;
 }
+
+/**
+ * How far back to ask. Older than any Indian listed company's XBRL, so it is a floor rather than a
+ * judgement about when anything started; the endpoints answer with what they hold.
+ */
+const EARLIEST = '2001-01-01';
 
 /**
  * Every board and period the feed actually serves.
@@ -156,12 +172,6 @@ export interface ResultsFiling {
  * the query is the natural thing to do and yields nothing forever. This is L1's sixth instance
  * waiting to happen, which is why the pairs are a named constant rather than inline strings.
  */
-/**
- * How far back to ask. Older than any Indian listed company's XBRL, so it is a floor rather than a
- * judgement about when anything started; the endpoints answer with what they hold.
- */
-const EARLIEST = '2001-01-01';
-
 const RESULT_FEEDS: ReadonlyArray<{ index: string; period: string }> = [
   { index: 'equities', period: 'Quarterly' },
   { index: 'equities', period: 'Annual' },
@@ -229,14 +239,6 @@ export async function fetchResultsIndex(session?: NseSession): Promise<ResultsFi
   return out;
 }
 
-/**
- * How many rows the endpoint will return for one question, measured 09-Sep-2026.
- *
- * PRAJIND over 2015-2026 answers 20; over 2024-2026 it answers 20; over 2025 alone it answers 10
- * and over 2026 alone 12 — the same eighteen filings, and the wide questions were both truncated
- * to the same number. There is no page parameter and no total in the response, so a full answer
- * and a clipped one look identical.
- */
 /**
  * One company's whole results history.
  *

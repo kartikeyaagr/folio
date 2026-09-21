@@ -10,7 +10,7 @@
  */
 import { closePool, readTxn } from '../lib/db.ts';
 import { fetchBhavcopy, NoBhavcopy, storePrices } from '../lib/ingest/bhavcopy.ts';
-import { ingestIndexDay, NoIndexFile } from '../lib/ingest/indices.ts';
+import { ingestIndexDay } from '../lib/ingest/indices.ts';
 import { runJob } from './_run.ts';
 
 /**
@@ -82,10 +82,16 @@ if (days.length === 0) {
 
         console.log(`${day}  ${rows.length} rows  ${out.stored} stored  ${idx.stored} index closes`);
       } catch (err) {
-        // The one exemption, and it is now narrow: only a 404 from the archive reaches here, so a
-        // weekend and a dead host are no longer the same answer. Everything else falls through to
-        // the outer catch and fails the run.
-        if (!(err instanceof NoBhavcopy) && !(err instanceof NoIndexFile)) throw err;
+        // The one exemption, and it is exactly one: a day with no bhavcopy. `NoIndexFile` was
+        // caught here too until 21-Sep-2026, which contradicted the paragraph above — it marked
+        // the day quiet and printed "no bhavcopy" for a day that had one.
+        //
+        // The ordering is what makes removing it safe. `fetchBhavcopy` runs first, so on a weekend
+        // or a holiday it throws `NoBhavcopy` and `ingestIndexDay` is never reached. `NoIndexFile`
+        // can therefore only fire on a day that genuinely traded and stored its prices — the
+        // archive being incomplete, which is a failure and not a holiday, and which was being
+        // counted into `quiet` and reported as one.
+        if (!(err instanceof NoBhavcopy)) throw err;
         quiet.push(day);
         console.log(`${day}  no bhavcopy (weekend, holiday, or not yet published)`);
       }

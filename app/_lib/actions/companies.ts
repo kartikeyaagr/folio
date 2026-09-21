@@ -32,6 +32,20 @@ import { currentUser, requireUser } from '../session.ts';
 
 export type { SecurityHit } from '@/lib/companies.ts';
 
+/**
+ * The security-master search, wrapped so a client component can be handed it.
+ *
+ * Nothing here but the check — `lib/companies.ts` owns the query, and is imported under an alias
+ * so the name a caller sees is the name it already knew. The wrapper exists because `FollowPicker`
+ * is a client component and can only be given a server action, and the library cannot become one:
+ * `'use server'` at the top of a module publishes *every* export in it as a POST endpoint, and
+ * that file holds `addCompany`, `setStatus` and `setSector` alongside the search, and is imported
+ * by the standalone `tsx` jobs as well. One checked export is the smaller surface by far.
+ *
+ * Signed out it answers with no hits rather than an error, which is indistinguishable from no
+ * match. Harmless only because the one caller lives inside the (app) layout, where there is always
+ * a session — a picker rendered anywhere else would report an empty security master.
+ */
 export async function searchSecurities(query: string): Promise<SecurityHit[]> {
   // Checked here and not only in the page: a server action is its own entry point, reachable
   // without ever rendering the page that hosts it.

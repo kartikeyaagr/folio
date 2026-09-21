@@ -87,7 +87,10 @@ export function parseAnnualReports(symbol: string, rows: Record<string, unknown>
 /**
  * Every annual report a company has ever filed with NSE.
  *
- * `board` is `'sme' | 'equities'`, read from `securities.series` by the caller — never guessed.
+ * `board` is `'sme' | 'equities'`, mapped by the caller from `securities.platform` — `nse_emerge`
+ * is `sme`, everything else `equities` — and never guessed. This named `securities.series` until
+ * 21-Sep-2026: `backfill-company.ts` has always branched on `platform`, and no caller anywhere
+ * reads `series`.
  * Wrong board, an unknown symbol and a genuinely report-less company are indistinguishable at
  * HTTP 200 with `{"data":[]}`, so the distinguishing check has to live here: this is only ever
  * called for a followed symbol, and a followed symbol with zero rows is a dead feed wearing a

@@ -24,7 +24,7 @@ export class ReasonRequired extends Error {}
 export type Side = 'buy' | 'sell';
 export type ActionKind = 'bonus' | 'split' | 'dividend';
 
-const n = (v: string | number | null): number => (v === null ? 0 : Number(v));
+const toNumber = (v: string | number | null): number => (v === null ? 0 : Number(v));
 
 // ------------------------------------------------------------------------------------------------
 // Replay
@@ -84,16 +84,16 @@ export function replay(trades: Trade[], actions: Action[], asOf?: string): Posit
 
   for (const e of events) {
     if (e.kind === 'trade') {
-      const q = n(e.t.quantity);
-      const price = n(e.t.price);
-      const fees = n(e.t.fees);
+      const tradeQuantity = toNumber(e.t.quantity);
+      const price = toNumber(e.t.price);
+      const fees = toNumber(e.t.fees);
       if (e.t.side === 'buy') {
-        quantity += q;
-        costTotal += q * price + fees;
+        quantity += tradeQuantity;
+        costTotal += tradeQuantity * price + fees;
       } else {
         // Selling more than is held would mean the record is wrong; clamp rather than go negative,
         // and let the holdings CHECK constraint be the thing that refuses to store nonsense.
-        const sold = Math.min(q, quantity);
+        const sold = Math.min(tradeQuantity, quantity);
         const avg = quantity === 0 ? 0 : costTotal / quantity;
         realised += sold * (price - avg) - fees;
         quantity -= sold;
@@ -104,8 +104,8 @@ export function replay(trades: Trade[], actions: Action[], asOf?: string): Posit
       // average cost by the same factor** — total cost basis is unchanged, because a bonus issue
       // costs nothing. Leaving average cost alone would double the basis and print a fabricated
       // ~50% unrealised loss.
-      const from = n(e.a.ratio_from);
-      const to = n(e.a.ratio_to);
+      const from = toNumber(e.a.ratio_from);
+      const to = toNumber(e.a.ratio_to);
       if (from > 0 && to > 0) quantity = quantity * (to / from);
       // costTotal is deliberately untouched: quantity rose, so the average falls out of the division.
     }
@@ -153,10 +153,10 @@ export async function positionAsOf(companyId: string, on: string): Promise<Posit
 /** Rebuild one company's holding from its whole history. Called after every change. */
 export async function replayCompany(companyId: string, actorId: string): Promise<Position> {
   return writeTxn(actorId, async (c) => {
-    const p = await loadAndReplay(c, companyId);
-    if (p.quantity === 0 && p.realisedGain === 0) {
+    const position = await loadAndReplay(c, companyId);
+    if (position.quantity === 0 && position.realisedGain === 0) {
       await c.query('DELETE FROM holdings WHERE company_id = $1', [companyId]);
-      return p;
+      return position;
     }
     await c.query(
       `INSERT INTO holdings (company_id, quantity, avg_cost, realised_gain, replayed_at)
@@ -164,9 +164,9 @@ export async function replayCompany(companyId: string, actorId: string): Promise
        ON CONFLICT (company_id) DO UPDATE
           SET quantity = EXCLUDED.quantity, avg_cost = EXCLUDED.avg_cost,
               realised_gain = EXCLUDED.realised_gain, replayed_at = now()`,
-      [companyId, p.quantity.toFixed(4), p.avgCost.toFixed(6), p.realisedGain.toFixed(4)],
+      [companyId, position.quantity.toFixed(4), position.avgCost.toFixed(6), position.realisedGain.toFixed(4)],
     );
-    return p;
+    return position;
   });
 }
 
@@ -263,26 +263,33 @@ export async function confirmAction(actionId: string, actorId: string): Promise<
         RETURNING company_id, kind, record_date, amount_per_share::text`,
       [actorId, actionId],
     );
-    const a = rows[0];
-    if (!a) return null;
-    if (a.kind === 'dividend') {
+    const action = rows[0];
+    if (!action) return null;
+    if (action.kind === 'dividend') {
       // Paid on the quantity held as of the record date. The replay knows how — it sorts by date
       // already — but it had to be *asked*: this folded the whole history and paid on today's
       // position, under a comment claiming it did not.
-      const p = await loadAndReplay(c, a.company_id, a.record_date);
-      const amount = p.quantity * n(a.amount_per_share);
+      const position = await loadAndReplay(c, action.company_id, action.record_date);
+      const amount = position.quantity * toNumber(action.amount_per_share);
       await c.query(
         `INSERT INTO cash_ledger (id, on_date, kind, amount, company_id, action_id, note)
          VALUES ($1,$2,'dividend',$3,$4,$5,$6)`,
-        [rowId(), a.record_date, amount.toFixed(4), a.company_id, actionId,
-         `${p.quantity} shares at ${n(a.amount_per_share)}`],
+        [rowId(), action.record_date, amount.toFixed(4), action.company_id, actionId,
+         `${position.quantity} shares at ${toNumber(action.amount_per_share)}`],
       );
     }
-    return a.company_id;
+    return action.company_id;
   });
   if (companyId) await replayCompany(companyId, actorId);
 }
 
+/**
+ * Money into or out of the fund, with no company behind it.
+ *
+ * **The sign comes from `kind`, never from the caller.** `amount` is read through `Math.abs`, so
+ * −50,000 out and 50,000 out both store −50,000, and a caller cannot double-negate a withdrawal
+ * into a subscription. No replay follows: a capital flow moves cash and touches no position.
+ */
 export async function recordCapital(
   kind: 'capital_in' | 'capital_out',
   amount: number,

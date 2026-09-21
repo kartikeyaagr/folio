@@ -14,7 +14,7 @@
  * attributing it to the person would put a write in their name before the cookie proving it exists.
  */
 
-import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { hash as argonHash, verify as argonVerify } from '@node-rs/argon2';
 import { readTxn, serviceTxn, writeTxn, type Client } from './db.ts';
 import { clear as clearLimit, hit, type Limit } from './rate-limit.ts';
@@ -24,13 +24,6 @@ const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const RECOVERY_CODE_COUNT = 8;
 
 const sha256 = (value: string): string => createHash('sha256').update(value).digest('hex');
-
-/** Constant-time compare of two hex digests, so a wrong guess leaks no timing signal. */
-function digestsEqual(a: string, b: string): boolean {
-  const x = Buffer.from(a, 'hex');
-  const y = Buffer.from(b, 'hex');
-  return x.length === y.length && timingSafeEqual(x, y);
-}
 
 // ------------------------------------------------------------------------------------------------
 // Passwords
@@ -177,13 +170,6 @@ export async function issueRecoveryCodes(userId: string, actorId: string): Promi
 // Login
 // ------------------------------------------------------------------------------------------------
 
-/**
- * Verifies a password and issues a session, or returns null.
- *
- * A missing user still costs an Argon2id verification against a dummy hash, so "no such account"
- * and "wrong password" take the same time and the response cannot be used to enumerate who works
- * here.
- */
 // Computed at first use, not written down. A hand-written constant risks being malformed, and a
 // malformed hash makes verify() throw and return early — which would defeat the very timing
 // equivalence it exists for.
@@ -215,6 +201,18 @@ export class TooManyAttempts extends Error {
 const PER_EMAIL: Limit = { max: 8, windowMs: 15 * 60 * 1000 };
 const PER_ADDRESS: Limit = { max: 30, windowMs: 15 * 60 * 1000 };
 
+/**
+ * Verifies a password and issues a session, or returns null.
+ *
+ * A missing user still costs an Argon2id verification against a dummy hash, so "no such account"
+ * and "wrong password" take the same time and the response cannot be used to enumerate who works
+ * here.
+ *
+ * **Null is not the only refusal.** A rate-limited caller gets a thrown `TooManyAttempts` carrying
+ * the seconds to wait, and the two shapes are different on purpose: null is "that is not the
+ * password", which a page must not elaborate on, while the throw is the one refusal it can safely
+ * explain, because you caused the limit yourself. Both callers branch on them separately.
+ */
 export async function login(
   email: string,
   password: string,
@@ -357,5 +355,3 @@ export async function setPassword(userId: string, plain: string, actorId: string
     await c.query('UPDATE users SET password_hash = $1 WHERE id = $2', [encoded, userId]);
   });
 }
-
-export { digestsEqual, sha256 };

@@ -4,7 +4,10 @@ Description=News feeds, and the net
 [Timer]
 # Every two hours through the working day. The feeds carry 10-200 items each and turn over slowly;
 # polling faster would re-read the same headlines and store nothing.
-OnCalendar=*-*-* 07..21:05 Asia/Kolkata
+# `07..21` is a range and ran this every hour, twice as often as the paragraph above argues for
+# and says it does. `07/2` is a *start* with a step and no upper bound, so it would add a 23:05
+# run the original never had — the step belongs on the range: `07..21/2`.
+OnCalendar=*-*-* 07..21/2:05:00 Asia/Kolkata
 Persistent=true
 Unit=trisula-job@news-poll.service
 

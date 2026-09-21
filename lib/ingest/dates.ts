@@ -31,6 +31,30 @@ function monthOf(name: string): number | null {
 const DATE = /^(\d{2})-([A-Za-z]{3})-(\d{4})(?:[ T](\d{2}):(\d{2}):(\d{2}))?/;
 
 /**
+ * Does this year/month have this day? The month guard above says the *name* is real; nothing said
+ * the number was, and the two readers below failed differently without it.
+ *
+ * `nseDate` pasted the two matched digits straight into its output, so `31-Feb-2026` became the
+ * string `2026-02-31`. That reaches a `date` column, Postgres rejects it, and the throw abandons
+ * the whole file — the opposite of what this module's header promises, which is that an unparseable
+ * row is dropped and the rest of the feed still lands.
+ *
+ * `nseTimestamp` was worse, because `new Date('2026-02-30T10:00:00+05:30')` is **not** an Invalid
+ * Date. It rolls over. So the `Number.isNaN` check never fired and Feb 30 was stored as 2 March —
+ * a plausible wrong date on the field recording when a filing was announced, rather than a refusal.
+ *
+ * Checked by round-tripping through `Date.UTC`, which normalises exactly the way that rollover
+ * does: if any of the three fields comes back changed, the date was not real. UTC rather than
+ * local, so the answer does not depend on the box's timezone.
+ */
+function isRealDate(year: number, monthZeroBased: number, day: number): boolean {
+  const at = new Date(Date.UTC(year, monthZeroBased, day));
+  return at.getUTCFullYear() === year
+    && at.getUTCMonth() === monthZeroBased
+    && at.getUTCDate() === day;
+}
+
+/**
  * `DD-MMM-YYYY` → `YYYY-MM-DD`. A trailing time is ignored; anything else is null.
  *
  * Null rather than a throw because these read feed fields one row at a time, and a row whose date
@@ -41,6 +65,7 @@ export function nseDate(value: unknown): string | null {
   if (!m) return null;
   const mon = monthOf(m[2]!);
   if (mon === null) return null;
+  if (!isRealDate(Number(m[3]), mon, Number(m[1]))) return null;
   return `${m[3]}-${String(mon + 1).padStart(2, '0')}-${m[1]}`;
 }
 
@@ -56,6 +81,9 @@ export function nseTimestamp(value: unknown): Date | null {
   if (!m || m[4] === undefined) return null;
   const mon = monthOf(m[2]!);
   if (mon === null) return null;
+  // Before constructing the Date, not after: an impossible day rolls over silently rather than
+  // producing the Invalid Date the check below is looking for.
+  if (!isRealDate(Number(m[3]), mon, Number(m[1]))) return null;
   const at = new Date(
     `${m[3]}-${String(mon + 1).padStart(2, '0')}-${m[1]}T${m[4]}:${m[5]}:${m[6]}+05:30`,
   );

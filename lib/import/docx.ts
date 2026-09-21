@@ -109,8 +109,20 @@ export function readDocx(buf: Buffer): string {
 
   // Runs of blank paragraphs collapse to one: Word documents are full of empty paragraphs used as
   // spacing, and they are formatting rather than content.
-  return parts
+  const text = parts
     .join('\n')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
+
+  // A document that produced nothing is not a document that said nothing. An image-only `.docx` —
+  // a scan dropped into Word, which is how a physical document reaches this desk — has a body
+  // full of `w:drawing` and not one `w:t`, and returning '' for it put a blank note on the record
+  // under a real title, where the emptiness reads as the author's rather than as the reader's.
+  // The same refusal `pdfToText` makes one file over for a PDF with no text layer.
+  if (text === '') {
+    throw new UnreadableDocument(
+      'This document has no text in it — it is probably a scan, and would import as a blank note.',
+    );
+  }
+  return text;
 }

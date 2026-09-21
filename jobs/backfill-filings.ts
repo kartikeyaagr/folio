@@ -27,27 +27,27 @@ import { readFlags } from './_args.ts';
 import { runJob } from './_run.ts';
 
 
-  const flags = readFlags(['symbol']);
-  const only = flags.str('symbol')?.trim().toUpperCase();
+const flags = readFlags(['symbol']);
+const only = flags.str('symbol')?.trim().toUpperCase();
 
-  // The board decides which index the feed is asked for. `securities.platform` is the master's
-  // own answer; a company with no master row cannot be backfilled and says so rather than being
-  // fetched from the wrong board and coming back empty.
-  const targets = await readTxn(async (c) => {
-    const { rows } = await c.query<{ symbol: string; platform: string | null }>(
-      `SELECT co.symbol, s.platform
-         FROM companies co
-         LEFT JOIN securities s ON s.symbol = co.symbol
-        WHERE ($1::text IS NULL OR co.symbol = $1)
-        ORDER BY co.symbol`,
-      [only ?? null],
-    );
-    return rows;
-  });
+// The board decides which index the feed is asked for. `securities.platform` is the master's
+// own answer; a company with no master row cannot be backfilled and says so rather than being
+// fetched from the wrong board and coming back empty.
+const targets = await readTxn(async (c) => {
+  const { rows } = await c.query<{ symbol: string; platform: string | null }>(
+    `SELECT co.symbol, s.platform
+       FROM companies co
+       LEFT JOIN securities s ON s.symbol = co.symbol
+      WHERE ($1::text IS NULL OR co.symbol = $1)
+      ORDER BY co.symbol`,
+    [only ?? null],
+  );
+  return rows;
+});
 
-  if (targets.length === 0) {
-    throw new Error(only ? `${only} is not a followed company` : 'no companies are followed');
-  }
+if (targets.length === 0) {
+  throw new Error(only ? `${only} is not a followed company` : 'no companies are followed');
+}
 
 await runJob('nse_announcements_backfill', async () => {
   const session = await NseSession.open();

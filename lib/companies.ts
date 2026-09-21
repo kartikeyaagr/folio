@@ -60,13 +60,6 @@ const toCompany = (r: Row): Company => ({
   coveredByName: r.covered_name,
 });
 
-/**
- * Follow a name.
- *
- * Identity comes from `securities`, never from the caller: the symbol is the only thing typed,
- * and the ISIN and registered name are read from the exchange's own list. A symbol that is not
- * listed is a typo far more often than it is a gap in the master, so it raises.
- */
 export interface SecurityHit {
   symbol: string;
   name: string;
@@ -103,6 +96,17 @@ export async function searchSecurities(query: string): Promise<SecurityHit[]> {
   });
 }
 
+/**
+ * Follow a name.
+ *
+ * Identity comes from `securities`, never from the caller: the symbol is the only thing typed,
+ * and the ISIN and registered name are read from the exchange's own list. A symbol that is not
+ * listed is a typo far more often than it is a gap in the master, so it raises.
+ *
+ * One transaction covers all four writes — the row, its registered-name alias, its filings, and
+ * the doorbell — so there is no state where a followed company exists without the history that
+ * makes following it useful.
+ */
 export async function addCompany(symbol: string, actorId: string): Promise<Company> {
   const upper = symbol.trim().toUpperCase();
   return writeTxn(actorId, async (c: Client) => {

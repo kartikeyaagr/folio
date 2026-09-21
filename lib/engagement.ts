@@ -15,6 +15,18 @@ import { readTxn, writeTxn } from './db.ts';
 export type SubjectKind = 'news' | 'alert' | 'filing';
 export type EngagementState = 'read' | 'dismissed';
 
+/**
+ * Record that one person has read or dismissed one thing. Last write wins: marking read after
+ * dismissing brings the item back, the same as `clear` does.
+ *
+ * **For news, `subjectRef` is the match id and not the article id.** `newsFor` selects `m.id` from
+ * `news_matches` and joins engagement on it, so one article matched to two companies carries two
+ * rows, and dismissing it under one name leaves it standing under the other. That is the right
+ * reading of a dismissal — "this matched *this* company and should not have" is a judgement about
+ * one match, which is what `dismissalsByTier` then counts. The trap is that `subject_ref` is a
+ * bare text column with no foreign key, across three unrelated kinds: the wrong id writes a row
+ * that nothing will ever join to, and nothing anywhere will say so.
+ */
 export async function mark(
   kind: SubjectKind,
   subjectRef: string,
@@ -111,8 +123,14 @@ export async function dismissalsByTier(): Promise<
 > {
   return readTxn(async (c) => {
     const { rows } = await c.query<{ tier: string; confirmed: number; dismissed: number }>(
+      // `count(DISTINCT m.id)`, not `count(*)`. The LEFT JOIN fans a match out to one row per
+      // engagement, and three people share this desk each keeping their own read/dismissed
+      // state — so a story two of them touched counted twice. `dismissed` beside it was already
+      // distinct, which is what made the two columns quietly incomparable, and comparing them is
+      // the only thing this function is for: a tier inflated on the left looks better at
+      // dismissing than it is.
       `SELECT m.tier,
-              count(*)::int AS confirmed,
+              count(DISTINCT m.id)::int AS confirmed,
               count(DISTINCT e.subject_ref) FILTER (WHERE e.state = 'dismissed')::int AS dismissed
          FROM news_matches m
          LEFT JOIN engagement e ON e.subject_kind = 'news' AND e.subject_ref = m.id

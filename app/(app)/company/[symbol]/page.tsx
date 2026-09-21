@@ -130,11 +130,11 @@ export default async function CompanyPage({
   // this stays a builder rather than two string literals so the next bit of view state has one
   // place to be added.
   const href = (next: { archived?: string }): string => {
-    const q = new URLSearchParams();
+    const query = new URLSearchParams();
     const archived = 'archived' in next ? next.archived : (showArchived ? '1' : undefined);
-    if (archived) q.set('archived', archived);
-    const qs = q.toString();
-    return qs ? `?${qs}` : '?';
+    if (archived) query.set('archived', archived);
+    const queryString = query.toString();
+    return queryString ? `?${queryString}` : '?';
   };
 
   const latest = co.shareholding[0];

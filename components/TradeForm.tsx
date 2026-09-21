@@ -86,6 +86,14 @@ export function TradeForm({
                   </button>
                 ))}
               </div>
+            ) : q === '' ? (
+              // Nothing has been typed, so nothing failed to match: the list is empty because the
+              // book follows nothing yet. The sentence below reads as a broken filter here — it
+              // reports a search that was never run, on the screen that moves the book.
+              <p className="pf-pick-none">
+                No name is followed yet. Follow one from Companies first, so the book and the
+                research are about the same company.
+              </p>
             ) : (
               // Only the book's own names, on purpose: a trade in something nobody follows is
               // either a mistake or a name that should be followed first.

@@ -15,7 +15,9 @@
  * one; both are re-exported here so nothing outside `lib/sheet/` has to know about the split.
  */
 
-import { expandRange, refName, type CellRef } from './cells.ts';
+import {
+  expandRange, MAX_RANGE_CELLS, rangeHead, rangeSize, refName, type CellRef,
+} from './cells.ts';
 import { callFunction } from './functions.ts';
 import { parseFormula, type Node } from './parse.ts';
 import {
@@ -118,6 +120,12 @@ export function evaluateWorkbook(book: Workbook): Record<string, Value>[] {
     const vs: Value[] = [];
     for (const a of args) {
       if (a.t === 'range') {
+        // Asked before expanding: a range is only bounded by what somebody typed, and this runs
+        // on the server. An oversized one says so rather than being quietly empty.
+        if (rangeSize(a.from, a.to) > MAX_RANGE_CELLS) {
+          vs.push(REF(`that range is larger than ${MAX_RANGE_CELLS.toLocaleString('en-IN')} cells`));
+          continue;
+        }
         for (const ref of expandRange(a.from, a.to)) vs.push(at(ref, a.sheet, si));
       } else {
         vs.push(evalNode(a, si));
@@ -133,8 +141,9 @@ export function evaluateWorkbook(book: Workbook): Record<string, Value>[] {
       case 'ref': return at(node.ref, node.sheet, si);
       case 'range': {
         // A bare range where one value is wanted takes its first cell, as every spreadsheet does.
-        const [head] = expandRange(node.from, node.to);
-        return head ? at(head, node.sheet, si) : VALUE('an empty range');
+        // Computed rather than expanded: building the whole rectangle to read its top-left was
+        // the cost of the range, paid to throw all of it away.
+        return at(rangeHead(node.from, node.to), node.sheet, si);
       }
       case 'neg': {
         const n = num(evalNode(node.a, si));

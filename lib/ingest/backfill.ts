@@ -1,17 +1,18 @@
 /**
  * The queue a newly followed name sits in, and what counts as having filled it in.
  *
- * `jobs/backfill-company.ts` owns the seven steps — they are network work against four NSE
+ * `jobs/backfill-company.ts` owns the eight steps — they are network work against seven NSE
  * endpoints and belong in a job. This file owns the three decisions around them, which are neither
  * network nor opinion and are the ones that were wrong: **who may claim a name, what a step ending
  * badly means, and whether the name is then done.**
  *
  * ### A step ends three ways, not two
  *
- * The job used to treat "did not throw" as success, and three of its seven steps never throw: the
- * annual-report loop catches each year and counts it, `fetchAttachments` and `extractPending` both
- * count their own failures and return, and the shareholding step asserted on the size of the
- * *exchange-wide* submissions index rather than on anything belonging to this company. So
+ * The job used to treat "did not throw" as success, and three of the seven steps it had on
+ * 17-Sep-2026 never throw — the eighth, insider, arrived two days later. The annual-report loop
+ * catches each year and counts it, `fetchAttachments` and `extractPending` both count their own
+ * failures and return, and the shareholding step asserted on the size of the *exchange-wide*
+ * submissions index rather than on anything belonging to this company. So
  * `5 offered, 0 stored, 5 failed` was a success, `93 attachments, 93 failed` was a success, and a
  * name whose shareholding was never fetched was a success. Then `backfilled_at` was set and the
  * queue's own predicate stopped matching, so nothing ever offered the name again.

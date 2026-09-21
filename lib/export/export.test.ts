@@ -36,6 +36,23 @@ test('an empty entry survives, which is the case that usually does not', () => {
   assert.deepEqual(back.get('empty.txt'), Buffer.alloc(0));
 });
 
+test('an entry name says it is UTF-8, in both copies of the header', () => {
+  // Names are written with `Buffer.from(name, 'utf8')` and the flag field said nothing, so a
+  // reader was entitled by the spec to decode `पूर्वानुमान.xml` as CP437 and show mojibake. Bit 11
+  // is the whole fix. Asserted on the bytes rather than through a round trip, which is the honest
+  // place: our own reader hands the name back intact whether the flag is set or not, so a
+  // round-trip assertion passes with the flag removed and reads as cover for nothing.
+  const buf = zip([{ name: 'पूर्वानुमान.xml', body: Buffer.from('<x/>', 'utf8') }]);
+  const central = buf.readUInt32LE(buf.length - 22 + 16);
+
+  assert.equal(buf.readUInt16LE(6), 0x0800, 'local header: bit 11, and nothing else');
+  assert.equal(buf.readUInt16LE(central + 8), 0x0800, 'central directory: the same word');
+  // Bit 0 is encryption and bit 3 is a data descriptor; this writer does neither, and a flag word
+  // that quietly acquired one would describe a file it is not writing.
+  assert.equal(buf.readUInt16LE(6) & 0b1001, 0, 'no encryption, no data descriptor');
+  assert.deepEqual([...unzip(buf).keys()], ['पूर्वानुमान.xml'], 'and the name still comes back');
+});
+
 test('the same document exports to the same bytes', () => {
   // The timestamp is fixed rather than `now`, so an export is testable and two exports of an
   // unedited document are identical — a reader diffing them sees the document change, not the clock.
@@ -101,6 +118,40 @@ test('every run says its spaces are meant, because Word drops them otherwise', (
   assert.ok(runs.length >= 3, 'three runs: before the mark, the mark, after it');
   for (const t of runs) assert.match(t, /xml:space="preserve"/);
   assert.match(readDocx(toDocx('M', 'the **bold** word')), /the bold word/);
+});
+
+test('a link says its address once, however many runs its text is split into', () => {
+  // A link carries its URL in the text rather than a `w:hyperlink`, and that text was appended by
+  // `run()` — which is per *leaf*. `[see **the report** now](url)` is three leaves, so the address
+  // was emitted three times, interleaved into the sentence: "see <url> the report <url> now <url>".
+  // Any mark inside a link triggers it, and a bold phrase inside a link is ordinary writing.
+  const xml = unzip(toDocx('M', '[see **the report** now](https://example.com/r.pdf)'))
+    .get('word/document.xml')!.toString('utf8');
+  assert.equal((xml.match(/example\.com/g) ?? []).length, 1, 'the address, once');
+  // And it comes after the whole phrase rather than inside it.
+  assert.match(readDocx(toDocx('M', '[see **the report** now](https://example.com/r.pdf)')),
+    /see the report now <https:\/\/example\.com\/r\.pdf>/);
+});
+
+test('a control character cannot reach the XML, because Word would refuse the whole file', () => {
+  // XML 1.0 permits tab, newline and carriage return out of the C0 range and forbids the rest.
+  // Nothing upstream strips them — a NUL or a form feed from an extracted PDF reaches `xml()`,
+  // which escapes five characters and passes everything else through. The result is not a
+  // mangled paragraph, it is a file Word declines to open at all, reporting "unreadable content"
+  // and naming nothing. Measured before the fix: both survived into `word/document.xml`.
+  const NUL = String.fromCharCode(0);
+  const FORM_FEED = String.fromCharCode(12);
+  const VERTICAL_TAB = String.fromCharCode(11);
+  const body = `before${NUL}after${FORM_FEED}page${VERTICAL_TAB}end`;
+  const xml = unzip(toDocx(`M${NUL}emo`, body)).get('word/document.xml')!.toString('utf8');
+  for (const ch of [NUL, FORM_FEED, VERTICAL_TAB]) {
+    assert.ok(!xml.includes(ch), `charCode ${ch.charCodeAt(0)} must not survive`);
+  }
+  // The text either side of it is kept — this drops the character, not the sentence.
+  assert.match(readDocx(toDocx('M', body)), /before.?after.?page.?end/);
+  // The three C0 characters XML does allow are still carried.
+  const kept = unzip(toDocx('M', 'a\tb')).get('word/document.xml')!.toString('utf8');
+  assert.ok(kept.includes('\t'), 'tab is legal XML and stays');
 });
 
 test('an unsafe link never reaches the exported file as a link', () => {

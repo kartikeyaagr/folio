@@ -10,11 +10,12 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
+import { zip as writeZip } from '../export/zip.ts';
 import { evaluateSheet, evaluateWorkbook } from '../sheet/evaluate.ts';
-import { readDocx } from './docx.ts';
+import { readDocx, UnreadableDocument } from './docx.ts';
 import { csvToSheet, readUpload, UnsupportedFile } from './index.ts';
 import { readWorkbook } from './xlsx.ts';
-import { unzip, UnreadableZip } from './zip.ts';
+import { unzip, unzipListing, UnreadableZip } from './zip.ts';
 
 const fixture = (name: string) => readFileSync(new URL(`./__fixtures__/${name}`, import.meta.url));
 
@@ -29,6 +30,71 @@ test('a multi-entry zip is read from its central directory', () => {
 
 test('something that is not a zip is refused rather than half-read', () => {
   assert.throws(() => unzip(Buffer.from('not a zip at all, just text')), UnreadableZip);
+});
+
+/**
+ * An archive that claims more than it carries, which is the shape of every zip bomb.
+ *
+ * The caps are read off the central directory, because that is the only place they can be read
+ * *before* the allocation they exist to prevent. So a fixture that overstates its sizes is the
+ * honest test of them, and it costs a few hundred bytes to build rather than the megabytes it
+ * claims.
+ */
+function claiming(buf: Buffer, bytesPerEntry: number): Buffer {
+  const out = Buffer.from(buf);
+  const eocd = out.length - 22;
+  let at = out.readUInt32LE(eocd + 16);
+  for (let left = out.readUInt16LE(eocd + 10); left > 0; left--) {
+    out.writeUInt32LE(bytesPerEntry, at + 24);
+    at += 46 + out.readUInt16LE(at + 28) + out.readUInt16LE(at + 30) + out.readUInt16LE(at + 32);
+  }
+  return out;
+}
+
+test('an archive with more entries than any document has parts is refused', () => {
+  // note.docx — a real Word file with an embedded image — holds 17 parts and model.xlsx holds 10,
+  // so five thousand is not a document. Left uncapped this returned a Map of five thousand
+  // Buffers, which is the cheap half of the same footgun the range bomb was: nobody attacks this
+  // box, but a malformed archive should not be able to spend all of it.
+  const many = writeZip(Array.from({ length: 5_000 }, (_, i) => ({
+    name: `part${i}.txt`,
+    body: Buffer.from('x'),
+  })));
+  assert.throws(() => unzip(many), (err: unknown) => {
+    assert.ok(err instanceof UnreadableZip);
+    // "More than", not the real count: the cap is checked per entry as fflate walks the
+    // directory, so the refusal happens on the 4,097th and the total is never counted.
+    assert.match(err.message, /more than 4,096 entries/, 'the refusal names the ceiling');
+    return true;
+  });
+});
+
+test('one entry claiming more than a document could hold is refused before it inflates', () => {
+  const bomb = claiming(writeZip([{ name: 'report.pdf', body: Buffer.from('x') }]), 200 * 1024 * 1024);
+  assert.throws(() => unzip(bomb), (err: unknown) => {
+    assert.ok(err instanceof UnreadableZip);
+    assert.match(err.message, /report\.pdf/, 'names the entry, because one of them is the problem');
+    assert.match(err.message, /64 MB/);
+    return true;
+  });
+  // The index still reads. The cap is on what gets inflated, not on what the archive says it
+  // holds — which is what keeps `unzipListing` able to weigh an annual report against its cover
+  // page without inflating either.
+  assert.deepEqual(unzipListing(bomb), [{ name: 'report.pdf', bytes: 200 * 1024 * 1024 }]);
+});
+
+test('entries each small enough but together past the ceiling are refused', () => {
+  // Eight members of 20MB: every one of them under the per-entry cap, and 160MB of Buffers on a
+  // 2GB box if they all come out.
+  const parts = writeZip(Array.from({ length: 8 }, (_, i) => ({
+    name: `part${i}.bin`,
+    body: Buffer.from('x'),
+  })));
+  assert.throws(() => unzip(claiming(parts, 20 * 1024 * 1024)), (err: unknown) => {
+    assert.ok(err instanceof UnreadableZip);
+    assert.match(err.message, /128 MB/, 'the total, not the entry, is what this one trips');
+    return true;
+  });
 });
 
 // ---- Excel ------------------------------------------------------------------------------------------
@@ -134,6 +200,43 @@ test('a formula whose answer disagrees with Excel’s is not kept', () => {
   assert.equal(sheet!.formulasKept, 0);
 });
 
+test('a formula that only disagrees because its input did is kept, not frozen', () => {
+  // stale-chain.xlsx, shaped the way Excel writes one. `Inputs!B1` is `=SUM(C1:C9)` showing 1000
+  // with column C empty, so this engine gets 0 and Excel's number wins — that one is a genuine
+  // disagreement. `Model!B1` is `=Inputs!B1*2` showing 2000, and this engine got that wrong too,
+  // but only because it read B1 while B1 was still the formula about to be replaced. Judged once,
+  // against the grid as it stood before any substitution, it was frozen to 2000 as well: a model
+  // stopped moving one cell further down than it had to, on the tab that was not the problem.
+  const sheets = readWorkbook(fixture('stale-chain.xlsx'));
+  const inputs = sheets.find((s) => s.name === 'Inputs')!;
+  const model = sheets.find((s) => s.name === 'Model')!;
+
+  assert.equal(inputs.cells['B1'], '1000', "the disagreement at the root takes Excel's number");
+  assert.equal(model.cells['B1'], '=Inputs!B1*2', 'the cell reading it agrees once it settles, so it lives');
+  assert.equal(model.formulasKept, 1);
+  assert.equal(model.formulasFlattened, 0);
+  assert.equal(inputs.formulasFlattened, 2, 'both of the tab that was wrong, and neither of the tab that was not');
+});
+
+test('a formula that agreed only against a stale input is not kept', () => {
+  // The same bug the other way round, and the dangerous direction. `Inputs!B2` is `=B1*0.5`
+  // showing 0, and against the unresolved B1 — which was evaluating to 0 — it agreed exactly, so
+  // it was kept. Once B1 became 1000 the imported tab computed 500 where the author had been
+  // looking at 0: a figure changed by the import, in silence, which is the one thing the
+  // agreement check exists to prevent.
+  const sheets = readWorkbook(fixture('stale-chain.xlsx'));
+  const inputs = sheets.findIndex((s) => s.name === 'Inputs');
+  assert.equal(sheets[inputs]!.cells['B2'], '0');
+
+  const values = evaluateWorkbook({ sheets: sheets.map((s) => ({ name: s.name, cells: s.cells })) });
+  const model = sheets.findIndex((s) => s.name === 'Model');
+  assert.deepEqual(
+    [values[inputs]!['B1'], values[inputs]!['B2'], values[model]!['B1']],
+    [1000, 0, 2000],
+    'the imported workbook computes what Excel was showing, in every cell of the chain',
+  );
+});
+
 // ---- Word --------------------------------------------------------------------------------------------
 
 test('a Word document keeps the structure that carries meaning', () => {
@@ -141,6 +244,18 @@ test('a Word document keeps the structure that carries meaning', () => {
   assert.match(text, /^# Praj — first look/, 'a heading is a heading');
   assert.match(text, /- Order book conversion/, 'a list item is a list item');
   assert.match(text, /FY26 revenue\t3167\.88/, 'a table keeps which number belonged to which row');
+});
+
+test('a document with no text layer is refused, not imported as a blank note', async () => {
+  // image-only.docx is one scanned page in a `w:drawing` and not a `w:t` anywhere — which is how
+  // a physical document reaches this desk. `readDocx` returned '' for it, so the import wrote a
+  // note with a real title and nothing under it, and the emptiness read as the author's rather
+  // than as the reader's. It is the rule `pdfToText` already applies one file over, and the rule
+  // every job here applies to a feed: producing nothing is a failure, not a quiet day.
+  assert.throws(() => readDocx(fixture('image-only.docx')), UnreadableDocument);
+  // And it survives `readUpload`'s try-the-other-format fallback, which used to answer for an
+  // image-only Word file with "No xl/workbook.xml — this is not a spreadsheet."
+  await assert.rejects(() => readUpload('scan.docx', fixture('image-only.docx')), UnreadableDocument);
 });
 
 // ---- everything else ------------------------------------------------------------------------------------
@@ -193,4 +308,43 @@ test('plain text comes in as a note', async () => {
   const r = await readUpload('thoughts.md', Buffer.from('# Praj\n\nSomething I thought.\n'));
   assert.equal(r.kind, 'note');
   assert.match(r.kind === 'note' ? r.text : '', /Something I thought/);
+});
+
+test('a file with a NUL in it is binary, whatever it decodes to', async () => {
+  // The only check was the ratio of U+FFFD replacement characters, and a run of NUL bytes
+  // produces none of those — `Buffer.alloc(64).toString('utf8')` is 64 valid characters. So a
+  // binary file imported as a note: measured before the fix, 64 NULs straight into a document
+  // body.
+  //
+  // That body is what `/api/export/[id]` renders into a `.docx`, and XML 1.0 cannot carry a NUL
+  // at all, so the export came back as a file Word refuses to open with "unreadable content".
+  // The writer now strips them; this stops them arriving. A NUL is the same signal `grep` uses
+  // to call a file binary, and for the same reason: text does not contain one.
+  const NUL = String.fromCharCode(0);
+  await assert.rejects(
+    () => readUpload('x.bin', Buffer.alloc(64)),
+    UnsupportedFile,
+    'a file of NUL bytes is not a document',
+  );
+  await assert.rejects(
+    () => readUpload('notes.txt', Buffer.concat([Buffer.from('Report '), Buffer.alloc(40)])),
+    UnsupportedFile,
+    'nor is one that starts out looking like text',
+  );
+
+  // Text still imports, including the three control characters that legitimately appear in it.
+  const ok = await readUpload('notes.txt', Buffer.from('Line one\tcolumn\r\nLine two\n'));
+  assert.equal(ok.kind, 'note');
+  assert.ok(ok.kind === 'note' && ok.text.includes('Line two'));
+  assert.ok(!(ok.kind === 'note' && ok.text.includes(NUL)));
+});
+
+test('a workbook named .docx is read as a workbook, which is what the comment promises', async () => {
+  // "Both Office formats are zips; which one is decided by what is inside, not by the extension."
+  // It was decided by the extension: `ext === 'docx'` went straight to `readDocx`, and only an
+  // unrecognised extension got the try-the-other-one fallback that was sitting right below it.
+  // A renamed file should not lie — the same rule `lib/workspace.ts` states when it sniffs an
+  // upload's magic number rather than trusting its name.
+  const out = await readUpload('model.docx', fixture('model.xlsx'));
+  assert.equal(out.kind, 'sheet', 'read as what it is, not as what it is called');
 });

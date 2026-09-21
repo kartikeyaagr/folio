@@ -140,19 +140,37 @@ async function answer(c: Client, call: Call, symbol: string): Promise<Value> {
       if (!line) return NA('no line item named');
       if (!period) return NA(`${call.args[2] ?? ''} is not a period this understands`);
       const basis = (call.args[3] ?? 'consolidated').trim().toLowerCase();
+      // The basis filters, it does not merely sort.
+      //
+      // This read ORDER BY (f.basis = $5) DESC until 21-Sep-2026, which preferred the basis asked
+      // for when a row existed and returned the other one when it did not. A model asking for
+      // consolidated revenue got the standalone figure, unmarked — and standalone and consolidated
+      // are materially different numbers for a company with subsidiaries.
+      //
+      // That is the failure this module's header exists to forbid, one step worse than the blank
+      // it refuses: a plausible wrong number propagates into a margin, a growth rate and a
+      // valuation exactly as far as a blank would, and does not look wrong on the way.
       const { rows } = await c.query<{ v: string | null }>(
         `SELECT f.facts ->> $3 AS v
            FROM fundamentals f JOIN companies co ON co.id = f.company_id
           WHERE co.symbol = $1 AND f.superseded_by IS NULL AND f.period_end = $2::date
+            AND f.basis = $5
             AND ($4 = '' OR f.period_kind = $4)
-          ORDER BY (f.basis = $5) DESC, f.period_end DESC
           LIMIT 1`,
         [symbol, period.end, line, period.kind ?? '', basis],
       );
       const v = rows[0]?.v;
-      return v == null || v === ''
-        ? NA(`no ${line} filed for ${symbol} to ${period.end}`)
-        : Number(v);
+      if (v == null || v === '') return NA(`no ${basis} ${line} filed for ${symbol} to ${period.end}`);
+      // `Number()` on something that is not a figure gives NaN, and NaN is a number as far as the
+      // grid is concerned — it propagates into a margin and a valuation exactly as a wrong figure
+      // would, and prints as a value rather than as a refusal. `facts` is written by
+      // `lib/ingest/xbrl.ts` and holds numeric strings today, so this is a guard against a source
+      // that does not exist yet rather than a bug being fixed; `Number('1,000')` is also NaN, so a
+      // grouped figure from any future writer lands here too.
+      const figure = Number(v);
+      return Number.isFinite(figure)
+        ? figure
+        : NA(`${line} for ${symbol} to ${period.end} is not a figure: ${v}`);
     }
     case 'CLOSE': {
       const on = (call.args[1] ?? '').trim();

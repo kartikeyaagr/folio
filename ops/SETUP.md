@@ -112,8 +112,24 @@ The agents' retrieval runs a local model; nothing is sent to a vendor. Two files
 ```bash
 sudo mkdir -p /var/lib/trisula/models/bge-small-en-v1.5
 cd /var/lib/trisula/models/bge-small-en-v1.5
-sudo curl -sL -o model.onnx     https://huggingface.co/BAAI/bge-small-en-v1.5/resolve/main/onnx/model.onnx
-sudo curl -sL -o tokenizer.json https://huggingface.co/BAAI/bge-small-en-v1.5/resolve/main/tokenizer.json
+
+# Pinned to a commit, not to `main`. `/resolve/main` is a moving reference — the repo owner can
+# push to it whenever — and a model that moves is every vector in `chunks` needing a rebuild.
+# `ops/fetch-model.sh` pins the same revision; change one and you change both.
+rev=5c38ec7c405ec4b44b94cc5a9bb96e735b38267a
+base="https://huggingface.co/BAAI/bge-small-en-v1.5/resolve/$rev"
+
+# -f and -S, not the bare -s this used to have. Without -f, curl writes an HTTP error page into
+# the output file and still exits 0, so a proxy's 403 becomes a 400-byte file called model.onnx
+# and the next thing to notice is ONNX failing deep inside a matmul.
+sudo curl -fsSL -o model.onnx     "$base/onnx/model.onnx" || echo "model.onnx DID NOT DOWNLOAD"
+sudo curl -fsSL -o tokenizer.json "$base/tokenizer.json"  || echo "tokenizer.json DID NOT DOWNLOAD"
+
+# Then check what arrived, because a download that finished is not a download that is right.
+# Both lines must say OK. If either does not, delete that file and run its curl again.
+[ "$(wc -c <model.onnx)" = 133093490 ] && echo "model.onnx: OK" || echo "model.onnx: FAILED (wrong size)"
+echo 'd241a60d5e8f04cc1b2b3e9ef7a4921b27bf526d9f6050ab90f9267a1f9e5c66  tokenizer.json' | sha256sum -c -
+
 sudo chown -R trisula:trisula /var/lib/trisula/models
 ```
 
@@ -585,12 +601,13 @@ Then add the names you follow, and let the timers fill in filings, prices and re
 ## 12. Prove it works
 
 ```bash
-# The restore drill: dump, encrypt, decrypt, restore to a scratch database, compare row by row.
+# The restore drill: dump, encrypt, decrypt, restore to a scratch database, compare row counts
+# and per-table content hashes.
 sudo -u trisula /srv/trisula/ops/verify-backup.sh trisula
 ```
 
-Expect `OK: N tables, M rows, identical after a full round trip`. **If this does not pass, stop and
-fix it before putting real data in.** An untested restore is not a backup.
+Expect `OK: N tables, M rows, content identical after a full round trip`. **If this does not pass,
+stop and fix it before putting real data in.** An untested restore is not a backup.
 
 Then, separately and by hand, from wherever the private key lives:
 
@@ -600,6 +617,10 @@ Then, separately and by hand, from wherever the private key lives:
 aws s3 cp s3://<bucket>/<latest>.dump.age .
 ./ops/restore.sh <latest>.dump.age scratch_check ~/trisula-backup.key
 ```
+
+`restore.sh` refuses a database that already exists — a wrong target name costs the most at exactly
+the moment you are least able to afford it. If `scratch_check` is left over from the last time you
+did this, either drop it or pass `--replace` before the archive name, which drops it for you.
 
 ## 13. Day-to-day
 

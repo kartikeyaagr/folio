@@ -94,6 +94,21 @@
   /* Geist for anything written, Geist Mono for every figure. */
   --font: var(--font-sans), ui-sans-serif, system-ui, -apple-system, sans-serif;
   --mono: var(--font-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
+  /*
+   * The third face, for document and cell content only — never for chrome, which is the
+   * prose-versus-number split the design system argues for and this does not touch.
+   *
+   * Undeclared until 21-Sep-2026 while four rules referenced it: `--font-document` in
+   * `tailwind.css`, the sheet's face dropdown, and `.cf-face-serif`. An undefined custom property
+   * makes the whole `font-family` declaration invalid, so it was dropped and the text kept
+   * whatever it inherited — choosing Serif in a spreadsheet did nothing at all, silently. That is
+   * L12's shape for a token rather than a class, which is why `ops/measure-css.ts` now censuses
+   * these too.
+   *
+   * No serif webfont is loaded — `layout.tsx` fetches Geist and Geist Mono and nothing else — so
+   * this is a native stack, led by the Georgia that `FACES` already shows as the sample word.
+   */
+  --serif: Georgia, 'Times New Roman', ui-serif, serif;
 
   /* Motion. Ease-out only — ease-in delays the frame the user is watching. */
   --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
@@ -1100,6 +1115,24 @@ dialog.dlg[open] {
 .is-done .item-title,
 .is-read .item-title {
   font-weight: 500;
+}
+/*
+ * The detail line under a desk item's title — `item.detail` on an alert or a reminder.
+ *
+ * It was named by `app/(app)/page.tsx` and defined by no stylesheet, which is L12's shape and is
+ * why `ops/measure-css.ts` fails on an undefined class rather than only reporting dead ones: the
+ * paragraph rendered at body size in full ink, reading as a second title rather than as the
+ * subordinate line it is. Typography follows `.cell-sub`, which is the same job elsewhere.
+ *
+ * `margin: 0` because `.item-main` is a grid with `gap: 3px` and there is no preflight in this
+ * tree — `tailwind.css` refuses it on purpose — so a bare `p` would bring the browser's 1em.
+ */
+.item-sub {
+  margin: 0;
+  font-size: 12.5px;
+  font-weight: 400;
+  line-height: 1.4;
+  color: var(--muted);
 }
 .item-day {
   padding: 10px 14px 4px;

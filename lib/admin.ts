@@ -51,30 +51,37 @@ export async function listUsers(): Promise<AdminUser[]> {
   });
 }
 
-/** Count of live admins, used to refuse removing the last one. */
-async function liveAdmins(): Promise<number> {
-  return readTxn(async (c) => {
-    const { rows } = await c.query<{ n: string }>(
-      'SELECT count(*)::text AS n FROM users WHERE is_admin AND disabled_at IS NULL',
-    );
-    return Number(rows[0]?.n ?? 0);
-  });
-}
-
 export async function setUserAdmin(
   userId: string,
   isAdmin: boolean,
   actorId: string,
 ): Promise<void> {
-  if (!isAdmin) {
-    if (userId === actorId) {
-      throw new WouldLockYouOut('You cannot revoke your own admin — you would lose this page.');
-    }
-    if ((await liveAdmins()) <= 1) {
-      throw new WouldLockYouOut('That is the last admin. Grant another one first.');
-    }
+  // Revoking your own is refused before anything opens, because it needs no view of the table:
+  // it is true of this request alone and cannot race with another.
+  if (!isAdmin && userId === actorId) {
+    throw new WouldLockYouOut('You cannot revoke your own admin — you would lose this page.');
   }
+
   await writeTxn(actorId, async (c) => {
+    if (!isAdmin) {
+      // Counted inside the transaction that does the revoking, and with the rows locked.
+      //
+      // This was a `readTxn` of its own followed by a separate `writeTxn`, which is a
+      // check-then-act with a gap in the middle: two admins revoking each other at the same
+      // moment both read two, both passed, and both committed — and `WouldLockYouOut` exists for
+      // precisely the state that leaves. Three people share this desk so it is unlikely rather
+      // than impossible, and it is the only guard standing in front of losing access entirely.
+      //
+      // Selected rather than counted because Postgres refuses `FOR UPDATE` alongside an
+      // aggregate. Locking every live admin row makes a concurrent revoke wait for this one to
+      // commit and then see the number this one left behind.
+      const { rows } = await c.query<{ id: string }>(
+        'SELECT id FROM users WHERE is_admin AND disabled_at IS NULL FOR UPDATE',
+      );
+      if (rows.length <= 1) {
+        throw new WouldLockYouOut('That is the last admin. Grant another one first.');
+      }
+    }
     await c.query('UPDATE users SET is_admin = $2 WHERE id = $1', [userId, isAdmin]);
   });
 }
@@ -237,6 +244,15 @@ export interface AdminRule {
   active: boolean;
 }
 
+/**
+ * The global rules only — this and `setAlertRule` below both filter `company_id IS NULL`.
+ *
+ * `alert_rules` has carried a `company_id` since migration 0013 and both evaluators honour it,
+ * skipping a rule whose company is not the subject's. Nothing seeds one today, so the filter costs
+ * nothing yet; the day one exists it will be invisible on this panel and impossible to switch off
+ * from a screen. Widening the read alone would be worse than the gap — a list showing a rule the
+ * toggle beside it silently declines to change.
+ */
 export async function listAlertRules(): Promise<AdminRule[]> {
   return readTxn(async (c) => {
     const { rows } = await c.query<AdminRule>(

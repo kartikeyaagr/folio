@@ -159,9 +159,13 @@ export function readSubject(raw: string): Reading {
   for (const c of clauses(s)) {
     const bonus = BONUS.exec(c);
     if (bonus) {
-      const a = Number(bonus[1]);
-      const b = Number(bonus[2]);
-      if (a > 0 && b > 0) actions.push({ kind: 'bonus', ratioFrom: b, ratioTo: a + b, amountPerShare: null });
+      const newShares = Number(bonus[1]);
+      const heldShares = Number(bonus[2]);
+      if (newShares > 0 && heldShares > 0) {
+        actions.push({
+          kind: 'bonus', ratioFrom: heldShares, ratioTo: newShares + heldShares, amountPerShare: null,
+        });
+      }
       // Deliberately falls through to the dividend reader below. A bonus ratio carries no rupee
       // token, so it cannot be mistaken for an amount, and a clause that announces both should
       // yield both rather than whichever was checked first.

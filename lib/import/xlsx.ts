@@ -29,8 +29,9 @@ type Xml = Record<string, unknown>;
 const node = (v: unknown): Xml => (typeof v === 'object' && v !== null ? (v as Xml) : {});
 
 import { cleanName, uniqueName } from '../sheet/book.ts';
+import { parseRef, type CellRef } from '../sheet/cells.ts';
 import { evaluateWorkbook } from '../sheet/evaluate.ts';
-import { parseFormula } from '../sheet/parse.ts';
+import { parseFormula, type Node } from '../sheet/parse.ts';
 import { unzip, UnreadableZip } from './zip.ts';
 
 export class UnreadableWorkbook extends Error {}
@@ -59,11 +60,11 @@ const list = <T>(v: T | T[] | undefined): T[] => (v === undefined ? [] : Array.i
 const textOf = (v: unknown): string => {
   if (v === null || v === undefined) return '';
   if (typeof v === 'object') {
-    const o = v as Record<string, unknown>;
-    if ('#text' in o) return String(o['#text']);
+    const record = v as Record<string, unknown>;
+    if ('#text' in record) return String(record['#text']);
     // Rich text: a run per formatting change, which is presentation and not content.
-    if ('r' in o) return list(o['r'] as Record<string, unknown>[]).map((run) => textOf(run['t'])).join('');
-    if ('t' in o) return textOf(o['t']);
+    if ('r' in record) return list(record['r'] as Record<string, unknown>[]).map((run) => textOf(run['t'])).join('');
+    if ('t' in record) return textOf(record['t']);
     return '';
   }
   return String(v);
@@ -177,8 +178,76 @@ function readSheet(xml: string, shared: string[], dates: Set<number>): ParsedShe
   return { cells, cached, formulasFlattened };
 }
 
+/** A cached formula whose answer here is not the one Excel wrote: which tab, and where on it. */
+interface Disagreement {
+  sheet: number;
+  ref: string;
+  was: number;
+  col: number;
+  row: number;
+}
+
+/** Excel's number and ours, to within the slack of having recomputed it in a different engine. */
+const agrees = (now: unknown, was: number): boolean =>
+  typeof now === 'number' && Math.abs(now - was) <= Math.max(1e-6, Math.abs(was) * 1e-9);
+
+/** Which tab a reference means, by `evaluateWorkbook`'s own rule: trimmed, folded, first wins. */
+function tabFinder(names: string[]): (named: string | undefined, here: number) => number | null {
+  const byName = new Map<string, number>();
+  names.forEach((n, i) => {
+    const key = n.trim().toLowerCase();
+    if (!byName.has(key)) byName.set(key, i);
+  });
+  return (named, here) => (named === undefined ? here : byName.get(named.trim().toLowerCase()) ?? null);
+}
+
 /**
- * **Check our arithmetic against Excel's own**, across the whole workbook.
+ * Does this formula read any of `watch`?
+ *
+ * A range is answered by containment rather than by expanding it, for the reason `evaluateWorkbook`
+ * asks `rangeSize` before expanding one: a range is bounded only by what somebody typed, and
+ * `=SUM(A1:ZZZ9999999)` is a well-formed thing to have typed.
+ */
+function readsAny(
+  formula: string,
+  here: number,
+  watch: Disagreement[],
+  tab: (named: string | undefined, here: number) => number | null,
+): boolean {
+  const hit = (si: number | null, a: CellRef, b: CellRef): boolean =>
+    watch.some(
+      (w) =>
+        w.sheet === si &&
+        w.col >= Math.min(a.col, b.col) && w.col <= Math.max(a.col, b.col) &&
+        w.row >= Math.min(a.row, b.row) && w.row <= Math.max(a.row, b.row),
+    );
+  const walk = (n: Node): boolean => {
+    switch (n.t) {
+      case 'ref': return hit(tab(n.sheet, here), n.ref, n.ref);
+      case 'range': return hit(tab(n.sheet, here), n.from, n.to);
+      case 'op': return walk(n.a) || walk(n.b);
+      case 'neg': return walk(n.a);
+      case 'call': return n.args.some(walk);
+      default: return false;
+    }
+  };
+  // Cannot throw: a ref only reaches `cached` if `readSheet` already parsed the same text.
+  return walk(parseFormula(formula));
+}
+
+/**
+ * How many times the workbook is re-checked before the remainder is settled in one go.
+ *
+ * Every pass turns at least one formula into a constant and never the other way, so the loop ends
+ * on its own whatever this is set to — what it bounds is cost, not termination. Sixteen is where
+ * it stops being careful about the order: a workbook still moving after sixteen has a chain of
+ * sixteen formulas Excel and this engine both disagree about, which no model here is, and
+ * evaluating every tab that many times on an upload is already generous.
+ */
+const MAX_AGREEMENT_PASSES = 16;
+
+/**
+ * **Check our arithmetic against Excel's own**, across the whole workbook, until it settles.
  *
  * A formula is only worth keeping if re-evaluating it here reproduces the number the workbook was
  * showing. Where it does not, the import has quietly changed a figure somebody has been looking
@@ -188,36 +257,61 @@ function readSheet(xml: string, shared: string[], dates: Set<number>): ParsedShe
  *
  * Mutates the parsed grids in place, which is why it is one function and not a fold: a formula
  * that disagrees becomes a constant, and the tab that reads *that* cell must see the constant.
+ *
+ * **And must see it before it is judged.** One pass compared every formula against the grid as it
+ * stood *before* any substitution, so a cell reading a cell that was about to change was judged
+ * against a number nobody would ever see again — wrong in both directions, and both were live.
+ * `=Inputs!B1*2`, sitting over a B1 that was about to be replaced, was dropped for disagreeing
+ * when it agrees exactly with the replacement — freezing a model one cell further down than it
+ * had to, on a tab that was not the problem; and `=B1*0.5`, which agreed only because B1 was
+ * still evaluating to 0, was kept and then computed 500 where the author had been looking at 0.
+ *
+ * So it iterates, and each pass settles only the disagreements that are nobody else's — the ones
+ * reading no other cell in the list — leaving the rest to be judged again against whatever
+ * replaced their input. It terminates on monotonicity rather than on the cap: every pass turns at
+ * least one formula into a constant and never turns one back.
  */
 function checkAgainstExcel(named: { name: string; parsed: ParsedSheet }[]): ImportedSheet[] {
-  const values = evaluateWorkbook({
-    sheets: named.map((s) => ({ name: s.name, cells: s.parsed.cells })),
-  });
+  const sheets = named.map(({ name, parsed }) => ({ name, cells: parsed.cells }));
+  const flattened = named.map(({ parsed }) => parsed.formulasFlattened);
+  const tab = tabFinder(sheets.map((s) => s.name));
 
-  return named.map(({ name, parsed }, i) => {
-    const { cells, cached } = parsed;
-    let { formulasFlattened } = parsed;
-    let formulasKept = 0;
-
-    for (const [ref, was] of Object.entries(cached)) {
-      const now = values[i]![ref];
-      const agrees =
-        typeof now === 'number' &&
-        (Math.abs(now - was) <= Math.max(1e-6, Math.abs(was) * 1e-9));
-      if (agrees) {
-        formulasKept++;
-      } else {
-        cells[ref] = String(was);
-        formulasFlattened++;
+  for (let pass = 1; ; pass++) {
+    const values = evaluateWorkbook({ sheets });
+    const wrong: Disagreement[] = [];
+    named.forEach(({ parsed }, i) => {
+      for (const [ref, was] of Object.entries(parsed.cached)) {
+        const at = parseRef(ref);
+        // Anything already settled is a constant now, and a constant equals its own cached value.
+        if (at === null || !sheets[i]!.cells[ref]!.startsWith('=')) continue;
+        if (!agrees(values[i]![ref], was)) {
+          wrong.push({ sheet: i, ref, was, col: at.col, row: at.row });
+        }
       }
+    });
+    if (wrong.length === 0) break;
+
+    // Where every disagreement reads another — a ring of them, or the pass the ceiling stops at —
+    // none is settled first, so they all are. A formula known to disagree with what the author was
+    // looking at must never survive the import, whatever else is unresolved around it.
+    const others = (w: Disagreement): Disagreement[] => wrong.filter((o) => o !== w);
+    const roots = pass < MAX_AGREEMENT_PASSES
+      ? wrong.filter((w) => !readsAny(sheets[w.sheet]!.cells[w.ref]!, w.sheet, others(w), tab))
+      : [];
+    for (const w of roots.length > 0 ? roots : wrong) {
+      sheets[w.sheet]!.cells[w.ref] = String(w.was);
+      flattened[w.sheet] = flattened[w.sheet]! + 1;
     }
-    // A formula with no cached value at all — openpyxl writes these — cannot be checked, so it is
-    // kept and counted. Nothing was displayed for it to disagree with.
-    for (const ref of Object.keys(cells)) {
-      if (cells[ref]!.startsWith('=') && !(ref in cached)) formulasKept++;
-    }
-    return { name, cells, formulasKept, formulasFlattened };
-  });
+  }
+
+  return sheets.map(({ name, cells }, i) => ({
+    name,
+    cells,
+    // Whatever is still a formula reproduced what Excel showed for it — or Excel showed nothing
+    // for it at all, which is what openpyxl writes and what nothing can check.
+    formulasKept: Object.keys(cells).filter((ref) => cells[ref]!.startsWith('=')).length,
+    formulasFlattened: flattened[i]!,
+  }));
 }
 
 /**

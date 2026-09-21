@@ -280,3 +280,24 @@ test('a formula that will not parse is left exactly as the author typed it', () 
   // Rewriting is best-effort and must never damage a cell it does not understand.
   assert.equal(renameSheetIn('=SUM(', 'Inputs', 'Assumptions'), null);
 });
+
+test('a range bigger than the ceiling says so, rather than allocating it', () => {
+  // `REF` in cells.ts puts no ceiling on either part, so `A1:ZZZ9999999` parses as readily as
+  // `A1:B3`, and formulas are evaluated on the server. Before the bound, `=SUM(A1:ZZZ9999999)`
+  // asked `expandRange` for ~3e11 objects — one mistyped column letter and the app is gone for
+  // all three people using it. Measured here by the fact that this test returns at all.
+  const big = at({ B1: '=SUM(A1:ZZZ9999999)' })('B1');
+  assert.equal(code(big), '#REF!');
+  assert.match((big as CellError).detail, /larger than/, 'and it says what the limit is');
+
+  // The other direction, so the bound is not simply refusing every range.
+  assert.equal(at({ A1: '1', A2: '2', A3: '3', B1: '=SUM(A1:A3)' })('B1'), 6);
+});
+
+test('a bare range takes its top-left without building the rectangle', () => {
+  // `=A1:B3` where one value is wanted uses the first cell, as every spreadsheet does. This used
+  // to expand the whole rectangle to index [0]; now it computes the corner. Behaviour unchanged,
+  // which is what this asserts — including for a range written backwards.
+  assert.equal(at({ A1: '5', B3: '9', C1: '=A1:B3' })('C1'), 5);
+  assert.equal(at({ A1: '5', B3: '9', C1: '=B3:A1' })('C1'), 5);
+});

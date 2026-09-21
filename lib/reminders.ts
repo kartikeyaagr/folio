@@ -36,6 +36,15 @@ export interface CreateInput {
 
 export class EmptyReminder extends Error {}
 
+/**
+ * Create one. Leaving out the assignee means *you*, which is not the same as *everybody*.
+ *
+ * `assignedTo ?? actorId` catches an explicit null as well as an omission, so no reminder made
+ * here can ever be unassigned. `deliverDue` below does handle an unassigned row — it queues a
+ * notification for every live user, for the same reason an uncovered company's alerts go to
+ * everyone — but only a row written by something other than this function can reach that branch.
+ * If a shared reminder is ever wanted, this default is the line to change, not `deliverDue`.
+ */
 export async function createReminder(input: CreateInput, actorId: string): Promise<string> {
   if (!input.body.trim()) throw new EmptyReminder('A reminder needs something to say.');
   const reminderId = rowId();
@@ -102,6 +111,14 @@ export async function snoozeReminder(
   });
 }
 
+/**
+ * Everything due today or overdue, for everybody, whether or not it has been delivered.
+ *
+ * Deliberately not `deliverDue`'s predicate. That one also requires `delivered_at IS NULL`, which
+ * is the whole of what makes running it hourly idempotent; this is a list of what is outstanding,
+ * and a reminder you were mailed at seven is still outstanding at eleven. It is not filtered by
+ * assignee either — a caller wanting one person's reminders has to say so itself.
+ */
 export async function dueReminders(): Promise<Reminder[]> {
   return readTxn(async (c) => {
     const { rows } = await c.query<Reminder>(

@@ -207,7 +207,12 @@ export async function sendDigests(sender: Sender | null, now = new Date()): Prom
   const people = await waiting(now);
   if (people.length === 0) return out;
 
-  if (sender === null || istHour(now) < DIGEST_HOUR) {
+  // Only the hour returns early. A null shared relay used to skip everybody here, before anyone's
+  // own mailbox had been looked up — and this module's header states the intended rule in as many
+  // words: "A null shared relay **and** no linked mailbox is a valid state." And, not or. A person
+  // who has linked their own company address needs no shared relay at all, and was having their
+  // digest withheld because somebody else's route was unconfigured.
+  if (istHour(now) < DIGEST_HOUR) {
     out.skipped = people.length;
     return out;
   }
@@ -219,15 +224,25 @@ export async function sendDigests(sender: Sender | null, now = new Date()): Prom
     // with the rest of their mail. Falling back rather than failing is deliberate: a mailbox whose
     // password was rotated at the provider should cost that person a differently-addressed mail,
     // not a missing one. `last_error` is what makes the fallback visible instead of silent.
-    let via: Sender = sender;
+    let via: Sender | null = sender;
     let ownMailbox = false;
     try {
       const cfg = await configFor(person.userId);
       if (cfg) { via = smtpSender(cfg); ownMailbox = true; }
     } catch (err) {
       // Opening the secret failed — MAILBOX_KEY missing or rotated, or the row was tampered with.
-      // Recorded against the mailbox and then ignored, because the digest still has a way to go.
+      // Recorded against the mailbox and then ignored, because the digest may still have a way to
+      // go: the shared relay, if there is one.
       await recordMailboxResult(person.userId, String(err instanceof Error ? err.message : err));
+    }
+
+    // Now it is answerable per person, which is the only level at which it is a real question:
+    // no mailbox of their own and no shared relay means there is no route to them today. Their
+    // rows stay in the outbox unstamped, which is the record, and they are counted as skipped
+    // rather than failed — nothing was attempted and nothing went wrong.
+    if (via === null) {
+      out.skipped++;
+      continue;
     }
 
     await serviceTxn('system:agents', async (c) => {

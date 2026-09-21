@@ -224,21 +224,21 @@ export async function fetchAttachments(limit = 200, companyId?: string | null): 
 
   for (const row of pending) {
     try {
-      const res = await fetch(row.attachment_url, {
+      const response = await fetch(row.attachment_url, {
         headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)' },
         redirect: 'follow',
         signal: AbortSignal.timeout(TIMEOUT_MS),
       });
-      if (!res.ok) {
-        const how = res.status >= 400 && res.status < 500 ? Gone : Error;
-        throw new how(`${res.status} from the archive`);
+      if (!response.ok) {
+        const how = response.status >= 400 && response.status < 500 ? Gone : Error;
+        throw new how(`${response.status} from the archive`);
       }
 
       // Checked before reading the body where the server declares it, and again after: a length
       // header is a claim, and the bytes are the fact.
-      const declared = Number(res.headers.get('content-length') ?? 0);
+      const declared = Number(response.headers.get('content-length') ?? 0);
       if (declared > MAX_BYTES) throw new Error(`declared ${declared} bytes, over the cap`);
-      const buf = Buffer.from(await res.arrayBuffer());
+      const buf = Buffer.from(await response.arrayBuffer());
       if (buf.length > MAX_BYTES) throw new Error(`${buf.length} bytes, over the cap`);
       if (buf.length === 0) throw new Error('the archive returned an empty body');
 
@@ -251,7 +251,7 @@ export async function fetchAttachments(limit = 200, companyId?: string | null): 
 
       const filename = decodeURIComponent(row.attachment_url.split('/').pop() ?? sha256);
       const kind = classify(row.category, row.attachment_url);
-      const mediaType = res.headers.get('content-type')?.split(';')[0]?.trim() || 'application/octet-stream';
+      const mediaType = response.headers.get('content-type')?.split(';')[0]?.trim() || 'application/octet-stream';
 
       const isNew = await serviceTxn('system:ingest', async (c) => {
         const { rowCount } = await c.query(

@@ -51,6 +51,15 @@ export type SourceKind =
 
 export interface Indexable {
   kind: SourceKind;
+  /**
+   * The subject's own key, and it is a **different column for every kind**: the DOCUMENT's id for
+   * a `document_version` — never the version row's, which is what lets `content_hash` suppress a
+   * re-embed at all (DOCUMENTS_SELECT argues this at length) — the content hash for an
+   * `attachment`, and the row id for a `filing`, a `news_item` or a `fundamentals_period`.
+   *
+   * Never `sources.id`. That is what the caller passed to `textFor` to obtain this, and the two
+   * are easy to confuse because both are opaque strings.
+   */
   refId: string;
   companyId: string | null;
   title: string;
@@ -64,6 +73,19 @@ export interface Indexable {
   sheets: Grid[] | null;
 }
 
+/**
+ * sha256 of the UTF-8 bytes, lower-case hex — chosen to be byte-identical to the
+ * `encode(sha256(convert_to(…, 'UTF8')), 'hex')` that four of the five kinds compute in SQL,
+ * because the fifth (`fundamentals_period`, whose text is prose built by `renderFundamentals`)
+ * computes it here and all five land in the same `sources.content_hash` column.
+ *
+ * The tests compare the two sides directly, which is the only thing holding them together:
+ * `register.test.ts` checks a document's SQL-computed `content_hash` against `contentHash()` of
+ * the same text, and separately that `contentHash(textFor(…).text)` equals what the INSERT wrote
+ * — the one assertion anywhere that what gets chunked is what got hashed. A divergence would be
+ * silent at runtime: every row hashed on whichever side moved re-embeds once, at full price, and
+ * nothing would report it.
+ */
 export function contentHash(text: string): string {
   return createHash('sha256').update(text, 'utf8').digest('hex');
 }
@@ -599,7 +621,18 @@ async function rawText(c: Client, kind: SourceKind, refId: string): Promise<RawT
   }
 }
 
-/** A source's full indexable payload, for the chunker. Null when the source id no longer exists. */
+/**
+ * A source's full indexable payload, for the chunker. `text` is the exact string its
+ * `content_hash` was computed from, which is what makes a chunk's `char_from`/`char_to` resolve
+ * back to a position in the document a reader can be shown.
+ *
+ * **Null means either of two things and both are failures.** The `sources` row is gone, or the row
+ * is there and the thing it points at is not — an attachment whose `extracted_text` was cleared, a
+ * document with no version rows left, a fundamentals row deleted rather than superseded. The
+ * second is the likelier of the two and an earlier wording here named only the first. `indexOne`
+ * raises rather than writing zero chunks: a source that claims to index something and resolves to
+ * nothing is not a quiet success.
+ */
 export async function textFor(c: Client, sourceId: string): Promise<Indexable | null> {
   const { rows } = await c.query<{
     kind: SourceKind;

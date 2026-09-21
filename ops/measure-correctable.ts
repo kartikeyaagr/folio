@@ -36,6 +36,17 @@ async function main(): Promise<void> {
     ),
   );
 
+  // Zero items is a failure, and this is a script whose output is pasted into a plan file to
+  // settle MIN_OBSERVATIONS. An empty table prints a header row and exits 0, which reads as
+  // "measured, and the answer was nothing" — the one thing it must not be allowed to mean.
+  if (rows.length === 0) {
+    throw new Error(
+      'measure-correctable: `ai_drafts` is empty — no agent has produced a draft, so there are no\n' +
+        '  positions to count. Run a sweep first:  pnpm exec tsx jobs/agents.ts\n' +
+        '  If you expected drafts, DATABASE_URL is pointing at the wrong database.',
+    );
+  }
+
   console.log('agent              positions  correctable  shapes  read-only');
   for (const r of rows) {
     const declared = shapeFor(r.agent_key, r.content);

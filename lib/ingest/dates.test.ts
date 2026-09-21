@@ -33,3 +33,37 @@ test('a date with no time is not a timestamp', () => {
   assert.equal(nseTimestamp('08-Sep-2026'), null);
   assert.equal(nseTimestamp('08-Sxp-2026 09:30:00'), null);
 });
+
+test('a day the month does not have is null, in both readers', () => {
+  // The month guard was the only calendar check here: the day was whatever two digits the regex
+  // matched, pasted into the output string. The two readers then failed differently, and the
+  // second way is the dangerous one.
+  //
+  // `nseDate` returned strings no calendar has — `2026-02-31`, `2026-01-00`, `2026-01-99`. Those
+  // go into a `date` column, Postgres rejects them, and the throw abandons the whole file. This
+  // module's own header promises the opposite: "a row whose date will not parse is a row to drop
+  // rather than a reason to abandon the file."
+  for (const [input, why] of [
+    ['31-Feb-2026', 'February has no 31st'],
+    ['30-Feb-2026', 'nor a 30th'],
+    ['31-Apr-2026', 'April has 30 days'],
+    ['29-Feb-2026', '2026 is not a leap year'],
+    ['00-Jan-2026', 'there is no zeroth day'],
+    ['99-Jan-2026', 'nor a 99th'],
+  ] as const) {
+    assert.equal(nseDate(input), null, `${input}: ${why}`);
+  }
+
+  // `nseTimestamp` was worse than a bad string. `new Date('2026-02-30T10:00:00+05:30')` is not an
+  // Invalid Date — it rolls over — so the `Number.isNaN` guard never fired and Feb 30 was stored
+  // as **2 March**. A loud refusal became a quiet wrong answer two days out, on the field that
+  // records when a filing was announced.
+  assert.equal(nseTimestamp('30-Feb-2026 10:00:00'), null, 'must refuse, not roll into March');
+  assert.equal(nseTimestamp('00-Jan-2026 10:00:00'), null);
+
+  // The real leap day still reads, which is what stops this guard being an off-by-one.
+  assert.equal(nseDate('29-Feb-2024'), '2024-02-29');
+  assert.equal(nseTimestamp('29-Feb-2024 10:00:00')?.toISOString(), '2024-02-29T04:30:00.000Z');
+  assert.equal(nseDate('31-Dec-2025'), '2025-12-31');
+  assert.equal(nseDate('30-Apr-2026'), '2026-04-30');
+});

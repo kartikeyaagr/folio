@@ -51,7 +51,10 @@ const FURNITURE = new Set([
  * The part of a name that identifies it.
  *
  * "Tega Industries Limited" becomes "Tega". "Ecos (India) Mobility & Hospitality Limited" becomes
- * "Mobility Hospitality", which is why the stoplist matters more than the stripping does.
+ * **"Ecos Mobility Hospitality"** — the stoplist takes "India" and "Limited" and leaves "Ecos",
+ * which is not furniture. This said "Mobility Hospitality" until 21-Sep-2026, carried over from
+ * v2's docstring, and `match.test.ts:84` has recorded that it "does not and never did" since the
+ * behaviour was ported. The test was measured and the comment was inherited; the test is right.
  */
 export function distinctive(name: string): string {
   return name
@@ -106,6 +109,20 @@ export function nameTerm(name: string): { term: string; pattern: RegExp } | null
   return null;
 }
 
+/**
+ * The seven ways the net can catch a story, **listed narrowest first — which is the order
+ * `candidatesFor` tries them in**, and a story yields at most one of them per company.
+ *
+ * `alias`, `subsidiary` and `brand` are one step rather than three: all three come from the same
+ * `company_aliases` lookup and differ only by that row's `kind`, so which one a candidate carries
+ * is settled by whichever alias matched first, not by the order written here.
+ *
+ * The precedence is in `candidatesFor`'s control flow and nothing enforces that this union agrees
+ * with it — reordering these strings would change no behaviour and mislead the next reader, which
+ * is the only reason to say so. `sector_term` last is the part that matters, and it is the one
+ * tier that is not a property of the story's text at all: it is admitted on the *source's* market
+ * and sector, because 71 of 135 items from Indian trade titles never write "India".
+ */
 export type Tier = 'symbol' | 'isin' | 'name' | 'alias' | 'subsidiary' | 'brand' | 'sector_term';
 
 export interface CompanyVocabulary {
@@ -199,6 +216,18 @@ export function candidatesFor(item: Item, companies: CompanyVocabulary[]): Candi
 const matchId = (itemId: string, companyId: string): string =>
   createHash('sha256').update(`${itemId} ${companyId}`).digest('hex').slice(0, 32);
 
+/**
+ * Every company the net is cast for, with its aliases and its sector's vocabulary.
+ *
+ * `status <> 'passed'` is the whole filter, and the exclusion is narrow on purpose: a name the
+ * fund looked at and declined stops producing candidates, and with them gate calls. Everything
+ * else stays in, `exited` included — `lib/agents/forensics.ts` sweeps on the identical predicate,
+ * and a position that has been sold goes on filing and goes on being written about.
+ *
+ * `aliases` and `sectorTerms` come back from `json_agg` behind a `COALESCE(…, '[]')`, so both are
+ * empty arrays rather than null when a company has none. `candidatesFor` iterates them without a
+ * guard and depends on that.
+ */
 export async function loadVocabulary(): Promise<CompanyVocabulary[]> {
   return serviceTxn('system:news', async (c) => {
     const { rows } = await c.query<CompanyVocabulary>(
@@ -218,9 +247,29 @@ export async function loadVocabulary(): Promise<CompanyVocabulary[]> {
 }
 
 export interface MatchResult {
+  /** Items examined this run, matched or not — every one is recorded as looked-at either way. */
   items: number;
+  /**
+   * Candidate rows written. Zero is an ordinary outcome on a book this size and does not fail the
+   * run: `jobs/news-poll.ts` reports `items: poll.stored`, so what the run is judged on is whether
+   * headlines arrived, not whether any of them touched one of the names.
+   */
   candidates: number;
-  /** Items that were the same story as one already matched for that company. */
+  /**
+   * Items that were the same story as one already matched for that company.
+   *
+   * Not an edge case. 8% of polled items are the same article twice — 329 items sharing a URL
+   * (162 distinct stories) and 50 more sharing a headline at different URLs (23 stories), measured
+   * over 2,089 real items on 07-Sep-2026 and recorded in `0027` and `tasks/measured-traps.md`.
+   * The Hindu BusinessLine publishes one article to both its agri-business and economy feeds under
+   * the same URL. Each duplicate this catches is a model call not made and a row the reader does
+   * not see twice.
+   *
+   * Deliberately **not** counted here: one publisher rewriting an event as two articles with
+   * different headlines, which ET did with a Supreme Court ethanol ruling on 31-Aug and 1-Sep.
+   * Catching that needs similarity matching, which is the clustering C7 declined on measured
+   * evidence.
+   */
   duplicates: number;
 }
 

@@ -14,6 +14,7 @@ import { execFileSync } from 'node:child_process';
 import { migrate } from '../db/migrate.ts';
 import { closePool, readTxn, serviceTxn } from './db.ts';
 import { composeDigest, DIGEST_HOUR, istHour, sendDigests } from './digest.ts';
+import { forgetMailbox, linkMailbox } from './mailbox.ts';
 import type { Mail } from './notify.ts';
 
 const DB = `trisula_digest_${process.pid}`;
@@ -219,4 +220,32 @@ test('"nothing is waiting" is said, because a quiet morning is worth knowing', a
   );
   assert.match(busy.body, /3 drafts waiting/);
   assert.match(busy.body, /1 agent run out of attempts/);
+});
+
+test('a linked mailbox is a route of its own, so no shared relay does not withhold their digest', async () => {
+  // `sendDigests` returned early on `sender === null` and skipped everybody — before any
+  // person's own mailbox had been looked up. This module's header states the rule the other way
+  // round, in as many words: "A null shared relay **and** no linked mailbox is a valid state."
+  // And, not or. Someone who has linked their own company address needs no shared relay at all,
+  // and was having their digest withheld because somebody else's route was unconfigured.
+  //
+  // Asserted as attempted-rather-than-withheld, which is the whole of the change: the linked host
+  // is deliberately unreachable — port 2525 on localhost, which the table's submission-port check
+  // permits and nothing is listening on — so the send fails fast and lands in `failed`. Under the old
+  // behaviour it was `skipped` and nothing was tried.
+  process.env['MAILBOX_KEY'] = Buffer.alloc(32, 7).toString('base64');
+  await linkMailbox(
+    ANNA,
+    { host: '127.0.0.1', port: 2525, username: 'anna', password: 'pw', fromAddress: 'anna@trisulacapital.com' },
+    async () => {},
+  );
+  await queue(ANNA, 'alert', 'One thing');
+
+  const r = await sendDigests(null, MORNING);
+  assert.equal(r.skipped, 0, 'not withheld for want of a shared relay');
+  assert.equal(r.failed, 1, 'attempted down her own route, which is unreachable in this test');
+  assert.equal(await unsent(ANNA), 1, 'and the row is still the record');
+
+  await forgetMailbox(ANNA);
+  delete process.env['MAILBOX_KEY'];
 });

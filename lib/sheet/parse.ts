@@ -193,11 +193,11 @@ export function parseFormula(source: string): Node {
     for (;;) {
       const tok = peek();
       if (!tok || tok.k !== 'punct') break;
-      const bp = PRECEDENCE[tok.v];
-      if (bp === undefined || bp < min) break;
+      const bindingPower = PRECEDENCE[tok.v];
+      if (bindingPower === undefined || bindingPower < min) break;
       pos++;
       // `^` is right-associative, so 2^3^2 is 2^9 and not 8^2 — the one operator where it matters.
-      const right = expression(tok.v === '^' ? bp : bp + 1);
+      const right = expression(tok.v === '^' ? bindingPower : bindingPower + 1);
       left = { t: 'op', op: tok.v, a: left, b: right };
     }
     return left;
@@ -227,8 +227,8 @@ export function printFormula(node: Node): string {
     // `-` binds tighter than every operator here, so anything compound under it keeps its brackets.
     case 'neg': return `-${node.a.t === 'op' ? `(${printFormula(node.a)})` : printFormula(node.a)}`;
     case 'op': {
-      const bp = PRECEDENCE[node.op]!;
-      return `${side(node.a, bp, node.op, false)}${node.op}${side(node.b, bp, node.op, true)}`;
+      const bindingPower = PRECEDENCE[node.op]!;
+      return `${side(node.a, bindingPower, node.op, false)}${node.op}${side(node.b, bindingPower, node.op, true)}`;
     }
   }
 }
@@ -242,14 +242,14 @@ function sheetPrefix(sheet: string | undefined): string {
 }
 
 /** One operand, bracketed only where dropping the brackets would change what it means. */
-function side(child: Node, parentBp: number, parentOp: string, isRight: boolean): string {
+function side(child: Node, parentBindingPower: number, parentOp: string, isRight: boolean): string {
   const printed = printFormula(child);
   if (child.t !== 'op') return printed;
-  const bp = PRECEDENCE[child.op]!;
-  if (bp < parentBp) return `(${printed})`;
+  const bindingPower = PRECEDENCE[child.op]!;
+  if (bindingPower < parentBindingPower) return `(${printed})`;
   // Equal binding: `a-(b-c)` keeps its brackets, and so does `(a^b)^c` — on the other side,
   // because `^` is the one right-associative operator here.
-  if (bp === parentBp && isRight !== (parentOp === '^')) return `(${printed})`;
+  if (bindingPower === parentBindingPower && isRight !== (parentOp === '^')) return `(${printed})`;
   return printed;
 }
 

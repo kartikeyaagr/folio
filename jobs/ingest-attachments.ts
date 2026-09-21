@@ -22,39 +22,51 @@ import { readFlags } from './_args.ts';
 import { runJob } from './_run.ts';
 
 
-  const flags = readFlags(['limit']);
-  const limit = Number(flags.str('limit') ?? 200);
-  if (!Number.isFinite(limit) || limit < 1) throw new Error('--limit must be a positive number');
+const flags = readFlags(['limit']);
+const limit = Number(flags.str('limit') ?? 200);
+if (!Number.isFinite(limit) || limit < 1) throw new Error('--limit must be a positive number');
 
 await runJob('nse_attachments', async () => {
   console.log(`storing under ${attachmentDir()}`);
   const got = await fetchAttachments(limit);
   console.log(
     `fetch    ${got.pending} pending  ${got.fetched} new  ${got.skipped} already held  ` +
-      `${got.failed} failed  ${(got.bytes / 1e6).toFixed(1)} MB`,
+      `${got.gone} gone  ${got.failed} failed  ${(got.bytes / 1e6).toFixed(1)} MB`,
   );
-
-  // Every download in a batch failing is a dead archive, not a quiet day. Nothing pending is
-  // genuinely nothing to do — the queue is drained — and is the one empty result that is not a
-  // failure here.
-  if (got.pending > 0 && got.fetched === 0 && got.skipped === 0) {
-    throw new Error(`all ${got.pending} attachments failed to download`);
-  }
 
   const read = await extractPending(limit);
   console.log(
     `extract  ${read.pending} pending  ${read.extracted} read  ${read.documents} transcripts  ` +
-      `${read.scanned} scans with no text layer  ${read.failed} failed`,
+      `${read.scanned} scans with no text layer  ${read.missing} missing  ${read.failed} failed`,
   );
 
   if (read.documents > 0) {
     console.log(`\n${read.documents} transcript(s) are now readable by agent 2.`);
   }
 
+  // Branched on the counts, not on whether anything threw — `ingest-shareholding.ts` says the same
+  // thing beside the same shape, and L34 is the lesson both come from.
+  //
+  // The only guard here used to be all-or-nothing: `fetched === 0 && skipped === 0`. So 200 of 200
+  // failing was caught and **199 of 200 was a green run** that wrote `ingestion_runs` status `ok`.
+  // An unwritable ATTACHMENT_DIR that let one file through, or a rate limit starting midway
+  // through a batch, read as a good afternoon.
+  //
+  // `gone` and `missing` are deliberately not counted here, and that distinction is the whole
+  // reason both exist (L35): a 4xx is the archive's answer about that document and will be the
+  // same tomorrow, and a row whose bytes are not on disk has no text to extract however often it
+  // is retried. Only `failed` — this run could not do it — holds the run open. Both are printed,
+  // because a permanent silence still has to be visible to somebody reading the log.
+  const broke: string[] = [];
+  if (got.failed > 0) broke.push(`${got.failed} of ${got.pending} attachments could not be fetched`);
+  if (read.failed > 0) broke.push(`${read.failed} of ${read.pending} could not be read`);
+  if (broke.length > 0) throw new Error(broke.join('; '));
+
   return {
     items: got.fetched,
     detail:
-      `${got.fetched} fetched, ${got.skipped} already held, ${got.failed} failed; ` +
-      `${read.extracted} read, ${read.documents} transcripts, ${read.scanned} scans`,
+      `${got.fetched} fetched, ${got.skipped} already held, ${got.gone} gone, ${got.failed} failed; ` +
+      `${read.extracted} read, ${read.documents} transcripts, ${read.scanned} scans, ` +
+      `${read.missing} missing`,
   };
 });

@@ -15,9 +15,9 @@ import { readFlags } from './_args.ts';
 import { runJob } from './_run.ts';
 
 
-  const flags = readFlags(['days']);
-  const days = Number(flags.str('days') ?? 30);
-  if (!Number.isFinite(days) || days < 1) throw new Error('--days must be a positive number');
+const flags = readFlags(['days']);
+const days = Number(flags.str('days') ?? 30);
+if (!Number.isFinite(days) || days < 1) throw new Error('--days must be a positive number');
 
 await runJob('nse_corporate_actions', async () => {
   const r = await ingestCorporateActions(days);
@@ -32,8 +32,11 @@ await runJob('nse_corporate_actions', async () => {
     `${r.seen} announcements, ${r.ours} for followed names, ${r.stored} stored` +
     (refused.length > 0 ? `; declined ${refused.map(([why, n]) => `${n} ${why}`).join(', ')}` : '');
 
-  return { items: r.stored, detail: detail };
   // Printed line by line, because a form this parser has not been taught shows up here first and
-  // a count buried in one long string is a count nobody reads.
+  // a count buried in one long string is a count nobody reads. This sat *after* the return until
+  // 21-Sep-2026 and never ran once — the core `no-unreachable` rule is not enabled, because
+  // `tseslint.configs.recommended` does not pull in `eslint:recommended`.
   for (const [why, n] of refused) console.log(`  declined ${String(n).padStart(4)}  ${why}`);
+
+  return { items: r.stored, detail };
 });

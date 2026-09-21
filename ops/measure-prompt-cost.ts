@@ -76,6 +76,19 @@ async function main(): Promise<void> {
   const withTokens = process.argv.includes('--tokens');
   const rows = await agents();
 
+  // Zero items is a failure, and a measurement script is the worst place to break that rule: its
+  // output is pasted into a decision, where a page with no lines on it and a page of measured
+  // zeros look the same. Both refusals below throw rather than print, so the exit code says so
+  // too — a run in CI or in a pipe is read by its status, not its stdout.
+  if (rows.length === 0) {
+    throw new Error(
+      'measure-prompt-cost: no agent in `agents` has a model — nothing to price.\n' +
+        '  The seed migration has not run, every agent is set to model \'none\', or DATABASE_URL\n' +
+        '  points at the wrong database.',
+    );
+  }
+
+  let measured = 0;
   for (const a of rows) {
     const flag = a.learning ? 'learning' : 'not learning';
 
@@ -91,6 +104,7 @@ async function main(): Promise<void> {
     const situation = a.sample ?? '';
     const rules = await ruleCost(a, situation);
     const examples = a.sample ? await exemplarCost(a, situation) : 0;
+    measured += 1;
 
     console.log(
       [
@@ -109,6 +123,18 @@ async function main(): Promise<void> {
         console.log(`  tokens: ${bare} without, ${full} with, +${full - bare}`);
       }
     }
+  }
+
+  // The per-agent "nothing to measure" lines above are deliberate and stay. What they must not do
+  // is add up to a clean exit: the question this script answers is what the learned blocks cost,
+  // and if not one agent has a block, the honest answer is that it was not measured.
+  if (measured === 0) {
+    throw new Error(
+      `measure-prompt-cost: ${rows.length} agents, and not one has an approved rule or an\n` +
+        '  embedded exemplar — the lines above are the absence of a measurement, not a measurement\n' +
+        '  of zero. Approve a rule at /rules, or embed the exemplars already captured with\n' +
+        '  pnpm exec tsx jobs/index-content.ts --all',
+    );
   }
 }
 
