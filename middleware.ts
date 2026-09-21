@@ -2,6 +2,9 @@ import { NextResponse, type NextRequest } from 'next/server';
 
 import { SESSION_COOKIE } from '@/app/_lib/session-cookie.ts';
 
+/** The three pages reachable without a session. Kept in step with the `(public)` route group. */
+const PUBLIC = new Set(['/login', '/signup', '/reset']);
+
 /**
  * Cheap first pass: bounce requests with no session cookie straight to /login.
  *
@@ -10,8 +13,6 @@ import { SESSION_COOKIE } from '@/app/_lib/session-cookie.ts';
  * `requireUser()` in the (app) layout. This exists so an unauthenticated visitor gets a login page
  * without a database round trip first.
  */
-const PUBLIC = new Set(['/login', '/signup', '/reset']);
-
 export function middleware(request: NextRequest): NextResponse {
   const { pathname, search } = request.nextUrl;
 
