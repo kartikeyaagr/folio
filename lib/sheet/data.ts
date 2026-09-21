@@ -140,18 +140,28 @@ async function answer(c: Client, call: Call, symbol: string): Promise<Value> {
       if (!line) return NA('no line item named');
       if (!period) return NA(`${call.args[2] ?? ''} is not a period this understands`);
       const basis = (call.args[3] ?? 'consolidated').trim().toLowerCase();
+      // The basis filters, it does not merely sort.
+      //
+      // This read ORDER BY (f.basis = $5) DESC until 21-Sep-2026, which preferred the basis asked
+      // for when a row existed and returned the other one when it did not. A model asking for
+      // consolidated revenue got the standalone figure, unmarked — and standalone and consolidated
+      // are materially different numbers for a company with subsidiaries.
+      //
+      // That is the failure this module's header exists to forbid, one step worse than the blank
+      // it refuses: a plausible wrong number propagates into a margin, a growth rate and a
+      // valuation exactly as far as a blank would, and does not look wrong on the way.
       const { rows } = await c.query<{ v: string | null }>(
         `SELECT f.facts ->> $3 AS v
            FROM fundamentals f JOIN companies co ON co.id = f.company_id
           WHERE co.symbol = $1 AND f.superseded_by IS NULL AND f.period_end = $2::date
+            AND f.basis = $5
             AND ($4 = '' OR f.period_kind = $4)
-          ORDER BY (f.basis = $5) DESC, f.period_end DESC
           LIMIT 1`,
         [symbol, period.end, line, period.kind ?? '', basis],
       );
       const v = rows[0]?.v;
       return v == null || v === ''
-        ? NA(`no ${line} filed for ${symbol} to ${period.end}`)
+        ? NA(`no ${basis} ${line} filed for ${symbol} to ${period.end}`)
         : Number(v);
     }
     case 'CLOSE': {
