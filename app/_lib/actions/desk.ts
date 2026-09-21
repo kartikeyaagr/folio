@@ -26,8 +26,10 @@ export async function acknowledgeAlert(form: FormData): Promise<void> {
 export async function completeReminderAction(form: FormData): Promise<void> {
   const user = await requireUser();
   await completeReminder(String(form.get('id') ?? ''), user.userId);
-  // A repeating reminder is not closed here; it moves forward. The message says which happened
-  // rather than claiming a completion the row may not show.
+  // A repeating reminder is not closed here; `completeReminder` moves its due date forward
+  // instead, and nothing distinguishes the two cases by the time we are back. So the word is
+  // "cleared" and not "completed" — the one thing true of both outcomes, rather than a
+  // confirmation the row may not support.
   await flash(`Reminder cleared as ${user.email}`);
   revalidatePath('/');
 }

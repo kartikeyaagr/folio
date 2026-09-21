@@ -79,6 +79,23 @@ export async function reject(form: FormData): Promise<void> {
   revalidatePath('/review');
 }
 
+/**
+ * Put a failed run back on the queue, from the screen that shows it failed.
+ *
+ * **Its gate is weaker than its only caller's.** `app/(app)/agents/page.tsx:78` calls
+ * `requireAdmin()` before it renders, so on screen the button is admin-only; this asks for
+ * `requireUser()`, and a server action is a POST endpoint nobody has to render a page to reach.
+ * The effective permission for requeueing a run is therefore "signed in", not "admin".
+ *
+ * `requeueRunAction` in `actions/admin.ts` is the same `requeue()` behind `requireAdmin()`,
+ * reached from `/admin`. Two doors onto one operation with two different locks. Left as found and
+ * recorded here rather than tightened in passing, because which of the two is right is a decision
+ * about who owns the agent queue — §7 puts the drafts with the three analysts, the registry with
+ * the admins — and not a typo.
+ *
+ * Nothing it can reach is destructive: a requeue re-runs an agent, which costs money and produces
+ * a draft that still has to be accepted by a person before it enters the record.
+ */
 export async function retryRun(form: FormData): Promise<void> {
   await requireUser();
   const ok = await requeue(String(form.get('id') ?? ''));

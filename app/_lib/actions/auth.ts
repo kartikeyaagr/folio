@@ -37,6 +37,24 @@ export async function signIn(_prev: string | null, form: FormData): Promise<stri
   redirect(next.startsWith('/') && !next.startsWith('//') ? next : '/');
 }
 
+/**
+ * Sign out, and mean it.
+ *
+ * Deliberately not behind `requireUser()`, unlike every other action outside this file. The
+ * request most in need of this one is the request whose session no longer resolves — expired,
+ * revoked from another browser, an account just disabled — and demanding a live session before
+ * letting go of a dead one would redirect that person to `/login` with the stale cookie still on
+ * their machine, which is the single state sign-out exists to escape. There is nothing to guard
+ * either: the only thing reachable from here is the token the caller already presented.
+ *
+ * The revocation is attributed to `system:auth` rather than to the person, because no user id is
+ * in hand — nothing here resolves the token, and doing so would cost a round trip to learn a name
+ * this write does not need. `pruneExpiredSessions` uses the same principal, so `audit_log` tells a
+ * consistent story about sessions ending; the cost is that it cannot say who ended this one.
+ *
+ * The cookie goes first and the row second, so a revoke that fails still leaves the browser signed
+ * out — and the row it could not reach expires on its own.
+ */
 export async function signOut(): Promise<void> {
   const token = await clearSessionCookie();
   if (token) await revokeSession(token, 'system:auth');

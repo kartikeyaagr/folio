@@ -16,4 +16,14 @@
 export const SESSION_COOKIE =
   process.env.NODE_ENV === 'production' ? '__Host-trisula_session' : 'trisula_session';
 
+/**
+ * The same fact as the name above, and it has to stay the same fact.
+ *
+ * `__Host-` is not advisory: a browser refuses a `__Host-`-prefixed cookie outright unless it is
+ * also `Secure`. So these two constants are one decision read twice, and a production name without
+ * the production flag would not weaken the session — it would make signing in impossible, with a
+ * `Set-Cookie` the browser drops and nothing logged anywhere to say it did.
+ *
+ * `setSessionCookie` is the only reader.
+ */
 export const SECURE_COOKIES = process.env.NODE_ENV === 'production';

@@ -18,6 +18,21 @@ export async function currentUser(): Promise<Session | null> {
   return resolveSession(jar.get(SESSION_COOKIE)?.value);
 }
 
+/**
+ * The same check, for a caller that cannot carry on without an answer.
+ *
+ * **`redirect()` works by throwing.** Nothing after this line runs, and a `try` that catches
+ * broadly swallows the bounce and carries on as though nobody had been turned away. That is why
+ * every action in `_lib/actions/` resolves its user *before* opening a try block, never inside
+ * one — `admin.ts` and `rules.ts` call it outside `guarded()` for exactly this reason.
+ *
+ * The destination is not preserved here, and nothing downstream recovers it. `middleware.ts`
+ * builds `?next=<path>`, but only for a request carrying no session cookie at all — the one case
+ * that never reaches this function. What reaches it is the cookie that exists and no longer
+ * resolves: expired, revoked from another browser, or an account disabled since the tab was
+ * opened. Those land on a bare `/login`, and `signIn` then sends them to `/` because there is no
+ * `next` to read.
+ */
 export async function requireUser(): Promise<Session> {
   const session = await currentUser();
   if (!session) redirect('/login');
@@ -38,6 +53,21 @@ export async function requireAdmin(): Promise<Session> {
   return session;
 }
 
+/**
+ * Hand the browser the session it has just earned. Four flags, each load-bearing.
+ *
+ * `httpOnly` keeps the token out of `document.cookie`, so script on the page cannot read it back
+ * out. `secure` and `path: '/'` are both demanded by the `__Host-` prefix the name carries in
+ * production — see `session-cookie.ts`. And `sameSite: 'lax'` rather than `'strict'`, because
+ * `strict` withholds the cookie on a cross-site navigation: a bookmark, or a link pasted into
+ * chat, would land on `/login` despite a perfectly good session, which reads as the app being
+ * broken rather than as a policy.
+ *
+ * `expiresAt` is the value `issueSession` wrote into `sessions.expires_at`, passed through
+ * unchanged, never recomputed here. The row is what `resolveSession` enforces; a cookie outliving
+ * it leaves a browser that believes it is signed in and is bounced anyway, and a cookie expiring
+ * first leaves a live row nobody can present.
+ */
 export async function setSessionCookie(token: string, expiresAt: Date): Promise<void> {
   const jar = await cookies();
   jar.set(SESSION_COOKIE, token, {
@@ -49,6 +79,18 @@ export async function setSessionCookie(token: string, expiresAt: Date): Promise<
   });
 }
 
+/**
+ * Take the cookie off this browser, and hand the token back so the caller can kill the row too.
+ *
+ * **Returning the token is the whole point of the function.** Deleting the cookie ends the session
+ * for this browser and for nothing else: `sessions` still holds a row that is neither revoked nor
+ * expired, so any other copy of that token still resolves to a live session. A caller that drops
+ * the return value has signed the person out of the screen in front of them and left the
+ * credential working — `signOut` is the one caller, and it revokes.
+ *
+ * Undefined means there was no cookie to clear, which is the ordinary result of signing out twice
+ * rather than a fault.
+ */
 export async function clearSessionCookie(): Promise<string | undefined> {
   const jar = await cookies();
   const token = jar.get(SESSION_COOKIE)?.value;
