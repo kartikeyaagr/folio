@@ -25,7 +25,7 @@ import { currentTheme } from '../_lib/theme.ts';
  */
 export default async function AppLayout({ children }: { children: ReactNode }) {
   const user = await requireUser();
-  const [shell, theme, message, mailbox, askAboutMailbox] = await Promise.all([
+  const [shell, theme, pendingFlash, mailbox, askAboutMailbox] = await Promise.all([
     railData(user.userId),
     currentTheme(),
     readFlash(),
@@ -45,7 +45,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
         menu={<AvatarMenu email={user.email} name={shell.name} isAdmin={user.isAdmin} mailbox={mailbox} />}
       />
       <div className="app-main">{children}</div>
-      <Toast message={message} />
+      <Toast flash={pendingFlash} />
       {askAboutMailbox && <MailboxPrompt email={user.email} />}
     </div>
   );

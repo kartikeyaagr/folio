@@ -257,11 +257,21 @@ export default async function ReviewPage() {
                   </button>
                   <form action={reject} className="draft-reject">
                     <input type="hidden" name="id" value={d.id} />
+                    {/*
+                      The placeholder said "required" and nothing enforced it. A rejection with no
+                      reason is the one outcome on this screen the learning loop cannot read: it
+                      records that an agent was wrong and withholds the only evidence of how.
+
+                      `required` stops the empty submit in the browser and nothing more. `reject`
+                      still trims and refuses an empty reason server-side, because a form posted
+                      without the browser is still a form.
+                    */}
                     <input
                       className="field"
                       name="reason"
                       placeholder="Why this is wrong — required"
                       aria-label="Reason for rejecting"
+                      required
                     />
                     <button type="submit" className="btn btn-danger">Reject</button>
                   </form>

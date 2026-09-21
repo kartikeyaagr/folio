@@ -24,6 +24,8 @@ export const SESSION_COOKIE =
  * the production flag would not weaken the session — it would make signing in impossible, with a
  * `Set-Cookie` the browser drops and nothing logged anywhere to say it did.
  *
- * `setSessionCookie` is the only reader.
+ * `setSessionCookie` reads it for the reason above. `flash.ts` reads it for a weaker one — the
+ * flash cookie carries a sentence for the screen and nothing secret — but a second answer in this
+ * directory to "is a cookie here Secure" is how the two drift apart.
  */
 export const SECURE_COOKIES = process.env.NODE_ENV === 'production';
