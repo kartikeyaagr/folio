@@ -94,6 +94,21 @@
   /* Geist for anything written, Geist Mono for every figure. */
   --font: var(--font-sans), ui-sans-serif, system-ui, -apple-system, sans-serif;
   --mono: var(--font-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
+  /*
+   * The third face, for document and cell content only — never for chrome, which is the
+   * prose-versus-number split the design system argues for and this does not touch.
+   *
+   * Undeclared until 21-Sep-2026 while four rules referenced it: `--font-document` in
+   * `tailwind.css`, the sheet's face dropdown, and `.cf-face-serif`. An undefined custom property
+   * makes the whole `font-family` declaration invalid, so it was dropped and the text kept
+   * whatever it inherited — choosing Serif in a spreadsheet did nothing at all, silently. That is
+   * L12's shape for a token rather than a class, which is why `ops/measure-css.ts` now censuses
+   * these too.
+   *
+   * No serif webfont is loaded — `layout.tsx` fetches Geist and Geist Mono and nothing else — so
+   * this is a native stack, led by the Georgia that `FACES` already shows as the sample word.
+   */
+  --serif: Georgia, 'Times New Roman', ui-serif, serif;
 
   /* Motion. Ease-out only — ease-in delays the frame the user is watching. */
   --ease: cubic-bezier(0.2, 0.8, 0.2, 1);

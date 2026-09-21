@@ -159,5 +159,58 @@ for (const [file, classes] of [...byFile].sort((a, b) => b[1].length - a[1].leng
 console.log(`\nUNDEFINED — referenced, defined in no stylesheet: ${undefinedClasses.length}`);
 for (const cls of undefinedClasses) console.log(`  ${cls.padEnd(28)} ${usedIn.get(cls)}`);
 
+/*
+ * The same census for custom properties, added 21-Sep-2026 because the class version would never
+ * have caught what happened to `--serif`.
+ *
+ * It was referenced by four rules — `--font-document` in `tailwind.css`, the sheet's face
+ * dropdown, `.cf-face-serif` — and declared nowhere. An undefined custom property does not fall
+ * back; it makes the whole declaration invalid, so `font-family: var(--serif)` was dropped and
+ * the text kept what it inherited. Choosing Serif in a spreadsheet did nothing, silently, and
+ * neither the type checker nor the class census had anything to say about it. L12's argument
+ * exactly, one level down.
+ *
+ * `--font-sans` and `--font-mono` are injected at runtime by `next/font` in `layout.tsx` and are
+ * declared in no stylesheet by design, so they are the allowed exceptions rather than a reason to
+ * weaken the check.
+ */
+const INJECTED = new Set(['--font-sans', '--font-mono']);
+
+const tokenDefinedIn = new Map<string, string>();
+const tokenUsedIn = new Map<string, string>();
+for (const file of cssFiles) {
+  const css = readFileSync(join(ROOT, file), 'utf8');
+  for (const m of css.matchAll(/(--[a-z0-9-]+)\s*:/gi)) {
+    if (!tokenDefinedIn.has(m[1]!)) tokenDefinedIn.set(m[1]!, file);
+  }
+  for (const m of css.matchAll(/var\(\s*(--[a-z0-9-]+)/gi)) {
+    if (!tokenUsedIn.has(m[1]!)) tokenUsedIn.set(m[1]!, file);
+  }
+}
+for (const file of tsxFiles) {
+  const src = readFileSync(join(ROOT, file), 'utf8');
+  for (const m of src.matchAll(/var\(\s*(--[a-z0-9-]+)/gi)) {
+    if (!tokenUsedIn.has(m[1]!)) tokenUsedIn.set(m[1]!, file);
+  }
+  // A component may declare one too, per element and at runtime: the sheet writes its dragged
+  // column width as `setProperty('--w', …)` and its row height the same way, which is the whole
+  // reason those are custom properties rather than a `style={{width}}` that could not carry a
+  // hover. Both forms count as a declaration or this census reports its own design as a defect —
+  // and a check with false positives is one somebody switches off.
+  for (const m of src.matchAll(/setProperty\(\s*[^,]*?'(--[a-z0-9-]+)'/gi)) {
+    if (!tokenDefinedIn.has(m[1]!)) tokenDefinedIn.set(m[1]!, file);
+  }
+  for (const m of src.matchAll(/['"](--[a-z0-9-]+)['"]\s*:/gi)) {
+    if (!tokenDefinedIn.has(m[1]!)) tokenDefinedIn.set(m[1]!, file);
+  }
+}
+const undefinedTokens = [...tokenUsedIn.keys()]
+  .filter((v) => !tokenDefinedIn.has(v) && !INJECTED.has(v))
+  .sort();
+
+console.log(`\nUNDEFINED TOKENS — var() with no declaration: ${undefinedTokens.length}`);
+for (const v of undefinedTokens) console.log(`  ${v.padEnd(28)} ${tokenUsedIn.get(v)}`);
+
 // An undefined class is a real defect (L12); a dead one is only debt. Only the first fails.
-if (undefinedClasses.length > 0) process.exitCode = 1;
+// An undefined token is the same defect and fails for the same reason.
+if (undefinedClasses.length > 0 || undefinedTokens.length > 0) process.exitCode = 1;
