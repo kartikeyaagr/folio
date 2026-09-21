@@ -98,8 +98,16 @@ export async function readUpload(filename: string, bytes: Buffer): Promise<Impor
     const [first, second] = ext === 'docx' ? [asNote, asSheet] : [asSheet, asNote];
     try {
       return first();
-    } catch {
-      return second();
+    } catch (err) {
+      // When neither reader can read it, the *first* refusal is the one to raise. The extension
+      // said which format the file claims to be, so that reader's sentence is the one naming the
+      // real problem: an image-only `.docx` has no text layer, and reporting it as
+      // "No xl/workbook.xml — this is not a spreadsheet" is true of it and useless to anybody.
+      try {
+        return second();
+      } catch {
+        throw err;
+      }
     }
   }
 

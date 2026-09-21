@@ -36,6 +36,23 @@ test('an empty entry survives, which is the case that usually does not', () => {
   assert.deepEqual(back.get('empty.txt'), Buffer.alloc(0));
 });
 
+test('an entry name says it is UTF-8, in both copies of the header', () => {
+  // Names are written with `Buffer.from(name, 'utf8')` and the flag field said nothing, so a
+  // reader was entitled by the spec to decode `पूर्वानुमान.xml` as CP437 and show mojibake. Bit 11
+  // is the whole fix. Asserted on the bytes rather than through a round trip, which is the honest
+  // place: our own reader hands the name back intact whether the flag is set or not, so a
+  // round-trip assertion passes with the flag removed and reads as cover for nothing.
+  const buf = zip([{ name: 'पूर्वानुमान.xml', body: Buffer.from('<x/>', 'utf8') }]);
+  const central = buf.readUInt32LE(buf.length - 22 + 16);
+
+  assert.equal(buf.readUInt16LE(6), 0x0800, 'local header: bit 11, and nothing else');
+  assert.equal(buf.readUInt16LE(central + 8), 0x0800, 'central directory: the same word');
+  // Bit 0 is encryption and bit 3 is a data descriptor; this writer does neither, and a flag word
+  // that quietly acquired one would describe a file it is not writing.
+  assert.equal(buf.readUInt16LE(6) & 0b1001, 0, 'no encryption, no data descriptor');
+  assert.deepEqual([...unzip(buf).keys()], ['पूर्वानुमान.xml'], 'and the name still comes back');
+});
+
 test('the same document exports to the same bytes', () => {
   // The timestamp is fixed rather than `now`, so an export is testable and two exports of an
   // unedited document are identical — a reader diffing them sees the document change, not the clock.
