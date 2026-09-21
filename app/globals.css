@@ -1101,6 +1101,24 @@ dialog.dlg[open] {
 .is-read .item-title {
   font-weight: 500;
 }
+/*
+ * The detail line under a desk item's title — `item.detail` on an alert or a reminder.
+ *
+ * It was named by `app/(app)/page.tsx` and defined by no stylesheet, which is L12's shape and is
+ * why `ops/measure-css.ts` fails on an undefined class rather than only reporting dead ones: the
+ * paragraph rendered at body size in full ink, reading as a second title rather than as the
+ * subordinate line it is. Typography follows `.cell-sub`, which is the same job elsewhere.
+ *
+ * `margin: 0` because `.item-main` is a grid with `gap: 3px` and there is no preflight in this
+ * tree — `tailwind.css` refuses it on purpose — so a bare `p` would bring the browser's 1em.
+ */
+.item-sub {
+  margin: 0;
+  font-size: 12.5px;
+  font-weight: 400;
+  line-height: 1.4;
+  color: var(--muted);
+}
 .item-day {
   padding: 10px 14px 4px;
   font-size: 11px;
