@@ -14,7 +14,7 @@
  * attributing it to the person would put a write in their name before the cookie proving it exists.
  */
 
-import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { hash as argonHash, verify as argonVerify } from '@node-rs/argon2';
 import { readTxn, serviceTxn, writeTxn, type Client } from './db.ts';
 import { clear as clearLimit, hit, type Limit } from './rate-limit.ts';
@@ -24,13 +24,6 @@ const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const RECOVERY_CODE_COUNT = 8;
 
 const sha256 = (value: string): string => createHash('sha256').update(value).digest('hex');
-
-/** Constant-time compare of two hex digests, so a wrong guess leaks no timing signal. */
-function digestsEqual(a: string, b: string): boolean {
-  const aBytes = Buffer.from(a, 'hex');
-  const bBytes = Buffer.from(b, 'hex');
-  return aBytes.length === bBytes.length && timingSafeEqual(aBytes, bBytes);
-}
 
 // ------------------------------------------------------------------------------------------------
 // Passwords
@@ -362,5 +355,3 @@ export async function setPassword(userId: string, plain: string, actorId: string
     await c.query('UPDATE users SET password_hash = $1 WHERE id = $2', [encoded, userId]);
   });
 }
-
-export { digestsEqual, sha256 };

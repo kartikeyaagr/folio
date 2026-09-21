@@ -9,7 +9,7 @@ import { positionOf } from '@/lib/agents/paths.ts';
 import { enqueue, requeue } from '@/lib/agents/queue.ts';
 
 import { flash } from '../flash.ts';
-import { requireUser } from '../session.ts';
+import { requireAdmin, requireUser } from '../session.ts';
 
 /**
  * The review gate.
@@ -82,22 +82,23 @@ export async function reject(form: FormData): Promise<void> {
 /**
  * Put a failed run back on the queue, from the screen that shows it failed.
  *
- * **Its gate is weaker than its only caller's.** `app/(app)/agents/page.tsx:78` calls
- * `requireAdmin()` before it renders, so on screen the button is admin-only; this asks for
- * `requireUser()`, and a server action is a POST endpoint nobody has to render a page to reach.
- * The effective permission for requeueing a run is therefore "signed in", not "admin".
+ * **Admin, because both doors onto this operation are.** It asked for `requireUser()` until
+ * 21-Sep-2026 while `app/(app)/agents/page.tsx:78` — the only page that renders the button —
+ * calls `requireAdmin()` before it draws anything, and `requeueRunAction` in `actions/admin.ts`
+ * is the same `requeue()` call behind `requireAdmin()` on `/admin`. A server action is a POST
+ * endpoint nobody has to render a page to reach, so the effective permission for requeueing any
+ * agent run was "signed in" while every surface offering it was admin-only.
  *
- * `requeueRunAction` in `actions/admin.ts` is the same `requeue()` behind `requireAdmin()`,
- * reached from `/admin`. Two doors onto one operation with two different locks. Left as found and
- * recorded here rather than tightened in passing, because which of the two is right is a decision
- * about who owns the agent queue — §7 puts the drafts with the three analysts, the registry with
- * the admins — and not a typo.
+ * Raised rather than lowered because that is where the two agreed. The queue is operating
+ * machinery and both screens that expose it are the admin's; §7 puts the *drafts* with the three
+ * analysts, which is `/review` and is a different question from who may spend a model call.
  *
- * Nothing it can reach is destructive: a requeue re-runs an agent, which costs money and produces
- * a draft that still has to be accepted by a person before it enters the record.
+ * Nothing it can reach is destructive either way: a requeue re-runs an agent, which costs money
+ * and produces a draft that still has to be accepted by a person before it enters the record.
+ * That is the reason this was a gate worth getting right rather than an incident.
  */
 export async function retryRun(form: FormData): Promise<void> {
-  await requireUser();
+  await requireAdmin();
   const ok = await requeue(String(form.get('id') ?? ''));
   await flash(ok ? 'Queued again' : 'That run could not be requeued');
   revalidatePath('/agents');

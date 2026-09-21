@@ -242,14 +242,14 @@ function sheetPrefix(sheet: string | undefined): string {
 }
 
 /** One operand, bracketed only where dropping the brackets would change what it means. */
-function side(child: Node, parentBp: number, parentOp: string, isRight: boolean): string {
+function side(child: Node, parentBindingPower: number, parentOp: string, isRight: boolean): string {
   const printed = printFormula(child);
   if (child.t !== 'op') return printed;
   const bindingPower = PRECEDENCE[child.op]!;
-  if (bindingPower < parentBp) return `(${printed})`;
+  if (bindingPower < parentBindingPower) return `(${printed})`;
   // Equal binding: `a-(b-c)` keeps its brackets, and so does `(a^b)^c` — on the other side,
   // because `^` is the one right-associative operator here.
-  if (bindingPower === parentBp && isRight !== (parentOp === '^')) return `(${printed})`;
+  if (bindingPower === parentBindingPower && isRight !== (parentOp === '^')) return `(${printed})`;
   return printed;
 }
 

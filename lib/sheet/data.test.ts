@@ -90,3 +90,23 @@ test('a restated period answers with the restatement, not the original', async (
     ));
   assert.equal(await ask('=FIN("PRAJIND","revenue","FY26","consolidated")'), 1100);
 });
+
+test('a fact that is not a figure answers #N/A, not NaN', async () => {
+  // `Number(v)` was returned unguarded. NaN is a number to the grid: it propagates into a margin
+  // and a valuation exactly as a wrong figure would, and renders as a value rather than as a
+  // refusal — the failure this module's header exists to forbid, one step past the blank.
+  //
+  // `facts` is written by `lib/ingest/xbrl.ts` and holds numeric strings today, so this guards a
+  // source that does not exist yet. `Number('1,000')` is also NaN, which is the shape a future
+  // writer is most likely to arrive in.
+  await serviceTxn('system:ingest', (c) =>
+    c.query(
+      `INSERT INTO fundamentals (id, company_id, basis, period_start, period_end, period_kind, facts)
+       VALUES ('f_text',$1,'consolidated','2025-04-01','2026-03-31','year',$2::jsonb)`,
+      [CO, JSON.stringify({ revenue: 'not a number' })],
+    ));
+  const out = await ask('=FIN("PRAJIND","revenue","FY26","consolidated")');
+  assert.equal(typeof out, 'object', 'an #N/A value, not a number');
+  assert.ok(!Number.isNaN(out as unknown as number), 'and certainly not NaN');
+  assert.match(JSON.stringify(out), /not a figure/);
+});

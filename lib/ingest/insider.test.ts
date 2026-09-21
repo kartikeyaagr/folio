@@ -159,3 +159,27 @@ test('the disclosed time survives, because two filings can share a day', async (
   });
   assert.deepEqual(times, ['2025-12-10 15:20', '2025-12-10 15:23']);
 });
+
+test('re-fetching corrects a disclosed time, which is how the history gets repaired', async () => {
+  // `disclosed_at` was not in the upsert's set list, so a row already stored kept whatever time
+  // it was first written with — and every timed disclosure written before 21-Sep-2026 was
+  // written 5h30m late, from a zone-less string. Without this the repair would need a migration
+  // guessing which rows were written under which session zone; with it, re-running the insider
+  // backfill is the repair and cannot double-shift.
+  //
+  // Simulated by storing a row with a deliberately wrong time and then storing the real one over
+  // it, which is exactly what a re-fetch does.
+  const wrong = parseInsider(TRANSFER).map((r) => ({ ...r, disclosedAt: '2025-12-10T09:00:00+05:30' }));
+  await storeInsider(CO, wrong);
+  await storeInsider(CO, parseInsider(TRANSFER));
+
+  const times = await readTxn(async (c) => {
+    const { rows } = await c.query<{ t: string }>(
+      `SELECT to_char(disclosed_at AT TIME ZONE 'Asia/Kolkata', 'YYYY-MM-DD HH24:MI') AS t
+         FROM insider_transactions ORDER BY disclosed_at`,
+    );
+    return rows.map((r) => r.t);
+  });
+  assert.deepEqual(times, ['2025-12-10 15:20', '2025-12-10 15:23'], 'the second write won');
+  assert.equal(await count(), 2, 'and it is still two rows, not four');
+});

@@ -26,9 +26,9 @@ export interface Context {
   lookups: Lookups;
 }
 
-function numbers(vs: Value[]): number[] | CellError {
+function numbers(values: Value[]): number[] | CellError {
   const out: number[] = [];
-  for (const v of vs) {
+  for (const v of values) {
     if (isCellError(v)) return v;
     // Blanks and text are skipped rather than counted as zero — SUM over a column with a heading
     // is the single most common thing anybody does, and it must not read the heading as 0.

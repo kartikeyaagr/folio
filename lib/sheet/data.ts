@@ -160,9 +160,17 @@ async function answer(c: Client, call: Call, symbol: string): Promise<Value> {
         [symbol, period.end, line, period.kind ?? '', basis],
       );
       const v = rows[0]?.v;
-      return v == null || v === ''
-        ? NA(`no ${basis} ${line} filed for ${symbol} to ${period.end}`)
-        : Number(v);
+      if (v == null || v === '') return NA(`no ${basis} ${line} filed for ${symbol} to ${period.end}`);
+      // `Number()` on something that is not a figure gives NaN, and NaN is a number as far as the
+      // grid is concerned — it propagates into a margin and a valuation exactly as a wrong figure
+      // would, and prints as a value rather than as a refusal. `facts` is written by
+      // `lib/ingest/xbrl.ts` and holds numeric strings today, so this is a guard against a source
+      // that does not exist yet rather than a bug being fixed; `Number('1,000')` is also NaN, so a
+      // grouped figure from any future writer lands here too.
+      const figure = Number(v);
+      return Number.isFinite(figure)
+        ? figure
+        : NA(`${line} for ${symbol} to ${period.end} is not a figure: ${v}`);
     }
     case 'CLOSE': {
       const on = (call.args[1] ?? '').trim();

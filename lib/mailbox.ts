@@ -24,7 +24,7 @@
  *      a password-shaped string that gets sent somewhere.
  */
 
-import { createCipheriv, createDecipheriv, randomBytes, timingSafeEqual } from 'node:crypto';
+import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
 
 import { readTxn, serviceTxn, writeTxn } from './db.ts';
 import { smtpSender, type SmtpConfig } from './notify.ts';
@@ -257,15 +257,4 @@ export async function recordMailboxResult(userId: string, error: string | null):
     ));
 };
 
-/**
- * A constant-time buffer compare with no caller anywhere in the tree.
- *
- * Its comment claimed it was exported "for a test that wants to prove a tampered secret is refused
- * rather than opened", and no such test uses it. `mailbox.test.ts` proves that property through
- * `open` — a flipped ciphertext against an intact tag, and two malformed strings, all three
- * asserted to throw — because GCM's tag is what actually raises. Nothing in `lib/`, `app/` or
- * `jobs/` imports this either. Do not reach for it thinking it is the mechanism; it is the only
- * reason `timingSafeEqual` is imported into this file.
- */
-export const sameBytes = (a: Buffer, b: Buffer): boolean =>
-  a.length === b.length && timingSafeEqual(a, b);
+
