@@ -1,9 +1,9 @@
 # Architecture
 
 How Trisula is put together, and why it is put together that way. Accurate against the tree at the
-time of writing: **62 migrations, 50 tables, 6 agents, 25 job entry points, 19 systemd timers, two
-long-running watchers, 18 routes, 814 tests.** Every number here was counted, not remembered; if you
-change the shape, count again rather than editing around it.
+time of writing: **62 migrations, 50 tables, 6 agents, 24 job entry points, 19 systemd timers, two
+long-running watchers, 18 pages and 4 route handlers, 814 tests.** Every number here was counted,
+not remembered; if you change the shape, count again rather than editing around it.
 
 For the product argument — what was built, what was deliberately cut, and on whose authority — see
 the private `docs/specs/`. This file describes the machine.
@@ -50,9 +50,14 @@ no build step, and that is the trade.
 
 ## 2. The data model
 
-47 tables. None was ever dropped until `0053` took the three that were chat's and nothing else's;
+50 tables. None was ever dropped until `0053` took the three that were chat's and nothing else's;
 the rule it replaces — "none ever dropped" — held for fifty migrations and is worth keeping as the
-default. Grouped by what they are for:
+default. Forty-seven are grouped below by what they are for. The other three are outside the
+grouping because none of them holds fund data: `annual_report_attempts` records the *ask* rather
+than the result, so a year we requested and did not get is distinguishable from one we never
+requested without a watermark (`0046`); `index_levels` is a benchmark series and an index is not a
+security, argued after the grouping; and `schema_migrations` is `db/migrate.ts`'s own bookkeeping,
+created by the migrator rather than by a migration.
 
 ```
 IDENTITY & AUDIT   actors · users · sessions · recovery_codes · audit_log
@@ -108,11 +113,12 @@ filtered against `companies` — and carries no audit trigger for the reason `pr
 Two rules govern all of them.
 
 **A feed or job that returns zero items is a failure, not a quiet day.** A dead feed must never look
-like a quiet one. Five exemptions are documented, each stated in the file it applies to and counted
+like a quiet one. Six exemptions are documented, each stated in the file it applies to and counted
 in `CLAUDE.md` so the roster lives in one place: no bhavcopy on a non-trading day, the news gate's
-empty queue, the content indexer's two empty queues, a distillation run that raised no rule, and an
-agent sweep that queued nothing. The last two are not "the queue was empty" — the queue is full and
-the right answer is still nothing, which is why each file argues its own case.
+empty queue, the content indexer's two empty queues, a distillation run that raised no rule, an
+agent sweep that queued nothing, and a company backfill with nothing left to claim. The last three
+are not "the queue was empty" — the queue is full and the right answer is still nothing, which is
+why each file argues its own case.
 
 **Ask "what has no run yet", never "what is new since I last looked."** Sweeps and evaluators use
 `NOT EXISTS`, not a watermark or a rolling window. A window can only lose things, and it already
@@ -245,13 +251,18 @@ Everything funnels through the `agent_runs` queue, drained by one timer every fi
 uses `FOR UPDATE SKIP LOCKED` with a 30-minute lease. "Event" agents are not push-driven: they are
 `NOT EXISTS` sweeps against `agent_runs`, per the house rule.
 
-**Two of the seven can be asked for work by hand**, and `lib/agents/invocable.ts` is the single list
-of which — read by `/agents`' form, by chat's `run_agent`, and by the server action behind the form.
-Membership is a property of the handler, not of the `trigger` column: an agent belongs there iff
-everything it reads off the run can be picked from a dropdown. A company can be; a `subject_ref`
-cannot, which is what excludes agents 1, 2 and 8. `invocable.test.ts` runs the claim rather than
-asserting the list — every member must produce a draft with `subject_ref = NULL`, and every
-model-calling non-member must fail without one.
+**Four of the six can be asked for work by hand** — every agent that calls a model — and
+`lib/agents/invocable.ts` is the single list of which, read by `/agents`' form, by chat's
+`run_agent`, and by the server action behind the form. Membership is a property of the handler, not
+of the `trigger` column: an agent belongs there iff everything it reads off the run can be picked.
+It was two while a form could offer a company and nothing else; `/chat` now has real subject
+pickers (`subjects.ts`), so the two that need a specific filed period or a specific transcript are
+askable too, the picker supplying the same `subject_ref` their sweeps supply from the same tables.
+`email-workflow` and `reminders` are the two outside, and not by oversight: they call no model and
+drain their own queues on their own schedule, so there is nothing to ask them for.
+`invocable.test.ts` runs the claim rather than asserting the list — every member must produce a
+draft when given the subject it declares and fail when denied it, and the last test holds that
+every seeded agent is accounted for by exactly one of those arguments.
 
 Failures are typed — `refusal`, `truncated`, `unparseable`, `schema_mismatch`, `too_large`, `error` —
 and the distinction is load-bearing. The first five are properties of *this content* and fail the
@@ -407,11 +418,13 @@ Tailwind's default palette is ~300 colours, the design system allows one accent 
 and `bg-red-500` now fails to compile rather than relying on somebody remembering the rule. The
 `v4.md` constraint that forbade this is reversed there, with the reasoning, rather than edited away.
 
-`components/primitives/` holds vendored shadcn/Base UI components; `components/ui.tsx` composes them
-into the kit. Three shadcn components are refused on purpose — `Tabs`, `ToggleGroup` and `Select`
-are client-state and would convert server pages into client ones, and `Form` would do the same to
-all 41 forms. There are zero `'use client'` files in `app/` and that is the property being
-protected.
+`components/ui.tsx` is the kit, and it is hand-written. Nothing is vendored: the `shadcn` CLI is a
+devDependency for pulling a component down to read, but no Radix or Base UI package is a dependency
+and there is no `components/primitives/`. Four shadcn components were refused on purpose — `Tabs`,
+`ToggleGroup` and `Select` hold client state and would convert a server page into a client one, and
+`Form` would do the same to every form in the tree. There are zero `'use client'` files in `app/`
+and that is the property being protected; the 18 components that do carry the directive all live in
+`components/`, where the boundary is explicit.
 
 `ops/measure-css.ts` is the census: it reports dead selectors, and fails on a class a component
 names that no stylesheet defines. `styles/unbuilt/` holds stylesheets for cut or unbuilt screens and
@@ -439,8 +452,12 @@ need the embedding model present; `pnpm fetch-model` is idempotent and leaves a 
 several of them load the 130 MB ONNX session; with a dev server holding one too, onnxruntime aborts
 the process — `libc++abi: recursive_mutex lock failed` — and three model-loading files fail with no
 assertion error to explain themselves. Measured 15-Sep-2026: 3 failures with the server up, 616/616
-with it stopped, and those same three files pass in isolation either way. It looks like a broken
-test and it is a resource conflict.
+with it stopped — the suite was 616 tests then — and those same three files pass in isolation
+either way. It looks like a broken test and it is a resource conflict.
+
+Measured again 21-Sep-2026, which narrows it: a dev server belonging to a *different* worktree, on
+the same port, did **not** reproduce it — 814/814 passed with one running. The conflict is over the
+ONNX session in this checkout, not over the port, so it is your own `pnpm dev` that has to stop.
 
 Jobs run as `pnpm exec tsx jobs/<name>.ts`. Deployment, backup, and the systemd units are in
 `ops/SETUP.md`.
