@@ -58,9 +58,15 @@ export function CompanySearch({ search }: { search: (query: string) => Promise<C
           setSel(0);
           setOpen(true);
         },
-        // A failed lookup closes the list rather than leaving the previous query's names under a
-        // box that has moved on. Unhandled, this was also a console rejection nobody would see.
-        () => { if (current) setOpen(false); },
+        // A failed lookup clears the list rather than leaving the previous query's names under a
+        // box that has moved on — closing it alone would leave them there to reappear on the next
+        // focus. Unhandled, this was also a console rejection nobody would see.
+        () => {
+          if (!current) return;
+          setHits([]);
+          setSel(0);
+          setOpen(false);
+        },
       );
     }, 150);
     return () => { current = false; clearTimeout(t); };

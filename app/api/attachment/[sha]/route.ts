@@ -67,17 +67,22 @@ export async function GET(
   // Streamed rather than read into memory: an annual report is single-digit megabytes and there is
   // no reason for the web process to hold one.
   const stream = Readable.toWeb(createReadStream(file)) as ReadableStream;
+
+  // **Only a PDF is rendered in this origin.** `nosniff` stops the browser guessing a type, and
+  // that is not the whole question: `row.media_type` is itself sniffed for an upload
+  // (`lib/workspace.ts` reads the magic number) but *taken from the wire* for an attachment
+  // fetched from NSE. Serving an arbitrary declared type `inline` is how a downloaded file gets
+  // executed here rather than read here. So a PDF opens in the tab, beside its extracted text,
+  // which is the whole point of the route; everything else is handed over as bytes to save.
+  const isPdf = row.media_type === 'application/pdf';
+  const safeName = row.filename.replace(/["\\]/g, '');
+
   return new NextResponse(stream, {
     headers: {
-      'Content-Type': row.media_type || 'application/octet-stream',
+      'Content-Type': isPdf ? 'application/pdf' : 'application/octet-stream',
       'Content-Length': row.bytes,
-      // `inline` so a PDF opens in the browser beside the extracted text rather than landing in
-      // Downloads. The filename is quoted because NSE's carry spaces and commas.
-      'Content-Disposition': `inline; filename="${row.filename.replace(/["\\]/g, '')}"`,
-      // Serve the type we recorded, never the one a browser guesses. Uploads are sniffed to
-      // `application/pdf` or `application/octet-stream` by their magic number, but these bytes
-      // also arrive from NSE, and `inline` plus a sniffed type is how a downloaded file executes
-      // in this origin rather than being read in it.
+      // The filename is quoted because NSE's carry spaces and commas.
+      'Content-Disposition': `${isPdf ? 'inline' : 'attachment'}; filename="${safeName}"`,
       'X-Content-Type-Options': 'nosniff',
       // The name is the content's own hash, so the bytes can never change under it.
       'Cache-Control': 'private, max-age=31536000, immutable',
