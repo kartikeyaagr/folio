@@ -65,6 +65,13 @@ export interface GateSubject {
   companyName: string;
   symbol: string;
   sector: string | null;
+  /**
+   * The **title** of the company's newest unarchived memo — there is no business-description
+   * column on `companies`, and a memo title is the closest thing the desk writes by hand.
+   * `gatePrompt` renders it under "WHAT IT DOES", so whatever the latest memo happens to be called
+   * is what the model is told the company does. Null when there is no memo, and the prompt then
+   * omits the line rather than asserting nothing.
+   */
   business: string | null;
   tier: string;
   evidence: string;
@@ -90,10 +97,27 @@ export function gatePrompt(s: GateSubject): string {
 }
 
 export interface GateResult {
+  /** Candidates claimed this run, and always exactly `confirmed + rejected + failed`. */
   considered: number;
   confirmed: number;
   rejected: number;
+  /**
+   * Attempts that produced no answer — a transport error, a refusal, a prompt that overflowed the
+   * window. Most are not terminal: the row keeps its `candidate` state and is offered again on the
+   * next run until `MAX_GATE_ATTEMPTS`.
+   */
   failed: number;
+  /**
+   * The subset of `failed` that reached a terminal state this run. **Not a fourth bucket to add to
+   * the others** — a run reporting `failed: 3, ungated: 3` looked at three candidates, not six.
+   *
+   * These counters exist to be branched on, and `jobs/news-gate.ts` is what branches: its
+   * exemption from the zero-items-is-a-failure rule is for an *empty queue* and only that, so it
+   * raises when `considered > 0 && confirmed + rejected === 0`. Before that check existed the job
+   * ran against an expired key, read 0 confirmed / 0 rejected / 3 failed, and recorded the run
+   * `ok` — lesson L1's fifth instance, and the reason `considered` is here at all rather than
+   * being inferred from the other three.
+   */
   ungated: number;
   costUsd: number;
   /**
@@ -208,4 +232,10 @@ export async function ungated(): Promise<{ id: string; title: string; lastError:
   });
 }
 
+/**
+ * Re-exported from `lib/agents/model.ts`. Nothing imports it from here — counted 21-Sep-2026
+ * across `app/`, `lib/`, `jobs/` and the tests — and nothing should: pricing belongs to the model
+ * client, and reaching for it through the news gate would make a cost display in `/review` depend
+ * on this file.
+ */
 export { costUsd };

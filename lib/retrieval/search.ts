@@ -38,17 +38,67 @@ export interface Hit {
   charTo: number;
   companyId: string | null;
   occurredAt: string | null;
+  /**
+   * The fused RRF score — `1/(RRF_K + vector rank) + 1/(RRF_K + text rank)`, either term zero
+   * where that path did not rank this chunk.
+   *
+   * **It orders results and measures nothing.** Being derived from rank, the best hit of any query
+   * that matches anything at all scores `1/(RRF_K + 1)`: measured 10-Sep-2026 against the live
+   * 12,136-chunk corpus, `PRAJIND revenue` and `zzzz nonexistent qqqq` both came back at
+   * **0.01639**, and the deliberately unanswerable `what is the promoter golf handicap` at
+   * **0.03062** — higher than the legitimate query (`v4.md` §5.4). A threshold on this does not
+   * merely fail to filter by relevance, it inverts it.
+   *
+   * So it is comparable within one result set and meaningless across two. There is no floor on the
+   * underlying cosine either, and that is a measured finding rather than an omission — see
+   * `search` below.
+   */
   score: number;
 }
 
 export interface SearchOpts {
   companyId?: string | null;
   kind?: SourceKind;
+  /**
+   * Lower bound on `chunks.occurred_at`, which is **the date the content is about** — not when it
+   * was fetched, and not when it was indexed.
+   *
+   * For four of the five kinds that is the announcement, publication or period date, and
+   * `registerAll` keeps the chunk's denormalised copy in step as the source's moves. For a
+   * `document_version` it is when the document was last saved, and it is deliberately frozen at
+   * the moment the chunk was written: `syncChunkMetadata` excludes that one kind from the sweep
+   * precisely so an ordinary re-save of unchanged text does not re-date a 2022 concall to this
+   * week. A caller filtering recency gets "recently written" for memos and "recently happened"
+   * for everything else.
+   */
   since?: string;
+  /**
+   * Hits returned, applied **after** the per-source collapse — so a query can come back with
+   * fewer than this even when more chunks matched, because `MAX_PER_SOURCE` dropped the rest of a
+   * long document. It is also capped from above by the retrieval depth: at most `2 * PER_PATH`
+   * rows ever reach `collapse`, so asking for more than 60 cannot be satisfied by anything.
+   */
   limit?: number;
 }
 
+/**
+ * The fusion constant in `1/(k + rank)`. 60 is what the spec asked for (`v4.md` §5.4, "reciprocal
+ * rank fusion, k=60") and nothing in this tree has measured an alternative — a stated default in
+ * the same sense as `chunk.ts`'s sizes, not a tuned number.
+ *
+ * Raising it flattens the curve: the gap between rank 1 and rank 10 shrinks, so a chunk both paths
+ * found beats one that either path ranked first. Lowering it does the reverse. Either is a change
+ * to what the desk is shown, and neither should be made without measuring against the twenty
+ * questions in `tasks/relevance-questions.md`.
+ */
 export const RRF_K = 60;
+/**
+ * How deep each path ranks before fusion — and therefore the ceiling on the entire query. Each CTE
+ * returns at most 30 ids and the final SELECT admits a chunk only if one of them ranked it, so no
+ * more than 60 rows ever reach `collapse`, whatever `limit` asks for. A chunk outside the top 30
+ * by cosine *and* outside the top 30 by `ts_rank` cannot be returned at all, which is the intended
+ * shape: depth down two paths rather than breadth along either.
+ */
 export const PER_PATH = 30;
 export const MAX_PER_SOURCE = 3;
 export const RESULT_LIMIT = 12;

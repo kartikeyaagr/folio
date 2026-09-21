@@ -20,12 +20,36 @@
 import { columnIndex } from '../sheet/cells.ts';
 import type { Grid } from '../sheet/evaluate.ts';
 
+/**
+ * One retrievable piece and the half-open span `[charFrom, charTo)` it was cut from.
+ *
+ * The span indexes **what `textFor` returns for this source, not what the database stores** — for
+ * a workbook that is `sheetGridText(sheets)` rather than the JSONB body, which is the whole reason
+ * `sheetGridText` exists as a shared function. `source.slice(charFrom, charTo) === text` is the
+ * invariant a citation rests on, and the header above records what it cost the one time the two
+ * sides computed it from different strings.
+ *
+ * **The pieces are neither a partition nor a cover of that source.** Consecutive prose pieces
+ * overlap by up to `OVERLAP_CHARS`; consecutive sheet blocks instead leave a one-character gap,
+ * the newline that joined the rows. Either way, concatenating them is not the document and their
+ * lengths do not sum to its length — anything that needs the whole text goes back to `textFor`.
+ */
 export interface Piece {
   text: string;
   charFrom: number;
   charTo: number;
 }
 
+/**
+ * A target, not a cap. Three paths exceed it on purpose: `chunkText` and `packRows` each fold a
+ * short trailing fragment into its predecessor, which can leave a final piece close to twice this;
+ * and `packRows` always emits the row at the head of a block even when that single row is longer
+ * than this by itself, because a hard cut inside a row is worse than a chunk that runs long.
+ *
+ * So nothing downstream may size a buffer, a prompt budget or a column off this constant. Measure
+ * the piece. The one place that has to bound total work — `drain`'s `CHUNK_BUDGET` — counts chunks
+ * against a measured per-chunk rate rather than multiplying by this number.
+ */
 export const TARGET_CHARS = 1000;
 export const OVERLAP_CHARS = 150;
 /**

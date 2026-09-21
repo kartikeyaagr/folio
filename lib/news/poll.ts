@@ -35,6 +35,15 @@ export interface FeedOutcome {
   error: string | null;
 }
 
+/**
+ * How the bytes are got, injected so the tests can drive a whole poll without a network.
+ *
+ * **It must throw on anything that is not a 200, and that is the contract rather than a detail of
+ * `httpFetch`.** `pollOne` decides a feed is healthy by whether this resolved; a fetcher that
+ * handed back a 403 page's body as a string would produce a feed recorded as serving a document
+ * that is not RSS — the right row, marked failed, carrying the wrong diagnosis, and a reader sent
+ * to inspect the publisher's XML rather than a blocked request.
+ */
 export type Fetcher = (url: string) => Promise<string>;
 
 const httpFetch: Fetcher = async (url) => {
@@ -104,6 +113,26 @@ export interface PollResult {
   failures: FeedOutcome[];
 }
 
+/**
+ * Poll every active source once, eight at a time, and record each outcome on its own row.
+ *
+ * **It does not throw for a feed that failed.** A dead publisher is data, not an exception: the
+ * outcome goes into `failures` and onto `news_sources.last_status`/`last_error`, and the caller
+ * decides what is fatal. `jobs/news-poll.ts` raises only when `ok === 0`, which is a network or
+ * DNS problem rather than a publisher problem. The return value is what the run reports; the row
+ * is what answers "why has this source shown nothing for a week" a month later, and that is the
+ * whole reason both exist.
+ *
+ * `stored` counts rows that did not already exist, never items served. A feed republishing the
+ * same fifteen stories every hour contributes `items: 15, stored: 0` and is perfectly healthy, so
+ * a run whose `stored` is zero is not by itself a failing run — `ok` against `feeds` is the figure
+ * that says whether the poll worked.
+ *
+ * Only `active` sources are polled, and switching a source off has to mean off — `matchNewItems`
+ * applies the same `s.active` test to the backlog a retired feed already fetched. PIB is seeded
+ * inactive on purpose: its RSS is Hindi whatever `Lang` claims, and it carries no dates and no
+ * guids (`tasks/measured-traps.md`, News).
+ */
 export async function pollFeeds(fetcher: Fetcher = httpFetch): Promise<PollResult> {
   const sources = await serviceTxn('system:news', async (c) => {
     const { rows } = await c.query<Source>(

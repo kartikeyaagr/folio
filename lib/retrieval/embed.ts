@@ -21,6 +21,16 @@ import path from 'node:path';
  * has no symptom. Changing this constant means re-embedding, never mixing.
  */
 export const EMBED_MODEL = 'bge-small-en-v1.5';
+/**
+ * Three things at once, and they have to agree: bge-small's hidden size, the width of
+ * `chunks.embedding vector(384)`, and how many floats `embed` takes off the CLS row. Only the
+ * first is a property of the model, so changing `EMBED_MODEL` to something wider is a migration
+ * and a re-embed rather than an edit here.
+ *
+ * A mismatch is at least loud — the column type rejects the insert — which is the opposite of the
+ * failure `EMBED_MODEL` above describes, where two models of the same width mix silently and
+ * return plausible numbers with meaningless neighbours.
+ */
 export const EMBED_DIM = 384;
 
 /** Where `ops/SETUP.md` provisions it on the box. */
@@ -112,15 +122,22 @@ export function isLoaded(): boolean {
   return session !== undefined;
 }
 
-/**
- * WordPiece, greedy longest-match — what bge's tokenizer.json describes.
- *
- * Exported for the tokenization tests below: both are pure functions of the vocab, so they can be
- * checked against real vocab entries without paying for an ONNX session load.
- */
 /** `tokenizer.json`'s `model.max_input_chars_per_word`. Read from the file, not guessed. */
 const MAX_WORD_CHARS = 100;
 
+/**
+ * WordPiece, greedy longest-match — what bge's tokenizer.json describes.
+ *
+ * Exported for the tokenization tests: it is a pure function of the vocab, so it can be checked
+ * against real vocab entries without paying for an ONNX session load.
+ *
+ * **Never returns more than 512 ids, and a text that would need more is silently cut short** —
+ * [CLS], as many pieces as fit, then [SEP]. 512 is the model's position-embedding count, not a
+ * policy, and the two comments inside the loop record the two ways this bound was got wrong: a
+ * cap checked only between words, and no character cap on a single unbroken run. A caller handing
+ * this something much longer than a chunk gets an embedding of the beginning of it and no error,
+ * so the sizing decision belongs at the chunker rather than here.
+ */
 export function encode(v: Record<string, number>, s: string): number[] {
   const ids = [v['[CLS]']!];
   // Split on EVERY Unicode punctuation character, which is what BERT's BertPreTokenizer does
@@ -207,6 +224,24 @@ export function encode(v: Record<string, number>, s: string): number[] {
   return ids;
 }
 
+/**
+ * One vector per text, in the order given; `[]` in, `[]` out.
+ *
+ * **Unit length.** The CLS row is divided by its own norm before it is returned, so cosine and dot
+ * product coincide and `1 - (embedding <=> query)` under pgvector is a cosine similarity directly
+ * — the scale every measured relevance number in `v4.md` §5.4 and `tasks/relevance-2026-09-10.md`
+ * is quoted on. Storing an unnormalised vector would raise nothing anywhere; it would quietly move
+ * every one of those figures.
+ *
+ * **The array is not a batch.** This runs one `session.run` per text, sequentially. What passing
+ * the whole source at once buys is a single `load()` and a single await — not a batched tensor —
+ * so a caller gains nothing by splitting the call and loses the guarantee that every chunk of a
+ * source was embedded by the same session.
+ *
+ * The first call in a process reads a 130 MB model off disk. That cost is why indexing never
+ * happens on the write path, and why one job drains both embedding queues rather than two jobs
+ * loading the model twice (ARCHITECTURE.md §4).
+ */
 export async function embed(texts: string[]): Promise<number[][]> {
   if (texts.length === 0) return [];
   const { s, v } = await load();
