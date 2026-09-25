@@ -1,9 +1,9 @@
 /**
  * Authentication for three people.
  *
- * There is no signup route and there never will be. An account exists because somebody seeded it
- * (`jobs/seed-user.ts`), which means the interesting operations here are proving who you are and
- * getting back in when you cannot.
+ * An account exists because somebody seeded it (`jobs/seed-user.ts`) — `/signup` only records a
+ * request an admin decides on, and approval still ends in that job on the box. So the interesting
+ * operations here are proving who you are and getting back in when you cannot.
  *
  * Two things are stored hashed rather than plain, for the same reason: a stolen database must not
  * yield anything usable. A password hash is Argon2id. A session token and a recovery code are
@@ -58,7 +58,10 @@ export interface Session {
   name: string;
   email: string;
   expiresAt: Date;
-  /** Sees model, effort and spend on the agents page. Granted only from the VM. */
+  /**
+   * Sees model, effort and spend on the agents page. The first admin is granted on the VM
+   * (`jobs/set-admin.ts`); after that, from `/admin`.
+   */
   isAdmin: boolean;
 }
 
@@ -139,8 +142,9 @@ export async function pruneExpiredSessions(): Promise<number> {
 
 /**
  * Issued once, shown once, stored only as digests. These exist because there is no password-reset
- * email and no signup route: without them, a locked-out account is recovered by hand-editing the
- * database, which is worse in every way than a code in a password manager.
+ * email, and accounts are only ever created on the box: without them, a locked-out account is
+ * recovered by hand-editing the database, which is worse in every way than a code in a password
+ * manager.
  *
  * Issuing replaces any unused codes, so a fresh set invalidates an old printout.
  */

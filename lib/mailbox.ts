@@ -212,13 +212,41 @@ const defaultProbe = async (cfg: SmtpConfig, to: string): Promise<void> => {
 };
 
 /**
+ * Whether this box can store a mailbox password at all.
+ *
+ * The same question `key()` asks, without throwing, so a caller can decide not to offer something
+ * rather than offering it and failing. Checks the length too: a `MAILBOX_KEY` that is set but not
+ * 32 bytes fails exactly as completely as one that is missing, and the difference is visible only
+ * in the message.
+ */
+export function mailboxKeyPresent(): boolean {
+  try {
+    key();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Whether this person has been offered the mailbox prompt yet.
  *
  * Asked of `users` rather than of `mailboxes`, and those are different questions: somebody who was
  * asked and said no has no mailbox and must not be asked again, which a `mailboxes` lookup alone
  * cannot tell from somebody who has never been asked.
+ *
+ * With no `MAILBOX_KEY` on the box, nobody is asked. `components/MailboxPrompt.tsx` is a modal
+ * that cannot be dismissed by Escape or by clicking away — deliberately, so the one-time offer is
+ * answered rather than ignored — and without the key its primary action throws `NoMailboxKey` and
+ * flashes a sentence. The first screen of somebody's first sign-in was therefore a modal whose
+ * only working button was "Skip".
+ *
+ * Suppressing it does NOT spend the offer: `mailbox_prompted_at` is written by answering the
+ * prompt, and a prompt never shown is never answered, so the day the key is set everybody who has
+ * not seen it still gets it.
  */
 export async function shouldPromptForMailbox(userId: string): Promise<boolean> {
+  if (!mailboxKeyPresent()) return false;
   return readTxn(async (c) => {
     const { rows } = await c.query<{ ask: boolean }>(
       'SELECT mailbox_prompted_at IS NULL AS ask FROM users WHERE id = $1', [userId]);

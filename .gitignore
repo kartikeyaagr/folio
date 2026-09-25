@@ -9,8 +9,10 @@ node_modules/
 .next/
 out/
 *.tsbuildinfo
+# Every env file but the template. `.env.production` was not covered until 25-Sep-2026.
 .env
-.env.local
+.env.*
+!.env.example
 .DS_Store
 next-env.d.ts
 

@@ -5,6 +5,7 @@ import { redirect } from 'next/navigation';
 import { login, revokeSession, TooManyAttempts } from '@/lib/auth.ts';
 
 import { clientAddress } from '../client-address.ts';
+import { localPath } from '../local-path.ts';
 
 import { clearSessionCookie, setSessionCookie } from '../session.ts';
 
@@ -32,9 +33,7 @@ export async function signIn(_prev: string | null, form: FormData): Promise<stri
   if (!session) return 'That email address and password do not match.';
 
   await setSessionCookie(session.token, session.expiresAt);
-  // Only a path on this app, never an absolute URL: an open redirect turns the login page into a
-  // credible way to send somebody somewhere else.
-  redirect(next.startsWith('/') && !next.startsWith('//') ? next : '/');
+  redirect(localPath(next));
 }
 
 /**

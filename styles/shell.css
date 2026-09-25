@@ -548,3 +548,186 @@
     padding: 16px 16px 40px;
   }
 }
+
+/* ---------------------------------------------------------------------------------------------
+   Failure screens — app/error.tsx, app/global-error.tsx, app/not-found.tsx
+
+   Centred on the viewport rather than laid into the page grid, because two of the three render
+   with no rail beside them: an error in the root layout has nothing left to sit next to. The card
+   is the login card's proportions on purpose — those are the only two screens a person meets with
+   no navigation, and meeting the same shape twice is what makes the second one legible.
+   --------------------------------------------------------------------------------------------- */
+.failure {
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: var(--bg);
+}
+.app-main .failure {
+  /* Inside the shell the rail already frames it, so it fills the pane rather than the window. */
+  min-height: calc(100dvh - 48px);
+}
+.failure-card {
+  width: 100%;
+  max-width: 460px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.failure-mark {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--r-md);
+  background: var(--rail);
+  color: var(--rail-on);
+  font-weight: 800;
+  font-size: 13px;
+  margin-bottom: 10px;
+}
+.failure-eyebrow {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.failure-title {
+  font-family: var(--font);
+  font-weight: 500;
+  font-size: 28px;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+}
+.failure-why {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: var(--ink-2);
+}
+.failure-why a {
+  color: var(--ink);
+  text-underline-offset: 3px;
+}
+.failure-digest {
+  font-size: 12px;
+  color: var(--muted);
+}
+.failure-digest code,
+.failure-why code {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  padding: 1px 5px;
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  color: var(--ink-2);
+}
+.failure-acts {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+/* Its own rule rather than `.btn`: these render in the two client boundaries, and pulling
+   components/ui.tsx across that boundary to style a link is the whole cost this avoids. */
+.failure-act {
+  height: 36px;
+  padding: 0 14px;
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  color: var(--ink);
+  font: 600 13px/1 var(--font);
+  cursor: pointer;
+  text-decoration: none;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+.failure-act:hover {
+  background: var(--surface-2);
+}
+.failure-act:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+.failure-act:active {
+  border-color: var(--ring);
+}
+.failure-act-primary {
+  background: var(--rail-on);
+  border-color: var(--rail-on);
+  color: var(--rail);
+}
+.failure-act-primary:hover {
+  background: var(--ink-2);
+  border-color: var(--ink-2);
+}
+
+/* ---------------------------------------------------------------------------------------------
+   The loading skeleton — app/(app)/loading.tsx
+
+   `prefers-reduced-motion` drops the shimmer and holds the resting tint. The bars still say the
+   same thing standing still; a pulse that cannot be turned off is one that some readers cannot
+   look at.
+   --------------------------------------------------------------------------------------------- */
+.skel {
+  padding: 24px 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+.skel-head {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.skel-bar,
+.skel-row {
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  animation: skel-pulse 1.4s ease-in-out infinite;
+}
+.skel-title {
+  height: 22px;
+  width: 220px;
+}
+.skel-sub {
+  height: 12px;
+  width: 320px;
+  animation-delay: 0.1s;
+}
+.skel-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.skel-row {
+  height: 52px;
+  border: 1px solid var(--line);
+}
+.skel-rows .skel-row:nth-child(2) {
+  animation-delay: 0.12s;
+}
+.skel-rows .skel-row:nth-child(3) {
+  animation-delay: 0.24s;
+}
+@keyframes skel-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .skel-bar,
+  .skel-row {
+    animation: none;
+  }
+}

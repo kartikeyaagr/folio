@@ -15,7 +15,7 @@ import { migrate } from '../db/migrate.ts';
 import { closePool, readTxn, serviceTxn } from './db.ts';
 import {
   configFor, forgetMailbox, linkMailbox, mailboxFor, MailboxRefused, NoMailboxKey,
-  open, recordMailboxResult, seal,
+  open, recordMailboxResult, seal, shouldPromptForMailbox,
 } from './mailbox.ts';
 import type { SmtpConfig } from './notify.ts';
 
@@ -108,6 +108,47 @@ test('with no MAILBOX_KEY, linking refuses and writes nothing', async () => {
 test('a MAILBOX_KEY of the wrong size refuses rather than being padded into one', async () => {
   process.env['MAILBOX_KEY'] = Buffer.from('too short').toString('base64');
   await assert.rejects(() => link(), NoMailboxKey);
+});
+
+test('with no MAILBOX_KEY, nobody is prompted to link a mailbox at all', async () => {
+  // `MailboxPrompt` cannot be dismissed by Escape or by clicking away, deliberately, so the offer
+  // is answered rather than ignored. Without a key its primary action throws — which made the
+  // first screen of somebody's first sign-in a modal whose only working button was "Skip".
+  //
+  // The reset is what gives this test teeth. Earlier tests link successfully, and linking answers
+  // the prompt — so without it this passed with the key check deleted from `mailbox.ts`, which is
+  // a test that asserts nothing. Confirmed by deleting the check and watching it fail.
+  await serviceTxn('system:auth', async (c) =>
+    c.query('UPDATE users SET mailbox_prompted_at = NULL WHERE id = $1', [ME]));
+
+  delete process.env['MAILBOX_KEY'];
+  assert.equal(await shouldPromptForMailbox(ME), false);
+});
+
+test('and the offer is not spent: the key arriving later still gets everybody asked', async () => {
+  // The distinction that matters. `mailbox_prompted_at` is written by ANSWERING the prompt, so
+  // suppressing it must leave the row untouched — otherwise setting the key on a live box would
+  // silently mean nobody is ever offered their own mailbox.
+  //
+  // Reset explicitly: earlier tests in this file link successfully, and linking answers the prompt.
+  // Without this the second assertion passes for the wrong reason, which is how it first failed.
+  await serviceTxn('system:auth', async (c) =>
+    c.query('UPDATE users SET mailbox_prompted_at = NULL WHERE id = $1', [ME]));
+
+  delete process.env['MAILBOX_KEY'];
+  assert.equal(await shouldPromptForMailbox(ME), false, 'not asked while the key is missing');
+
+  process.env['MAILBOX_KEY'] = Buffer.alloc(32, 7).toString('base64');
+  assert.equal(await shouldPromptForMailbox(ME), true, 'asked the moment the key exists');
+});
+
+test('a MAILBOX_KEY of the wrong size prompts nobody either', async () => {
+  // A key that is set but not 32 bytes fails linking exactly as completely as a missing one, so
+  // it must suppress the modal the same way. A presence check alone would pass the two tests above.
+  await serviceTxn('system:auth', async (c) =>
+    c.query('UPDATE users SET mailbox_prompted_at = NULL WHERE id = $1', [ME]));
+  process.env['MAILBOX_KEY'] = Buffer.from('too short').toString('base64');
+  assert.equal(await shouldPromptForMailbox(ME), false);
 });
 
 // ---- nothing is stored until it has carried a message -----------------------------------------------

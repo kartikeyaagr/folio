@@ -44,7 +44,8 @@ so `lib/` must never import from `next/*` — the lint rule in `eslint.config.js
 **`ARCHITECTURE.md` describes how the system is put together** — the data model, ingestion,
 retrieval, the agents, chat, and the learning loop, with the constants and invariants that matter.
 Read it before changing anything structural, and `.interface-design/system.md` before adding any
-screen.
+screen. The rules for particular kinds of change are in `SECURITY.md`, `DATABASE.md`, `API.md` and
+`CODE_STYLE.md`.
 
 ## A constraint worth knowing
 
@@ -65,13 +66,19 @@ export DATABASE_URL=postgres:///trisula_v3_dev
 pnpm install
 pnpm fetch-model                 # ~130 MB embedding model, validated on download
 pnpm exec tsx db/migrate.ts      # migrations are one transaction each, checksummed
-pnpm check                       # lint + typecheck + 837 tests
+pnpm check                       # lint + typecheck + 859 tests
 pnpm dev                         # port 3100
 ```
 
 Tests create and drop their own databases, so they need `createdb`/`dropdb` on PATH. The retrieval
 tests need the embedding model present — `pnpm fetch-model` is idempotent and leaves a good copy
 alone. Jobs run as `pnpm exec tsx jobs/<name>.ts`; deployment lives in `ops/SETUP.md`.
+
+`pnpm preflight` answers "is this box actually ready" — database, schema, the embedding model's
+checksum, a model credential the API actually accepts, backups, mail, and every systemd timer.
+It reads and changes nothing, and reports what it *could not* check separately from what it checked
+and found wrong, so a check that did not run never reads as one that passed. `.env.example` lists
+every variable the system reads; `ops/SETUP.md` §6 explains why each is what it is.
 
 **Stop `pnpm dev` before `pnpm check`.** Both load the ONNX embedding session, the test runner loads
 several at once, and onnxruntime aborts the process rather than queueing — three model-loading files

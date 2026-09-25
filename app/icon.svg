@@ -1,0 +1,23 @@
+<!--
+  The tab mark. `app/icon.svg` is the App Router's own convention, so it needs no `public/`
+  directory — and this tree deliberately has none.
+
+  The T is a path, not text. A favicon renders in a context with no webfonts and no guarantee about
+  the system stack, so `<text>T</text>` would be a different letterform on every machine and a
+  different weight on every platform. It is the same rounded square as `.login-mark`.
+
+  Both schemes, because the mark inherits nothing: a dark square is invisible against a dark tab
+  strip, which is where two of the three people using this spend the whole day.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <style>
+    .plate { fill: #171717 }
+    .glyph { fill: #fafafa }
+    @media (prefers-color-scheme: dark) {
+      .plate { fill: #fafafa }
+      .glyph { fill: #0a0a0a }
+    }
+  </style>
+  <rect class="plate" width="32" height="32" rx="9" />
+  <path class="glyph" d="M8.5 9 H23.5 V12.5 H17.75 V23 H14.25 V12.5 H8.5 Z" />
+</svg>

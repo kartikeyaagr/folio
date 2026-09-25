@@ -17,6 +17,7 @@ import {
   NotApproved,
   pendingCount,
   ReasonRequired,
+  REQUEST_LIMITS,
   requestAccess,
 } from './access-requests.ts';
 import { createTestDatabase, dropTestDatabase } from '../db/testing.ts';
@@ -88,6 +89,29 @@ test('a request with no name or no address is not recorded', async () => {
   await requestAccess('', 'Someone', 'x');
   await requestAccess('someone@x.com', '   ', 'x');
   assert.equal(await pendingCount(), 0);
+});
+
+test('a forged post past the form limits is not recorded, and says nothing', async () => {
+  await requestAccess(`${'a'.repeat(REQUEST_LIMITS.email)}@x.com`, 'Someone', 'x');
+  await requestAccess('not-an-address', 'Someone', 'x');
+  await requestAccess('someone@x.com', 'S'.repeat(REQUEST_LIMITS.name + 1), 'x');
+  await requestAccess('someone@x.com', 'Someone', 'n'.repeat(REQUEST_LIMITS.note + 1));
+  assert.equal(await pendingCount(), 0);
+});
+
+test('an address and a name typed exactly to the form limits are kept', async () => {
+  const address = `${'a'.repeat(REQUEST_LIMITS.email - '@x.com'.length)}@x.com`;
+  assert.equal(address.length, REQUEST_LIMITS.email);
+  await requestAccess(address, 'S'.repeat(REQUEST_LIMITS.name), 'x');
+  assert.equal(await pendingCount(), 1);
+});
+
+test('a note typed to the limit is kept, though its newlines arrive as CRLF', async () => {
+  const line = `${'n'.repeat(99)}\n`;
+  const typed = line.repeat(REQUEST_LIMITS.note / line.length);
+  assert.equal(typed.length, REQUEST_LIMITS.note);
+  await requestAccess('someone@x.com', 'Someone', typed.replace(/\n/g, '\r\n'));
+  assert.equal(await pendingCount(), 1);
 });
 
 test('approving records who decided, and when', async () => {

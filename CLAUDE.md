@@ -19,6 +19,16 @@ the jobs. It is the fastest way to orient, and its numbers are counted rather th
 files below are the private record of *why* each of those decisions was made, and they stay
 authoritative for intent.
 
+**Four tracked rulebooks sit beside it. Read the one that matches the change before making it:**
+
+- `SECURITY.md` for authentication, a server action, a route handler, an env var, or a secret;
+- `DATABASE.md` for the schema, a migration, or a new table;
+- `API.md` for a new action, route handler, job, or outbound integration;
+- `CODE_STYLE.md` for anything.
+
+Each states the rule and names the file that holds the reason. When the code and a rulebook
+disagree, say so before changing either.
+
 `docs/specs/` and `docs/plans/` (gitignored, private):
 
 | File | What it settles |
@@ -37,10 +47,10 @@ authoritative for intent.
 | `plans/2026-09-11-v4-rules.md` | R6: `prompt_rules`, distillation, `/rules` and the approval gate |
 | `plans/2026-09-11-v4-nested-editing.md` | A correction reaches inside a draft: the path grammar, shape-weighted distance, `/review`'s renderers |
 
-**The UI's standing rules are `.interface-design/system.md`** — tracked in git, 133 lines, and the
-only copy. A stale 105-line duplicate lived at `docs/specs/design-system.md` and was deleted
-11-Sep-2026; this table pointed at it, so every session that consulted a design document read the
-one missing the v3 amendments.
+**The UI's standing rules are `.interface-design/system.md`** — tracked in git, and the only copy.
+A stale 105-line duplicate lived at `docs/specs/design-system.md` and was deleted 11-Sep-2026; this
+table pointed at it, so every session that consulted a design document read the one missing the v3
+amendments.
 
 **Open engineering items live in `tasks/open-items.md`**, consolidated 11-Sep-2026 from four
 superseded audit documents.
@@ -54,7 +64,7 @@ C8 declines a news vendor. The investor-letter agent was cut and its number not 
 ```bash
 export DATABASE_URL=postgres:///trisula_v3_dev
 pnpm exec tsx db/migrate.ts      # migrations are one transaction each, checksummed
-pnpm check                       # lint + typecheck + 837 tests
+pnpm check                       # lint + typecheck + 859 tests
 pnpm dev                         # port 3100
 ```
 

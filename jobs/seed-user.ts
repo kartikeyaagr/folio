@@ -1,5 +1,5 @@
 /**
- * Create an account. There is no signup route, so this is the only way one exists.
+ * Create an account. `/signup` only records a request, so this is still the only way one exists.
  *
  * Prints a temporary password and a set of recovery codes once. Neither is recoverable
  * afterwards: the database holds only digests.

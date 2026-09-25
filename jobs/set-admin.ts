@@ -1,9 +1,9 @@
 /**
  * Grant or revoke admin on an existing account.
  *
- * Admin is granted from the VM and nowhere else, for the same reason there is no signup route: the
- * set of people who can see what the system costs to run should change by someone deciding it on
- * the box, not by a form somebody found.
+ * The FIRST admin is granted here, on the VM, because until one exists nobody can do it anywhere
+ * else. After that an admin can grant or revoke it from `/admin` (`setAdminAction`), which refuses
+ * to remove the last one. This stays the way back in if that ever goes wrong.
  *
  *   pnpm exec tsx jobs/set-admin.ts --email you@trisulacapital.com
  *   pnpm exec tsx jobs/set-admin.ts --email them@trisulacapital.com --revoke

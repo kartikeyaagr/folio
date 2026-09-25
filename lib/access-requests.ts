@@ -60,6 +60,9 @@ const toRequest = (r: Row): AccessRequest => ({
   accountExists: r.account_exists,
 });
 
+/** 254 is the longest address SMTP will carry (RFC 5321 §4.5.3.1.3). The other two are generous. */
+export const REQUEST_LIMITS = { email: 254, name: 200, note: 2000 } as const;
+
 /**
  * Record a request, or refresh the one already standing for that address.
  *
@@ -74,6 +77,15 @@ export async function requestAccess(email: string, name: string, note: string): 
   const clean = email.trim().toLowerCase();
   const who = name.trim();
   if (!clean || !who) return;
+  // The only unauthenticated write that stores what the caller typed, so its size is bounded here
+  // rather than by whoever posts to it. The form carries the same limits as `maxLength` and
+  // `type="email"`, so a person typing never reaches these lines; a forged post that does is dropped
+  // in the same silence as everything else above — a distinct answer would be a signal to probe with.
+  // The note is measured with CRLF folded to LF because that is how `maxLength` counts it: a
+  // textarea submits every newline as CRLF, so a note typed to the limit arrives longer than it.
+  if (clean.length > REQUEST_LIMITS.email || !/^[^\s@]+@[^\s@]+$/.test(clean)) return;
+  if (who.length > REQUEST_LIMITS.name) return;
+  if (note.replace(/\r\n/g, '\n').length > REQUEST_LIMITS.note) return;
 
   await serviceTxn('system:auth', async (c) => {
     // An account that already exists silently records nothing. The requester is told the same

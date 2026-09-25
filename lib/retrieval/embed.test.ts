@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import path from 'node:path';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { embed, encode, toVector, EMBED_DIM, EMBED_MODEL } from './embed.ts';
+import { embed, encode, modelDirs, toVector, EMBED_DIM, EMBED_MODEL } from './embed.ts';
 
 // Repo-local, not the VM path `embed.ts` defaults to — fetched once with `pnpm fetch-model` and
 // left in place (.gitignore'd; 130MB has no business in git). Set in before(), which runs after
@@ -118,4 +118,21 @@ test('a word past max_input_chars_per_word is one [UNK], not four hundred pieces
   const v = loadVocab();
   const long = 'a'.repeat(500);
   assert.deepEqual(encode(v, long), [v['[CLS]'], v['[UNK]'], v['[SEP]']]);
+});
+
+test('with no EMBED_MODEL_DIR the loader looks where `pnpm fetch-model` writes, and only then', () => {
+  // The default and the fetch script's default disagreed once, and every test here sets
+  // EMBED_MODEL_DIR, so nothing noticed. Read from the script so the two cannot drift silently.
+  const repo = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
+  const script = readFileSync(path.join(repo, 'ops', 'fetch-model.sh'), 'utf8');
+  const fetched = path.join(repo, /\.models\/[\w.-]+/.exec(script)![0]);
+  const saved = process.env.EMBED_MODEL_DIR;
+  try {
+    delete process.env.EMBED_MODEL_DIR;
+    assert.ok(modelDirs().includes(fetched), modelDirs().join(', '));
+    process.env.EMBED_MODEL_DIR = '/fixture/model';
+    assert.deepEqual(modelDirs(), ['/fixture/model'], 'an explicit directory is the only place tried');
+  } finally {
+    process.env.EMBED_MODEL_DIR = saved;
+  }
 });

@@ -100,7 +100,8 @@ Retrieval returning nothing is a `<Blank>`, not an empty list.
 ## Two states that are not `Blank`
 
 - **Loading** — a skeleton row matching the shape of the content it replaces. Never a spinner,
-  never `Blank`. **Still unimplemented:** no route has a loading boundary.
+  never `Blank`. One boundary, `app/(app)/loading.tsx`, draws a single header-and-rows skeleton
+  for every page in the shell rather than one shaped per route.
 - **Quiet day** — a plain sentence naming what was checked and when. Never "No items". With forty
   names most days are quiet, and a desk that reads as broken on a working morning stops being
   opened. An empty list and a failed fetch must never look the same. **Implemented on one screen of
@@ -161,8 +162,9 @@ server-set flash cookie with client state. The native `<dialog>` in `DialogButto
 ## State lives in the URL
 
 `?tab=`, `?filter=`, `?sel=`, `?sort=` and plain `<a>`s, never client state. Pages stay server
-components, every view is linkable, and a refresh lands where you were. There are **zero
-`'use client'` files in `app/`** and that is the property to protect. Client components exist for
+components, every view is linkable, and a refresh lands where you were. **No page is a client
+component**, and that is the property to protect: the only `'use client'` files in `app/` are
+`error.tsx` and `global-error.tsx`, the two error boundaries Next's API requires. Client components exist for
 exactly: the rail's active hub, ⌘K, the theme toggle, the toast, dialogs, the two editors, and a
 poll while an agent run is in flight.
 

@@ -36,5 +36,12 @@ export const config = {
   // Everything except Next internals and static assets. The public allowlist is exactly the three
   // pages in (public); everything else is behind requireUser() by virtue of living in (app),
   // rather than by anybody remembering a check.
-  matcher: ['/((?!_next/static|_next/image|favicon.ico).*)'],
+  //
+  // `icon.svg` is excluded alongside `favicon.ico` and is the one that actually exists — the App
+  // Router serves `app/icon.svg` at `/icon.svg`, which is a route like any other and so was being
+  // redirected to /login. The browser asks for it *on the login page*, where by definition there
+  // is no session, so the mark never rendered anywhere. Measured 23-Sep-2026 against the
+  // production build: `307 -> /login?next=%2Ficon.svg`. A signed-in tab would have shown it, which
+  // is why this is the kind of thing that ships.
+  matcher: ['/((?!_next/static|_next/image|favicon.ico|icon.svg).*)'],
 };

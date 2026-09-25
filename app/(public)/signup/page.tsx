@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
-import { requestAccess } from '@/lib/access-requests.ts';
+import { REQUEST_LIMITS, requestAccess } from '@/lib/access-requests.ts';
 import { hit } from '@/lib/rate-limit.ts';
 
 import { clientAddress } from '../../_lib/client-address.ts';
@@ -109,7 +109,13 @@ export default async function SignupPage({
 
             <label className="lbl">
               Your name
-              <input className="field field-lg" name="name" autoComplete="name" required />
+              <input
+                className="field field-lg"
+                name="name"
+                autoComplete="name"
+                maxLength={REQUEST_LIMITS.name}
+                required
+              />
             </label>
             <label className="lbl">
               Work email
@@ -118,6 +124,7 @@ export default async function SignupPage({
                 name="email"
                 type="email"
                 autoComplete="username"
+                maxLength={REQUEST_LIMITS.email}
                 required
               />
               {/* Said here rather than discovered after approval. This address is not only the
@@ -135,6 +142,7 @@ export default async function SignupPage({
                 className="field"
                 name="note"
                 rows={3}
+                maxLength={REQUEST_LIMITS.note}
                 placeholder="Who you are, and what you would use it for."
               />
             </label>

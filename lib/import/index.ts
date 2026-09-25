@@ -146,3 +146,17 @@ export async function readUpload(filename: string, bytes: Buffer): Promise<Impor
 
 /** What a person is told they can bring, in the file picker and in the prose beside it. */
 export const ACCEPTED = '.xlsx,.xlsm,.csv,.tsv,.docx,.pdf,.txt,.md';
+
+/**
+ * The largest file an import takes, in bytes.
+ *
+ * 32MB, not 12. A DRHP runs 300-500 pages with embedded images — the two this desk actually needs
+ * are 7 and 11MB — and the largest annual report in the corpus is 21.4MB. Of 969 real attachments
+ * only 6 exceed 12MB, so this is not a licence for junk; it is the difference between the import
+ * path working for the documents it exists to accept and silently refusing them.
+ *
+ * Here rather than beside `importFileAction` because a `'use server'` file may export only async
+ * functions, and `next.config.ts`'s `bodySizeLimit` has to stay above it — `limits.test.ts`
+ * holds the two in order.
+ */
+export const MAX_UPLOAD = 32 * 1024 * 1024;

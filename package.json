@@ -17,6 +17,7 @@
     "test:cov": "node --test --experimental-test-coverage '**/*.test.ts'",
     "check": "pnpm lint && pnpm typecheck && pnpm test",
     "migrate": "tsx db/migrate.ts",
+    "preflight": "tsx ops/preflight.ts",
     "verify-backup": "./ops/verify-backup.sh",
     "fetch-model": "./ops/fetch-model.sh"
   },

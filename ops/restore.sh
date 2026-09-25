@@ -64,10 +64,20 @@ MSG
   dropdb "$TARGET"
 fi
 
+# From template1, which carries pgvector on the VM (ops/SETUP.md §4): the archive does not, because
+# the restoring role could not create it (ops/backup.sh says why). IF NOT EXISTS returns before any
+# permission check, so this is a no-op there, creates it on a laptop where the role is a superuser,
+# and anywhere else fails here — naming the missing extension — rather than halfway into a restore.
 createdb "$TARGET"
+psql -q -d "$TARGET" -c 'CREATE EXTENSION IF NOT EXISTS vector'
 
 # Decrypted straight into pg_restore: the plaintext dump never lands on disk here either.
 age -d -i "$IDENTITY" "$ARCHIVE" \
   | pg_restore -d "$TARGET" --no-owner --no-privileges --single-transaction
+
+# A database-level setting is not in a pg_dump archive, so a restored database comes back in the
+# cluster's zone — UTC on the VM — and current_date answers yesterday before 05:30 IST (lesson
+# L19). Reapplied here so a restore is a whole database, not most of one.
+psql -q -d "$TARGET" -c "ALTER DATABASE \"$TARGET\" SET timezone = 'Asia/Kolkata'"
 
 echo "restored $ARCHIVE into $TARGET"

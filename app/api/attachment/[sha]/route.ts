@@ -57,9 +57,11 @@ export async function GET(
   } catch {
     // The row is the record that it was fetched; the bytes living somewhere else is an operational
     // fact, and saying which of the two is missing is the difference between a five-minute fix and
-    // an afternoon. ATTACHMENT_DIR is the usual answer.
+    // an afternoon. ATTACHMENT_DIR is the usual answer. The path goes to the server log (journald
+    // on the VM), not to the browser: a filesystem layout is not something a response hands out.
+    console.error(`attachment ${sha} is recorded but not on disk at ${file}; check ATTACHMENT_DIR`);
     return NextResponse.json(
-      { error: `recorded but not on disk at ${file}; check ATTACHMENT_DIR` },
+      { error: 'recorded but not on disk; the server log names the path it looked in' },
       { status: 404 },
     );
   }

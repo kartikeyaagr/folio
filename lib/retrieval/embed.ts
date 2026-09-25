@@ -68,8 +68,12 @@ const complete = (dir: string): boolean =>
  * An explicit `EMBED_MODEL_DIR` is the only place tried, deliberately: a setting that silently
  * falls back to somewhere else is a setting that can be wrong without saying so, and the directory
  * it names is how a test points this at a fixture.
+ *
+ * Exported for `ops/preflight.ts`, which checks the model is present and intact without loading
+ * it. A preflight that hard-coded this order would drift from it, and the failure that causes is
+ * a preflight that passes while the thing it checked is somewhere the loader will not look.
  */
-function modelDirs(): string[] {
+export function modelDirs(): string[] {
   const named = process.env['EMBED_MODEL_DIR'];
   return named ? [named] : [VM_MODEL_DIR, REPO_MODEL_DIR];
 }

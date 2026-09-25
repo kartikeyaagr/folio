@@ -30,8 +30,8 @@ export async function currentUser(): Promise<Session | null> {
  * builds `?next=<path>`, but only for a request carrying no session cookie at all — the one case
  * that never reaches this function. What reaches it is the cookie that exists and no longer
  * resolves: expired, revoked from another browser, or an account disabled since the tab was
- * opened. Those land on a bare `/login`, and `signIn` then sends them to `/` because there is no
- * `next` to read.
+ * opened. Those land on a bare `/login`, and `attemptLogin` (the login page's action) then sends
+ * them to `/` because there is no `next` to read.
  */
 export async function requireUser(): Promise<Session> {
   const session = await currentUser();

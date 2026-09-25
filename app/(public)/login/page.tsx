@@ -4,16 +4,17 @@ import { redirect } from 'next/navigation';
 import { login, TooManyAttempts } from '@/lib/auth.ts';
 
 import { clientAddress } from '../../_lib/client-address.ts';
+import { localPath } from '../../_lib/local-path.ts';
 
 import { currentUser, setSessionCookie } from '../../_lib/session.ts';
 
 /**
- * The only unauthenticated page in the application.
+ * Signing in — one of the three unauthenticated pages, beside `/signup` and `/reset`.
  *
- * There is no sibling "register" or "forgot password" route, and there should not be: there is no
- * public signup, and accounts are created on the VM by someone with shell access. A reset route
- * would quietly re-introduce the account-recovery surface that decision removes — a lost password
- * is handled by a person with VM access, in person, using a recovery code.
+ * Neither sibling widens what a stranger can do. `/signup` records a request an admin decides on,
+ * and the account is still created on the VM by `jobs/seed-user.ts`. `/reset` redeems a recovery
+ * code the person already holds and mails nothing. Migration `0032` and the header of
+ * `reset/page.tsx` record why each was added and what keeps it narrow.
  */
 
 async function attemptLogin(formData: FormData): Promise<void> {
@@ -45,8 +46,7 @@ async function attemptLogin(formData: FormData): Promise<void> {
   }
 
   await setSessionCookie(session.token, session.expiresAt);
-  // Only ever a path on this origin. A full URL here would be an open redirect.
-  redirect(next.startsWith('/') && !next.startsWith('//') ? next : '/');
+  redirect(localPath(next));
 }
 
 export default async function LoginPage({

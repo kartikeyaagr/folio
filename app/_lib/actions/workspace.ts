@@ -5,6 +5,7 @@ import { redirect } from 'next/navigation';
 
 import { writeTxn } from '@/lib/db.ts';
 import {
+  MAX_UPLOAD,
   readUpload,
   UnreadableDocument,
   UnreadableWorkbook,
@@ -225,11 +226,6 @@ export async function deleteDocumentAction(form: FormData): Promise<void> {
  * Everything lands as a first version attributed to whoever uploaded it, so an imported model has
  * the same history as one typed here — starting from the moment it arrived.
  */
-// 32MB, not 12. A DRHP runs 300-500 pages with embedded images — the two this desk actually needs
-// are 7 and 11MB — and the largest annual report in the corpus is 21.4MB. Of 969 real attachments
-// only 6 exceed 12MB, so this is not a licence for junk; it is the difference between the import
-// path working for the documents it exists to accept and silently refusing them.
-const MAX_UPLOAD = 32 * 1024 * 1024;
 
 export async function importFileAction(form: FormData): Promise<void> {
   const user = await requireUser();
@@ -238,8 +234,10 @@ export async function importFileAction(form: FormData): Promise<void> {
 
   if (!(file instanceof File) || file.size === 0) return flash('No file was chosen.');
   if (file.size > MAX_UPLOAD) {
+    // Binary megabytes on both sides, like the constant. Dividing by 1e6 told a person the limit
+    // was "34 MB" for a cap written as 32.
     return flash(
-      `${file.name} is ${(file.size / 1e6).toFixed(1)} MB; the limit is ${(MAX_UPLOAD / 1e6).toFixed(0)} MB.`,
+      `${file.name} is ${(file.size / 2 ** 20).toFixed(1)} MB; the limit is ${MAX_UPLOAD / 2 ** 20} MB.`,
     );
   }
 

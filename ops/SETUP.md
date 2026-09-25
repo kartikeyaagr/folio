@@ -82,18 +82,47 @@ sudo sh -c 'echo "deb https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs
   > /etc/apt/sources.list.d/pgdg.list'
 curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor \
   -o /etc/apt/trusted.gpg.d/postgresql.gpg
-sudo apt update && sudo apt install -y postgresql-18
+sudo apt update && sudo apt install -y postgresql-18 postgresql-18-pgvector
 sudo systemctl enable --now postgresql
 psql --version
 ```
 
-**Leave it on the unix socket.** Nothing external connects to this database, so it needs no TCP
-listener and therefore has no network surface to defend.
+**`postgresql-18-pgvector` is not optional.** Migration
+`0040_the_system_can_be_asked_what_it_holds.sql` runs `CREATE EXTENSION IF NOT EXISTS vector`, and
+`chunks.embedding` is `vector(384)`. Without the package that migration fails, so `pnpm migrate` in
+§11 — the first command of first run — dies at 40 of 62 with a half-built schema. It is on the same
+PGDG repo the line above just added, so it costs nothing to install now and an afternoon to discover
+later.
+
+**Installing the package is not enough: the extension has to be created by `postgres`, in
+`template1`.** pgvector is not a *trusted* extension — its control file has no `trusted = true` —
+so only a superuser can `CREATE EXTENSION vector`, and `trisula` is deliberately not one. Created in
+`template1`, every database made after it inherits the extension: `trisula` itself, so migration
+0040's `CREATE EXTENSION IF NOT EXISTS` finds it and moves on, and every database `ops/restore.sh`
+and the weekly drill create, which is the only way a backup can be restored at all (`ops/backup.sh`
+leaves the extension out of the dump for this reason). Until 25-Sep-2026 this check ran in the
+`postgres` database, which proved the package was installed and created nothing the app could use.
+Run it before `createdb` below — and on a box built before that date, run it now:
+
+```bash
+sudo -u postgres psql -d template1 -c 'CREATE EXTENSION IF NOT EXISTS vector' -c '\dx vector'
+```
+
+**Leave it on the unix socket.** Nothing external connects to this database, and the app reaches it
+through `/var/run/postgresql`. The package's default `listen_addresses = 'localhost'` also opens
+`127.0.0.1:5432`, which is loopback and unreachable from off the box; never widen it.
 
 ```bash
 sudo -u postgres createuser --createdb trisula
 sudo -u postgres createdb --owner=trisula trisula
+sudo -u postgres psql -c "ALTER DATABASE trisula SET timezone = 'Asia/Kolkata'"
 ```
+
+**The database's timezone is not optional either, and `TZ` on the units does not set it.** `initdb`
+copies the box's zone, which on an EC2 image is UTC, and the date arithmetic is in SQL
+(`current_date`), so a UTC database answers with yesterday's date for every Indian clock time before
+05:30 — a reminder not yet due, a window a day early (lesson L19). This line was applied by hand on
+the first box on 09-Sep-2026 and was missing from here until 25-Sep; `pnpm preflight` now checks it.
 
 ## 5. The application user and code
 
@@ -170,6 +199,11 @@ sudo tee /etc/trisula/trisula.env >/dev/null <<'EOF'
 DATABASE_URL=postgres:///trisula
 TZ=Asia/Kolkata
 
+# Where this box is reached. `app/logout/route.ts` redirects here after signing out and falls back
+# to http://localhost:3100 when it is unset — which is correct on a laptop and sends everybody to a
+# dead tab on the VM. Under Tailscale (§8a) this is the MagicDNS name.
+APP_URL=https://trisula.<your-tailnet>.ts.net
+
 # Backups — the PUBLIC half only. See §7.
 BACKUP_AGE_RECIPIENT=
 BACKUP_DIR=/var/lib/trisula/backups
@@ -199,12 +233,42 @@ SMTP_PASSWORD=
 # the caller chooses lets them both evade the limit and lock somebody else out of the login page.
 TRUST_PROXY_HEADER=
 
-# Agents — see §10, which fills these in. Until then agent runs queue and retry.
+# Per-person mailboxes (§9b). 32 bytes, base64: `openssl rand -base64 32`. Without it, linking a
+# personal mailbox refuses outright — there is no path that stores an SMTP password in the clear,
+# and that is the correct failure. Everything else still works and digests go out over the shared
+# relay above. This value is NOT in a database backup, so it belongs wherever
+# BACKUP_AGE_RECIPIENT's private half lives.
+MAILBOX_KEY=
+
+# Agents — the model credential.
+#
+# `lib/agents/client.ts` selects a backend by which variable is PRESENT, in this order:
+# ANTHROPIC_FEDERATION_RULE_ID, then ANTHROPIC_AWS_WORKSPACE_ID, then ANTHROPIC_API_KEY. With none
+# of them it throws NoModelCredentials naming what is missing, rather than failing as a 401 from
+# the far end.
+#
+# A plain key is what this box ships with, because federation (§10) cannot be completed until an
+# Anthropic organization with a payment method exists, and until one does the agents do not run at
+# all. It is a secret on disk — so is SMTP_PASSWORD above, and so is MAILBOX_KEY — and
+# this file is 640 root:trisula precisely so that it can hold them. §10 is the upgrade path and
+# moving to it is one line here plus one timer.
+#
+# Left blank rather than commented, unlike the federation block below, and the difference is not
+# an oversight: `chosenBackend` tests this one for truthiness, so an empty string is exactly as
+# absent as no line at all, and the SDK is never constructed from it unless that test passed. It
+# can therefore sit here as a slot to fill. The federation variables cannot — they are read
+# straight into the SDK's config.
+ANTHROPIC_API_KEY=
+
+# Federation, once §10 is done. Setting ANTHROPIC_FEDERATION_RULE_ID is what switches the backend,
+# and `client.ts` passes apiKey: null explicitly in that branch so the line above cannot shadow it.
+# Delete the ANTHROPIC_API_KEY line anyway once federation works, so there is one credential and
+# not two.
 #
 # Commented rather than left blank, deliberately. For a credential variable, empty is not the same
 # as absent: an exported empty string still occupies its slot in the SDK's precedence chain, so a
 # blank line here would select a credential path with nothing in it and fail as a 401 instead of
-# falling through. The same trap is why ANTHROPIC_API_KEY has no line at all on this box.
+# falling through.
 #ANTHROPIC_FEDERATION_RULE_ID=
 #ANTHROPIC_ORGANIZATION_ID=
 #ANTHROPIC_SERVICE_ACCOUNT_ID=
@@ -265,8 +329,52 @@ misconfiguration away from the fund's positions being on the internet.
 `pnpm build` runs on the VM rather than being shipped as an artefact: the tree is small, the build
 is under a minute, and a box that can rebuild itself is a box that can be recovered from git alone.
 
+`pnpm build` needs **outbound network**, which is easy to miss on a box whose whole premise is that
+it does not accept any: `app/layout.tsx` loads Geist through `next/font/google`, which downloads the
+files at build time and self-hosts them afterwards. Egress is enough — the box never needs an
+inbound port for this.
+
 Accounts are created in §11, **after** the migrations run. Seeding here would fail: there is no
 `users` table yet.
+
+## 8a. Tailscale — how anybody reaches it
+
+The app binds `127.0.0.1:3100` and nothing else, so on its own it is reachable from the box and
+nowhere. Tailscale is named throughout this runbook as the answer and was never actually installed
+here; this is that step. It is recommended over a public listener with a certificate for three
+reasons: no port 443, no certificate to renew, and no day on which a firewall rule is the only thing
+between the fund's positions and the internet.
+
+```bash
+curl -fsSL https://tailscale.com/install.sh | sh
+
+# --ssh lets you reach this box without the EC2 key pair, which means §1's security-group rule for
+# port 22 can later be removed entirely. Do that only once you have signed in over Tailscale once.
+sudo tailscale up --ssh --hostname=trisula
+```
+
+Then put the app on the tailnet, with a certificate Tailscale issues and renews itself:
+
+```bash
+# MagicDNS and HTTPS certificates both have to be on for the tailnet, in the admin console under
+# DNS. `tailscale serve` fails with a clear message if they are not.
+sudo tailscale serve --bg 3100
+tailscale serve status        # prints the https://trisula.<tailnet>.ts.net URL
+```
+
+That URL is what goes in `APP_URL` in §6. It is also what the three of you open — no VPN client
+beyond Tailscale itself, no port forwarding, and the box stays unreachable from the internet.
+
+**`TRUST_PROXY_HEADER` stays unset under this topology**, and §6 says why: `tailscale serve` is a
+reverse proxy but Next sets `x-forwarded-for` with `??=`, so trusting the header hands the
+rate-limit key to whoever is calling — which lets them both evade the limit on `/login` and lock
+somebody else out of it.
+
+Confirm from a second machine on the tailnet, not from the box:
+
+```bash
+curl -sS https://trisula.<tailnet>.ts.net/api/health      # {"ok":true}
+```
 
 ## 9. Schedules
 
@@ -406,11 +514,27 @@ has carried something at least once.
 
 ## 10. The model credential (the agents)
 
-Separate from everything above, and skippable until you want agents running. Steps 1–3 are
-account-wide and done once; 4 onward is per-box.
+Separate from everything above. Steps 1–3 are account-wide and done once; 4 onward is per-box.
 
-**The agents authenticate with the instance role, not a key.** That is the point of this section:
-no model secret is written to this box, so a copy of the disk is not a copy of the credential.
+**Read this first: the box ships on a key, and this section is the upgrade.**
+
+`lib/agents/client.ts` supports three backends and picks by which variable is present —
+`ANTHROPIC_FEDERATION_RULE_ID`, then `ANTHROPIC_AWS_WORKSPACE_ID`, then `ANTHROPIC_API_KEY`. §6
+sets the last of those, and it is what the agents run on today, because **everything from step 2
+onward here is blocked on an Anthropic organization with a payment method, which does not exist**.
+Until one does, this section cannot be completed by anybody, and a box that waits for it has six
+agents that queue, fail and retry forever.
+
+So the order is: ship on the key, come back here. What the upgrade buys is real and worth coming
+back for — no model secret on the box, so a copy of the disk is not a copy of the credential — but
+it buys nothing on a box that is not running.
+
+**The key is not a new class of secret on this box.** `/etc/trisula/trisula.env` is `640
+root:trisula` and already holds `SMTP_PASSWORD`, `MAILBOX_KEY` and `BACKUP_AGE_RECIPIENT`; the
+difference federation makes is narrower than "secrets on disk or not" — it is one fewer, and the
+one that bills. Moving is one line in §6 plus one timer in step 4, and `client.ts` passes
+`apiKey: null` explicitly in the federation branch so the old line cannot shadow the new one while
+you switch.
 
 ### 0. Why not Claude Platform on AWS, and why not Bedrock
 
@@ -584,7 +708,7 @@ sudo -u trisula bash -c 'set -a; . /etc/trisula/trisula.env; set +a; pnpm migrat
 sudo -u trisula bash -c 'set -a; . /etc/trisula/trisula.env; set +a; \
   pnpm exec tsx jobs/refresh-securities.ts'
 
-# The FIRST account. There is no signup route, and --email/--name is the bootstrap: it has to
+# The FIRST account. /signup only records a request, and --email/--name is the bootstrap: it has to
 # exist before anybody can request one. Every account after this is created from an approved
 # request instead, with `--request <id>` off the row on /admin, so that no applicant's own text
 # is ever assembled into a command anybody pastes into this shell.
@@ -594,7 +718,31 @@ sudo -u trisula bash -c 'set -a; . /etc/trisula/trisula.env; set +a; \
 # lost the password AND all eight codes still needs a person with shell access to re-issue them.
 sudo -u trisula bash -c 'set -a; . /etc/trisula/trisula.env; set +a; \
   pnpm exec tsx jobs/seed-user.ts --email you@trisulacapital.com --name "Your Name"'
+
+# Make that first account an admin. NOT optional, and it is a separate step because `seed-user.ts`
+# creates ordinary accounts — `users.is_admin` defaults false and nothing in the sign-up path ever
+# sets it. Skipped, the box is bricked in a way that looks like a design: /admin and /agents both
+# redirect to /, so the only account cannot approve an access request, which means NO SECOND USER
+# CAN EVER BE CREATED THROUGH THE UI. It also cannot toggle an agent or a feed, or requeue a failed
+# run. Nothing hints at it either: components/Rail.tsx relabels the hub "Review" for non-admins,
+# so the panel does not appear to exist rather than appearing to be locked.
+sudo -u trisula bash -c 'set -a; . /etc/trisula/trisula.env; set +a; \
+  pnpm exec tsx jobs/set-admin.ts --email you@trisulacapital.com'
+
+# Confirm. `admin` in the left column is the thing to see.
+sudo -u trisula bash -c 'set -a; . /etc/trisula/trisula.env; set +a; \
+  pnpm exec tsx jobs/set-admin.ts --list'
 ```
+
+Then check the box against this runbook before you trust it:
+
+```bash
+sudo -u trisula bash -c 'set -a; . /etc/trisula/trisula.env; set +a; pnpm preflight'
+```
+
+It reads and changes nothing, exits non-zero on anything wrong, and separates what it checked and
+found wrong from what it *could not check* — so a check that could not run never reads as a pass.
+Everything §4 through §11 asked for is in it.
 
 Then add the names you follow, and let the timers fill in filings, prices and results.
 
@@ -621,6 +769,26 @@ aws s3 cp s3://<bucket>/<latest>.dump.age .
 `restore.sh` refuses a database that already exists — a wrong target name costs the most at exactly
 the moment you are least able to afford it. If `scratch_check` is left over from the last time you
 did this, either drop it or pass `--replace` before the archive name, which drops it for you.
+
+Then sign in, from a second machine on the tailnet, at the `https://trisula.<tailnet>.ts.net` URL.
+Nothing short of this proves the path a person takes, and three things can fail only here:
+
+- **The session cookie is `__Host-` and `Secure` in production.** Over anything but HTTPS the
+  browser drops it, and sign-in silently loops back to `/login`.
+- **Login is a server action, and Next refuses every server action whose `Origin` does not match
+  the `Host` or `X-Forwarded-Host` it receives.** `tailscale serve` is the proxy in between. If
+  sign-in fails with "Invalid Server Actions request" in `journalctl -u trisula-web`, the proxy
+  is not passing the host through. Nothing on a laptop can check this.
+- **Import a PDF over 10 MB** from any company page, and see it land as a document. Next refuses
+  an action body over 1 MB and truncates any body over 10 MB that passes through the middleware,
+  and `next.config.ts` raises both. A build missing either fails here with the error page, and the
+  journal says `Body exceeded` or `Request body exceeded 10MB`.
+
+```bash
+curl -sI https://trisula.<tailnet>.ts.net/login | grep -i -E 'strict-transport|content-security'
+```
+
+Both headers should be present. `Strict-Transport-Security` is sent only by a production build.
 
 ## 13. Day-to-day
 
@@ -661,29 +829,101 @@ sudo systemctl daemon-reload
 
 sudo systemctl restart trisula-web
 curl -sS localhost:3100/api/health
+
+# Everything §4-§11 asked for, checked rather than remembered. Exits 1 on anything wrong, 2 on
+# anything it could not check.
+sudo -u trisula bash -c 'set -a; . /etc/trisula/trisula.env; set +a; pnpm preflight'
 ```
 
 **A new timer is not enabled by copying it.** `systemctl enable --now <name>.timer` for anything
 added since the last deploy — §9 lists the full set, and `systemctl list-timers 'trisula-*'`
-against that list is the check.
+against that list is the check. `pnpm preflight` reads `ops/systemd/` and reports any timer in it
+that is not enabled, which is the same check without the list to keep in step.
 
 Order matters in one direction only: migrations before the restart. The app reads columns the
 migration adds, so a restart first serves a build that queries a schema it does not have yet.
+
+### When a deploy goes wrong
+
+There is no `down` migration and there deliberately never will be: the runner refuses an edited
+file and applies each one exactly once, and a reverse migration is a second, less-tested schema
+change written under time pressure. **So rolling back code and rolling back schema are different
+operations, and only one of them is cheap.**
+
+```bash
+# Code only. Safe whenever the schema did not move — which is most deploys.
+cd /srv/trisula
+sudo -u trisula git log --oneline -5          # find the last good commit
+sudo -u trisula git checkout <sha>
+sudo -u trisula pnpm install --frozen-lockfile && sudo -u trisula pnpm build
+sudo systemctl restart trisula-web
+```
+
+An older build against a newer schema is usually the safe direction — extra columns are simply
+unread. Not always: a newer migration that added a `NOT NULL` column with no default, a trigger or
+a `CHECK` will refuse the older code's inserts, so read what the migrations since `<sha>` did before
+relying on it. The checkout leaves the repo on a detached HEAD; `sudo -u trisula git checkout main`
+before the next §14 deploy, or its `git pull` fails.
+
+**If a migration is the thing that is wrong, restore; do not improvise.** §12's drill is the
+rehearsal for exactly this. Restore *beside* production, look at it, then swap names. Never
+`--replace` the live database: `restore.sh` drops the target before it decrypts, so any failure
+after that — a key the `trisula` user cannot read, a missing extension — leaves an empty database
+where production was.
+
+```bash
+# 1. Beside production. Nothing is dropped, so a failure here costs nothing. The private key comes
+#    onto the box for this and leaves straight after (§7): `trisula` cannot read your home directory.
+sudo install -o trisula -m 400 ~/trisula-backup.key /tmp/restore.key
+sudo -u trisula /srv/trisula/ops/restore.sh <archive>.dump.age trisula_restored /tmp/restore.key
+sudo shred -u /tmp/restore.key
+
+# 2. Look before trusting it: the last migration it carries, and a table you know.
+sudo -u trisula psql -d trisula_restored -c 'SELECT max(filename) FROM schema_migrations'
+
+# 3. Swap, with everything that writes stopped. The broken database is renamed, not dropped.
+sudo systemctl stop trisula-web 'trisula-*.timer' trisula-index-watch trisula-backfill-watch \
+  'trisula-job@*'
+sudo -u trisula psql -d postgres -c 'ALTER DATABASE trisula RENAME TO trisula_broken' \
+  -c 'ALTER DATABASE trisula_restored RENAME TO trisula'
+sudo systemctl start trisula-web trisula-index-watch trisula-backfill-watch 'trisula-*.timer'
+```
+
+Stop the timers *and* any job already running (`trisula-job@*`): a job that runs mid-swap writes
+into the wrong database, and the `ingestion_runs` row it leaves makes the gap look like a quiet day
+rather than an outage. `restore.sh` reapplies the database's timezone, which a dump does not carry
+and a rename keeps. `pnpm preflight` afterwards checks it, with everything else. Drop
+`trisula_broken` once the restored database has run a day.
 
 ---
 
 ## Still to decide
 
+Two settled on 23-Sep-2026 and moved into the runbook rather than deleted, so that a decision is
+not mistaken for something nobody thought about:
+
+- ~~**Whether the web app is on Tailscale or the public internet.**~~ **Tailscale**, and §8a is now
+  the step rather than a recommendation — install, `tailscale serve`, and the MagicDNS name goes in
+  `APP_URL`.
+- ~~**Which Anthropic organization the agents bill to.**~~ Still true that §10 cannot be completed
+  without one — but it no longer blocks the deploy. §6 ships `ANTHROPIC_API_KEY` and §10 is the
+  documented upgrade to take when the organization exists.
+
+Genuinely open:
+
 - **Where the age private key lives.** §7 says a password manager; write down which one, so the
-  next person to need it does not have to guess.
+  next person to need it does not have to guess. `pnpm preflight` checks the recipient is
+  well-formed and cannot check that it is the right one — only §12's laptop-side restore can, and
+  only if somebody can find the key.
 - **A heartbeat URL.** `jobs/heartbeat.ts` and `trisula-heartbeat.timer` exist and ping every
   fifteen minutes; `HEARTBEAT_URL` in §6 is empty, so nothing is listening and nothing would notice
   a dead box. Create a check on healthchecks.io or Better Stack — a free tier covers it — and paste
-  its URL in. Set the monitor's grace period above fifteen minutes.
-- **Which Anthropic organization the agents bill to, and its payment method.** §10.2 needs an
-  organization to create the service account and federation rule in, and that organization needs a
-  card. This is the one thing the federation route adds that the AWS route did not: the usage lands
-  on an Anthropic invoice in USD rather than on the AWS India INR bill, and inference calls stop
-  appearing in CloudTrail. Nothing in §10 can be completed until this exists.
-- **Whether the web app is on Tailscale or the public internet.** Tailscale needs no certificate and
-  no port 443. Recommended until there is a reason otherwise.
+  its URL in. Set the monitor's grace period above fifteen minutes. `pnpm preflight` reports this
+  as a note every time it runs, so it stays visible rather than being forgotten.
+- **An Anthropic organization and its payment method**, to finish §10. The usage then lands on an
+  Anthropic invoice in USD rather than on the AWS India INR bill, and the key leaves the disk.
+- **Three `OnCalendar=` expressions have never been validated on Linux** —
+  `trisula-ingest-fundamentals`, `trisula-news-poll` and `trisula-distil-rules` were rewritten from
+  `systemd.time(7)` and macOS has no `systemd-analyze` to check them with. First thing to run on
+  the box: `systemd-analyze calendar '<expression>'` for each, and compare the next elapse against
+  what §9 says it should be.

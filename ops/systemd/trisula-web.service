@@ -2,6 +2,18 @@
 Description=Trisula web app
 After=network-online.target postgresql.service
 Wants=network-online.target
+# The web app is the one unit a person notices going down, and until 23-Sep-2026 it had no
+# OnFailure=. Both lines below are needed or neither does anything:
+# Restart=always with RestartSec=5 under systemd's defaults (DefaultStartLimitIntervalSec=10s,
+# DefaultStartLimitBurst=5) restarts every 5s and can never fit 5 starts into a 10s window, so the
+# unit never reaches `failed` — and OnFailure= only fires on `failed`. Widening the interval to 60s
+# is what lets a crash loop terminate, and terminating is what raises the alert.
+#
+# In [Unit], not [Service]: systemd moved these in v229 and ignores them in the old place without
+# complaining. Both watcher units were silently broken that way until 21-Sep-2026.
+OnFailure=trisula-alert@%n.service
+StartLimitIntervalSec=60
+StartLimitBurst=5
 
 [Service]
 Type=simple
@@ -17,8 +29,13 @@ Environment=TZ=Asia/Kolkata
 Environment=NODE_ENV=production
 # Bound to loopback. Reaching it goes through Tailscale or a reverse proxy on the same box —
 # never by listening on a public interface and hoping the firewall holds.
-Environment=HOSTNAME=127.0.0.1
-ExecStart=/usr/bin/pnpm start
+#
+# `-H`, not `Environment=HOSTNAME=`, which is what this said until 25-Sep-2026 and which `next
+# start` ignores: its CLI reads PORT from the environment and the hostname only from `-H`, which
+# defaults to 0.0.0.0 (only the standalone server.js reads HOSTNAME). Measured on the production
+# build: HOSTNAME=127.0.0.1 listened on *:3100; `-H 127.0.0.1` on 127.0.0.1:3100. The security
+# group and ufw were the only things holding.
+ExecStart=/usr/bin/pnpm start -H 127.0.0.1
 Restart=always
 RestartSec=5
 
@@ -27,7 +44,17 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/srv/trisula/.next
+# Two paths, not one. `.next` is the build output. /var/lib/trisula/attachments is ATTACHMENT_DIR's
+# default, and `keepUploadAsAttachment` (lib/workspace.ts) does mkdir + writeFile there when
+# somebody imports a file from the UI — under ProtectSystem=strict that failed EROFS with only
+# `.next` listed, so every job unit could write attachments and the web process could not.
+#
+# The attachments directory and not its parent. /var/lib/trisula also holds the nightly backups
+# and the embedding model the jobs load, and this is the one process that faces the network: a
+# compromised web process must not be able to delete the backups recovery depends on or swap the
+# model. The backup unit already grants itself only `backups/`. Move ATTACHMENT_DIR and this line
+# moves with it.
+ReadWritePaths=/srv/trisula/.next /var/lib/trisula/attachments
 
 [Install]
 WantedBy=multi-user.target

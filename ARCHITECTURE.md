@@ -2,7 +2,7 @@
 
 How Trisula is put together, and why it is put together that way. Accurate against the tree at the
 time of writing: **62 migrations, 50 tables, 6 agents, 24 job entry points, 19 systemd timers, two
-long-running watchers, 18 pages and 4 route handlers, 837 tests.** Every number here was counted,
+long-running watchers, 18 pages and 4 route handlers, 859 tests.** Every number here was counted,
 not remembered; if you change the shape, count again rather than editing around it.
 
 For the product argument — what was built, what was deliberately cut, and on whose authority — see
@@ -422,9 +422,22 @@ and `bg-red-500` now fails to compile rather than relying on somebody rememberin
 devDependency for pulling a component down to read, but no Radix or Base UI package is a dependency
 and there is no `components/primitives/`. Four shadcn components were refused on purpose — `Tabs`,
 `ToggleGroup` and `Select` hold client state and would convert a server page into a client one, and
-`Form` would do the same to every form in the tree. There are zero `'use client'` files in `app/`
-and that is the property being protected; the 18 components that do carry the directive all live in
-`components/`, where the boundary is explicit.
+`Form` would do the same to every form in the tree. **There are exactly two `'use client'` files in
+`app/`, and they are the two Next's API mandates** — `error.tsx` and `global-error.tsx`, which need
+`componentDidCatch` and a `reset` the browser can call. Both were added on 23-Sep-2026 and both are
+shells: they render `components/Failure.tsx` and hold no application logic, so nothing but the
+boundary itself crossed. The 18 components that carry the directive by choice all live in
+`components/`, where it is explicit.
+
+**Three failure surfaces, none of them a `<Blank>`.** `app/error.tsx` catches a page that threw;
+`app/global-error.tsx` catches the root layout itself and so renders its own `<html>`; two
+`not-found.tsx` files answer a missing row — the one inside `(app)` renders within the shell so a
+mistyped ticker keeps the rail, the root one covers an unmatched URL typed by somebody with no
+session. Before these, any server-side exception rendered Next's own unstyled grey *"Application
+error"* with a digest hash and no way back, which on a box whose Postgres is its neighbour is what
+a ten-second blip looked like. `app/(app)/loading.tsx` is the pending affordance the design system
+had listed as outstanding: a skeleton, never a spinner, and deliberately not a `<Blank>` — the
+hatch means the system declined to answer, not that it has not answered yet.
 
 `ops/measure-css.ts` is the census: it reports dead selectors, and fails on a class a component
 names that no stylesheet defines. `styles/unbuilt/` holds stylesheets for cut or unbuilt screens and
@@ -441,7 +454,7 @@ export DATABASE_URL=postgres:///trisula_v3_dev
 pnpm install
 pnpm fetch-model                 # ~130 MB, bge-small-en-v1.5, validated on download
 pnpm exec tsx db/migrate.ts      # one transaction each, checksummed
-pnpm check                       # lint + typecheck + 837 tests
+pnpm check                       # lint + typecheck + 859 tests
 pnpm dev                         # port 3100
 ```
 

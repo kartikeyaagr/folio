@@ -32,7 +32,16 @@ done
 mkdir -p "$DIR"
 
 # -Fc is the custom format: compressed, and pg_restore can read a single table out of it.
-pg_dump -d "$DB" -Fc --no-owner --no-privileges \
+#
+# --exclude-extension=vector because the restore cannot carry it. pgvector is not a trusted
+# extension, so only a superuser can create it, and every restore runs as `trisula`: the dump's
+# CREATE EXTENSION is refused, and the COMMENT ON EXTENSION after it fails "must be owner", which
+# under --single-transaction rolls the whole restore back to an empty database. The weekly drill
+# restores through the same path, so it would fail the same way. Every database on the box inherits the
+# extension from template1 instead (ops/SETUP.md §4), and the tables that use the type restore into
+# it. Measured 25-Sep-2026 against a non-superuser role: with the extension in the dump, exit 1 and
+# no tables; without it, exit 0, all rows, every table comment intact.
+pg_dump -d "$DB" -Fc --no-owner --no-privileges --exclude-extension=vector \
   | age -r "$BACKUP_AGE_RECIPIENT" -o "$DIR/$NAME"
 
 SIZE="$(wc -c < "$DIR/$NAME" | tr -d ' ')"

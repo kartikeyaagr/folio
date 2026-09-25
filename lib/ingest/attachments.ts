@@ -17,9 +17,15 @@ import { dirname, join } from 'node:path';
 
 import { serviceTxn } from '../db.ts';
 
-/** Where the bytes go. `ops/SETUP.md` §5 creates this; the default matches. */
+/**
+ * Where the bytes go. `ops/SETUP.md` §5 creates this; the default matches.
+ *
+ * `||`, not `??`: an empty `ATTACHMENT_DIR=` — which is what copying a template with the slot left
+ * blank produces — would otherwise win over the default and make every path relative to wherever
+ * the process was started, so `pnpm dev` wrote imported files into the repo root.
+ */
 export const attachmentDir = (): string =>
-  process.env['ATTACHMENT_DIR'] ?? '/var/lib/trisula/attachments';
+  process.env['ATTACHMENT_DIR'] || '/var/lib/trisula/attachments';
 
 /**
  * Fanned out by the first two hex characters. One flat directory of tens of thousands of files is

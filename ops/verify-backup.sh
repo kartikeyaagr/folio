@@ -4,8 +4,8 @@
 #
 # Runs the whole round trip — dump, encrypt, decrypt, restore into a fresh database, compare row
 # counts and row *content* table by table — and fails loudly on any difference. Weekly on the box
-# and in CI, because a restore path that quietly rots should be caught by a machine rather than by
-# an outage.
+# (`trisula-backup-verify.timer`), because a restore path that quietly rots should be caught by a
+# machine rather than by an outage. There is no CI; this header said there was until 25-Sep-2026.
 #
 # It generates a **throwaway** age keypair for the drill. The real private key is deliberately not
 # on this machine, so the drill proves the pipeline rather than the archive. Verifying an actual
