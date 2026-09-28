@@ -2,12 +2,19 @@
 Description=News feeds, and the net
 
 [Timer]
-# Every two hours through the working day. The feeds carry 10-200 items each and turn over slowly;
-# polling faster would re-read the same headlines and store nothing.
-# `07..21` is a range and ran this every hour, twice as often as the paragraph above argues for
-# and says it does. `07/2` is a *start* with a step and no upper bound, so it would add a 23:05
-# run the original never had — the step belongs on the range: `07..21/2`.
-OnCalendar=*-*-* 07..21/2:05:00 Asia/Kolkata
+# Hourly, around the clock, from measurement. A feed serves its newest N items and nothing older, so
+# a poll that comes later than the feed takes to turn N items over loses the stories in between. On
+# 28-Sep-2026 (0066) the fastest feeds turned over in 1.4 hours (NDTV Profit, 20 items), 1.6 (NDTV
+# India) and 1.9 (ET news); thirteen of the 96 turned over faster than ten hours, BS markets among
+# them, and FT world, Bloomberg and Al Jazeera publish through the Indian night. The two-hourly
+# daytime timer this replaces (07..21/2) lost stories from three feeds every gap and from thirteen
+# overnight. An hour is the longest gap shorter than every feed measured.
+#
+# The cost is small because work follows new items, not polls: about 1,930 items a day across the 96
+# feeds, so some 80 a poll on average, stored and assigned to stories in seconds. A gate call is per
+# candidate, and a candidate per new item, so polling more often adds gate calls only for the
+# stories a slower timer would have lost.
+OnCalendar=*-*-* *:05:00 Asia/Kolkata
 Persistent=true
 Unit=folio-job@news-poll.service
 

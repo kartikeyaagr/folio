@@ -22,7 +22,9 @@ await runJob('news_poll', async () => {
   }
   const match = await matchNewItems();
   const detail =
+    // Stories beside items: the difference is what the exact-key merge removed from the stream.
     `${poll.ok}/${poll.feeds} feeds, ${poll.stored} new items, ` +
+    `${poll.assigned - poll.joined} new stories, ` +
     `${match.candidates} candidates from ${match.items} examined` +
     (poll.failures.length > 0 ? `; failing: ${poll.failures.map((f) => f.key).join(', ')}` : '');
   return { items: poll.stored, detail };

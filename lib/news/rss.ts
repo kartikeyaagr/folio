@@ -132,7 +132,8 @@ export function feedDate(value: string | null): string | null {
  * `rdf:RDF` counts as a feed root alongside `rss` and `feed`.
  *
  * The failure this does **not** catch is L23's: a feed that answers with a full, stale history.
- * Nothing here looks at how old the newest entry is, and nothing downstream does either.
+ * Nothing here looks at how old the newest entry is; `pollOne` does, against `STALE_DAYS`, since
+ * five Moneycontrol feeds were found on 28-Sep-2026 serving April 2024 as though it were today.
  */
 export function parseFeed(xml: string): FeedItem[] {
   const blocks = [

@@ -2,7 +2,7 @@
  * Polling the feeds.
  *
  * Every feed's outcome is recorded **on its own row** — when it was last polled, whether that
- * worked, and the error if it did not. A run that fetches 56 feeds and reports one number cannot
+ * worked, and the error if it did not. A run that fetches 96 feeds and reports one number cannot
  * tell you that Business Standard has been 403ing for a week while the total stayed healthy, and
  * that is exactly the failure this system keeps having: a dead source that looks like a quiet one.
  *
@@ -13,14 +13,29 @@
 import { createHash } from 'node:crypto';
 import { serviceTxn } from '../db.ts';
 import { NotAFeed, parseFeed, type FeedItem } from './rss.ts';
+import { assignStories } from './stories.ts';
 
 const UA =
   'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 ' +
   '(KHTML, like Gecko) Chrome/125.0 Safari/537.36';
 
-/** Politeness, and a bound on how long the job can take: 56 feeds, eight at a time. */
+/** Politeness, and a bound on how long the job can take: 96 feeds, eight at a time. */
 const CONCURRENCY = 8;
 const TIMEOUT_MS = 30_000;
+
+/**
+ * A feed whose newest item is older than this is dead, however well-formed it is.
+ *
+ * Lesson L23's failure, which nothing caught until 28-Sep-2026: a feed that answers 200 with a
+ * full, frozen history. Five seeded Moneycontrol feeds had been doing it since 23-Apr-2024 and were
+ * recorded 'ok' on every poll in between. The youngest frozen feed found that day was 452 days old
+ * (MarketWatch's market pulse); the slowest live one publishes weekly and skips a week at the
+ * year's end. Twenty-one days clears a skipped week with room, and names a dead feed in three weeks
+ * rather than in five hundred days.
+ *
+ * Undated items cannot be judged and do not count; a feed with no dates at all is never stale.
+ */
+export const STALE_DAYS = 21;
 
 export interface Source {
   key: string;
@@ -32,6 +47,9 @@ export interface FeedOutcome {
   ok: boolean;
   items: number;
   stored: number;
+  /** Items given a story while this feed was stored, and how many joined one already running. */
+  assigned: number;
+  joined: number;
   error: string | null;
 }
 
@@ -59,9 +77,20 @@ const httpFetch: Fetcher = async (url) => {
 const itemId = (sourceKey: string, guid: string): string =>
   createHash('sha256').update(`${sourceKey} ${guid}`).digest('hex').slice(0, 32);
 
-/** Store what one feed returned. Re-polling an overlapping window is an upsert, not a duplicate. */
-export async function storeItems(sourceKey: string, items: FeedItem[]): Promise<number> {
-  if (items.length === 0) return 0;
+export interface Stored {
+  stored: number;
+  assigned: number;
+  joined: number;
+}
+
+/**
+ * Store what one feed returned, and give every new item its story in the same transaction.
+ *
+ * Re-polling an overlapping window is an upsert, not a duplicate. The story sweep runs even when
+ * nothing new was stored, because it asks what has no story yet rather than what this feed brought.
+ */
+export async function storeItems(sourceKey: string, items: FeedItem[]): Promise<Stored> {
+  if (items.length === 0) return { stored: 0, assigned: 0, joined: 0 };
   return serviceTxn('system:news', async (c) => {
     let stored = 0;
     for (const it of items) {
@@ -75,25 +104,36 @@ export async function storeItems(sourceKey: string, items: FeedItem[]): Promise<
       // not brought fifteen stories every hour.
       stored += rowCount ?? 0;
     }
-    return stored;
+    return { stored, ...(await assignStories(c)) };
   });
 }
 
+/** How old the newest dated item is, in whole days, or null when nothing carries a date. */
+function newestAgeDays(items: FeedItem[], now = Date.now()): number | null {
+  const dated = items.flatMap((i) => (i.publishedAt ? [Date.parse(i.publishedAt)] : []));
+  return dated.length === 0 ? null : Math.floor((now - Math.max(...dated)) / 86_400_000);
+}
+
 async function pollOne(source: Source, fetcher: Fetcher): Promise<FeedOutcome> {
+  const failed = (items: number, error: string): FeedOutcome =>
+    ({ key: source.key, ok: false, items, stored: 0, assigned: 0, joined: 0, error });
   try {
     const items = parseFeed(await fetcher(source.url));
     // Zero items from a document that *is* a feed is still a failure. A publisher's feed is never
     // legitimately empty; an empty one means the URL now points somewhere else.
-    if (items.length === 0) {
-      return { key: source.key, ok: false, items: 0, stored: 0, error: 'feed returned zero items' };
+    if (items.length === 0) return failed(0, 'feed returned zero items');
+    // Nothing is stored from a frozen feed: its items are years old and it is failing, not quiet.
+    const age = newestAgeDays(items);
+    if (age !== null && age > STALE_DAYS) {
+      return failed(items.length, `newest item is ${age} days old`);
     }
     const stored = await storeItems(source.key, items);
-    return { key: source.key, ok: true, items: items.length, stored, error: null };
+    return { key: source.key, ok: true, items: items.length, ...stored, error: null };
   } catch (err) {
     const message = err instanceof NotAFeed
       ? 'response is not an RSS or Atom document'
       : String(err instanceof Error ? err.message : err).slice(0, 300);
-    return { key: source.key, ok: false, items: 0, stored: 0, error: message };
+    return failed(0, message);
   }
 }
 
@@ -110,6 +150,10 @@ export interface PollResult {
   feeds: number;
   ok: number;
   stored: number;
+  /** Items given a story this run, and how many joined one already running. `assigned - joined`
+   *  is the number of new stories; the first run after 0065 also assigns every older item. */
+  assigned: number;
+  joined: number;
   failures: FeedOutcome[];
 }
 
@@ -160,6 +204,8 @@ export async function pollFeeds(fetcher: Fetcher = httpFetch): Promise<PollResul
     feeds: sources.length,
     ok: outcomes.filter((o) => o.ok).length,
     stored: outcomes.reduce((n, o) => n + o.stored, 0),
+    assigned: outcomes.reduce((n, o) => n + o.assigned, 0),
+    joined: outcomes.reduce((n, o) => n + o.joined, 0),
     failures: outcomes.filter((o) => !o.ok),
   };
 }
