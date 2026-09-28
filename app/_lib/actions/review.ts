@@ -9,6 +9,7 @@ import { missingSubject } from '@/lib/agents/invocable.ts';
 import { isSubjectFor } from '@/lib/agents/subjects.ts';
 import { positionOf } from '@/lib/agents/paths.ts';
 import { enqueue, requeue } from '@/lib/agents/queue.ts';
+import { pendingBrief } from '@/lib/briefs.ts';
 
 import { flash } from '../flash.ts';
 import { requireAdmin, requireUser } from '../session.ts';
@@ -115,7 +116,7 @@ export async function retryRun(form: FormData): Promise<void> {
  * could invent an agent — but any of the others could be named, and each has a handler that throws
  * on its first line for want of something a forged POST would not supply.
  *
- * Three checks, in the order a request fails them:
+ * Four checks, in the order a request fails them:
  *
  *   1. the agent is one that may be asked at all (`INVOCABLE`);
  *   2. the request carries the subject that agent's handler will look for (`missingSubject`);
@@ -123,6 +124,11 @@ export async function retryRun(form: FormData): Promise<void> {
  *      because a `<select>` is a suggestion and the value posted back is whatever the browser sent.
  *      Without this, a `subject_ref` from another company, or a superseded period, would enqueue a
  *      run that fails after it has been claimed.
+ *   4. for the brief specifically, that one is not already in flight (`pendingBrief`) — the same
+ *      refusal `askForBrief` (app/_lib/actions/brief.ts) makes from the brief's own page. `/chat`
+ *      is a second door onto every invocable agent, the brief included, and without this check it
+ *      queued a second one for as long as the first took to write — and every brief is now mailed
+ *      to everybody the moment it lands.
  */
 export async function askAgent(form: FormData): Promise<void> {
   const user = await requireUser();
@@ -140,6 +146,14 @@ export async function askAgent(form: FormData): Promise<void> {
     await flash('This agent cannot be pointed at that.');
     revalidatePath('/chat');
     return;
+  }
+  if (agentKey === 'news-brief') {
+    const why = await pendingBrief();
+    if (why !== null) {
+      await flash(why);
+      revalidatePath('/chat');
+      return;
+    }
   }
 
   await enqueue({ agentKey, companyId, subjectRef, requestedBy: user.userId });

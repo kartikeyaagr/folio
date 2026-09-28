@@ -206,11 +206,11 @@ export function Brief({ content, editing = false }: { content: BriefContent; edi
 
       {/*
         Absent on a brief written before 0068, and then not shown at all. Present and empty is a
-        brief that reported none, and says so, or it would read as a quiet market. `brief-coming`
-        for the treatment every section after the names shares: a rule above and a heading.
+        brief that reported none, and says so, or it would read as a quiet market. `brief-major`
+        shares `brief-quiet`/`brief-coming`'s rule-above-and-heading treatment, under its own name.
       */}
       {major !== null && (
-        <section className="brief-coming">
+        <section className="brief-major">
           <h3>Major updates</h3>
           {major.length === 0 ? (
             <p className="brief-none">

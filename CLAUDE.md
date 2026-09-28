@@ -72,7 +72,7 @@ C8 declines a news vendor. The investor-letter agent was cut and its number not 
 ```bash
 export DATABASE_URL=postgres:///folio_dev
 pnpm exec tsx db/migrate.ts      # migrations are one transaction each, checksummed
-pnpm check                       # lint + typecheck + 933 tests
+pnpm check                       # lint + typecheck + 946 tests
 pnpm dev                         # port 3100
 ```
 

@@ -102,6 +102,20 @@ export async function briefInFlight(): Promise<boolean> {
 }
 
 /**
+ * The one check both doors onto the brief make before queueing one: `askForBrief` (its own page)
+ * and `askAgent` (`/chat`, which offers every invocable agent including this one). Two brief
+ * requests in the same window are the same run paid for twice and mailed to everybody twice, so
+ * the refusal — and its wording — lives here once rather than in each caller.
+ *
+ * Returns the sentence to show the asker, or null when it is safe to queue one.
+ */
+export async function pendingBrief(): Promise<string | null> {
+  return (await briefInFlight())
+    ? 'A brief is already being written. It will be here, and in everybody’s inbox, shortly.'
+    : null;
+}
+
+/**
  * The windows a person may ask a brief to cover, in days.
  *
  * The day's scheduled brief covers 24 hours and none of these does, so a brief somebody asks for

@@ -1,8 +1,8 @@
 # Architecture
 
 How Folio is put together, and why it is put together that way. Accurate against the tree at the
-time of writing: **67 migrations, 51 tables, 6 agents, 24 job entry points, 19 systemd timers, two
-long-running watchers, 18 pages and 4 route handlers, 933 tests.** Every number here was counted,
+time of writing: **68 migrations, 51 tables, 6 agents, 24 job entry points, 19 systemd timers, two
+long-running watchers, 18 pages and 4 route handlers, 946 tests.** Every number here was counted,
 not remembered; if you change the shape, count again rather than editing around it.
 
 For the product argument — what was built, what was deliberately cut, and on whose authority — see
@@ -308,7 +308,7 @@ Six, as rows in `agents`. An agent absent from that table cannot be invoked.
 | `results-figures` | event | reads a filed results period, with a deterministic verifier |
 | `concall-insights` | event | reads a transcript against the previous one |
 | `forensics-review` | event | works the fund's own 14-item forensic checklist |
-| `news-brief` | schedule | daily 08:00 IST, last 24 hours, per company; publishes without review, mailed to everyone, learning off |
+| `news-brief` | schedule | daily 08:00 IST, last 24 hours, per followed company plus the major stories across every outlet; publishes without review, mailed to everyone, learning off |
 | `email-workflow` | schedule | drains `notification_outbox` |
 | `reminders` | schedule | what is due |
 
@@ -358,10 +358,16 @@ a distance of zero can never be misread as somebody having signed off unchanged.
 for the same reason: with no review there are no human edits, and retrieving the agent's own
 unreviewed output as an example would only reinforce whatever it already does.
 
-A change in progress alongside this one, not yet in this tree, adds a headline and a
-major-updates section drawn from the general news stream (§3), and makes the brief produce
-something even when no company is followed — as of this file the brief's content is per-company
-only, and `gather()` has nothing to write from with none followed.
+**The brief reads every outlet, since 28-Sep-2026** (`0068`): `gather()` (`lib/agents/newsbrief.ts`)
+joins the followed names to `mostCarried(days * 24, 2000)` (`lib/news/stream.ts`, §3) — the same
+stream `/news`'s All tab reads — most widely carried outlet first, then newest; the measured reason
+for the 2,000 cap is in `STREAM_CAP`'s own comment. The schema gains `headline` and
+`major_updates[]`. Neither half is required: a morning with no followed name still gets a brief,
+from the stream alone, and the run fails only when the followed names and the stream are both
+empty. An outlet the model names beside a major update is checked against the stories the brief was
+actually shown; one that ran none of them is dropped before publication and kept in the draft's
+`verification.dropped_outlets` rather than silently let through. `data_scope` on the `agents` row
+now names `news_sources`, which the brief had been joining without declaring since `0023`.
 
 `costUsd` returns **null** for an unknown model, never zero. v2's dashboard confidently reported
 `$0.00` because nothing seeded its price table.
@@ -559,7 +565,7 @@ export DATABASE_URL=postgres:///folio_dev
 pnpm install
 pnpm fetch-model                 # ~130 MB, bge-small-en-v1.5, validated on download
 pnpm exec tsx db/migrate.ts      # one transaction each, checksummed
-pnpm check                       # lint + typecheck + 933 tests
+pnpm check                       # lint + typecheck + 946 tests
 pnpm dev                         # port 3100
 ```
 

@@ -14,7 +14,7 @@ import { test, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { readTxn, serviceTxn } from '../db.ts';
-import { ASKABLE_DAYS, briefInFlight } from '../briefs.ts';
+import { ASKABLE_DAYS, briefInFlight, pendingBrief } from '../briefs.ts';
 import { drainOutbox, noRelay, type Mail } from '../notify.ts';
 import { scriptedModel, scriptedOk } from './model.ts';
 import { drain, registerHandler } from './runner.ts';
@@ -148,6 +148,16 @@ test('a brief somebody asks for neither stands in for the day’s brief nor adds
   assert.ok(
     !ASKABLE_DAYS.includes(newsbrief.SCHEDULED_DAYS),
     'nor is one ever a copy of it: nobody can ask for the window the morning’s already covers',
+  );
+});
+
+test('pendingBrief is the one refusal both askForBrief and askAgent show, and only while one waits', async () => {
+  assert.equal(await pendingBrief(), null, 'nothing is in flight yet');
+  await enqueue({ agentKey: 'news-brief', requestedBy: ANNA, request: { days: 7 } });
+  assert.equal(
+    await pendingBrief(),
+    'A brief is already being written. It will be here, and in everybody’s inbox, shortly.',
+    'the same sentence wherever the refusal is shown, because it is the same function',
   );
 });
 

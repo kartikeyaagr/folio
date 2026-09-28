@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache';
 
 import { enqueue } from '@/lib/agents/queue.ts';
-import { ASKABLE_DAYS, briefInFlight } from '@/lib/briefs.ts';
+import { ASKABLE_DAYS, pendingBrief } from '@/lib/briefs.ts';
 
 import { flash } from '../flash.ts';
 import { requireUser } from '../session.ts';
@@ -24,8 +24,9 @@ import { requireUser } from '../session.ts';
 export async function askForBrief(form: FormData): Promise<void> {
   const user = await requireUser();
 
-  if (await briefInFlight()) {
-    await flash('A brief is already being written. It will be here, and in everybody’s inbox, shortly.');
+  const why = await pendingBrief();
+  if (why !== null) {
+    await flash(why);
     revalidatePath('/news/brief');
     return;
   }
