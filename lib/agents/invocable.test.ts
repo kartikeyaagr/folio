@@ -93,6 +93,14 @@ after(async () => {
 
 beforeEach(async () => {
   await serviceTxn('system:agents', async (c) => {
+    // The news brief publishes the moment it is drafted (0067), and its document names the draft,
+    // so the brief goes before the drafts can. Only documents made from a draft: `t1`, the
+    // transcript agent 2 reads, is seeded once and must survive.
+    await c.query('DELETE FROM notification_outbox');
+    await c.query(
+      `DELETE FROM document_versions
+        WHERE document_id IN (SELECT id FROM documents WHERE from_draft_id IS NOT NULL)`);
+    await c.query('DELETE FROM documents WHERE from_draft_id IS NOT NULL');
     await c.query('DELETE FROM ai_drafts');
     await c.query('DELETE FROM agent_runs');
   });

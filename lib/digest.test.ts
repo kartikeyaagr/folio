@@ -126,6 +126,36 @@ test('tomorrow it goes again, carrying what waited', async () => {
   assert.ok(!outbox[1]!.body.includes('Wednesday'), 'yesterday already went');
 });
 
+// ---- the brief, which is not the digest's --------------------------------------------------------
+
+test('a brief sent this morning does not spend the day’s envelope', async () => {
+  // Mailed at 08:03 by the agents job (0067). Counted as the day's envelope, it would hold every
+  // alert raised after it until tomorrow.
+  await queue(ANNA, 'brief', 'Folio brief — Thu 17 Sep: 3 names, 9 quiet');
+  await serviceTxn('system:agents', (c) =>
+    c.query("UPDATE notification_outbox SET sent_at = $1 WHERE kind = 'brief'", [MORNING.toISOString()]));
+  await queue(ANNA, 'alert', 'raised at lunch');
+
+  const r = await sendDigests(collecting, new Date('2026-09-17T08:30:00Z')); // 14:00 IST
+  assert.equal(r.sent, 1, 'the digest still goes: the brief was a mail of its own');
+  assert.ok(outbox[0]!.body.includes('raised at lunch'));
+});
+
+test('an unsent brief is never folded into the digest', async () => {
+  await queue(ANNA, 'brief', 'Folio brief — the one the relay refused');
+  await queue(ANNA, 'alert', 'PRAJIND fell 9%');
+
+  const r = await sendDigests(collecting, MORNING);
+  assert.equal(r.sent, 1);
+  assert.ok(!outbox[0]!.body.includes('the one the relay refused'), 'it has its own sender and retries');
+  assert.equal(await unsent(ANNA), 1, 'and it is still waiting for them');
+});
+
+test('a person owed only a brief is not somebody the digest is waiting on', async () => {
+  await queue(ANNA, 'brief', 'Folio brief — waiting on the relay');
+  assert.deepEqual(await sendDigests(collecting, NIGHT), { sent: 0, failed: 0, skipped: 0 });
+});
+
 // ---- the gates -----------------------------------------------------------------------------------
 
 test('nothing goes out before the hour, and what is waiting is said out loud', async () => {

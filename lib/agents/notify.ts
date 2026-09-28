@@ -24,7 +24,7 @@ export const REMINDERS_KEY = 'reminders';
  * replaced by `sendDigests`, which gathers every unsent row for a person into one mail and marks
  * them sent together. `drainOutbox` is kept and still exported: it is the right shape for a
  * one-off, and deleting it would mean rewriting it the first time somebody wants a single mail
- * sent now.
+ * sent now. The news brief was that first time (jobs/agents.ts, 28-Sep-2026).
  *
  * The agent's timer runs more often than once a day on purpose — `DIGEST_HOUR` is the gate, so the
  * envelope goes out shortly after 07:00 IST rather than whenever the timer first fires after

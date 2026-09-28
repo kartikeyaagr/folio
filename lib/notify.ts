@@ -78,6 +78,17 @@ export function smtpFromEnv(): SmtpConfig | null {
 /** A sender. Swappable so the drain can be tested without a relay. */
 export type Sender = (mail: Mail) => Promise<void>;
 
+/**
+ * The sender for a box with no relay, where a mail must not wait quietly for one.
+ *
+ * For the brief. Everything else treats no relay as a valid state and queues. The brief is sent
+ * the moment it lands, so a send that cannot happen is a failed send: this throws, the drain
+ * credits an attempt and keeps the reason on the row, and the job fails where somebody sees it.
+ */
+export const noRelay: Sender = async () => {
+  throw new Error('no SMTP relay is configured: SMTP_HOST and SMTP_FROM are both needed');
+};
+
 // ------------------------------------------------------------------------------------------------
 // SMTP
 // ------------------------------------------------------------------------------------------------
@@ -126,13 +137,18 @@ export interface DrainResult {
   sent: number;
   failed: number;
   skipped: number;
+  /** What the last failed send said, so a caller that fails its run can say why. */
+  lastError: string | null;
 }
 
 /**
- * Send what is queued.
+ * Send what is queued, one mail per row.
  *
  * Claimed one at a time with SKIP LOCKED so two drains never send the same mail twice, which is
  * the one failure a person actually notices.
+ *
+ * `kind` narrows it to one kind of row. The brief is the caller that needs it (jobs/agents.ts):
+ * every other kind rides the morning digest and must not be sent one by one from here.
  *
  * **The send stays inside the claim transaction, deliberately.** `lib/agents/queue.ts` moved the
  * other direction — claim, commit, then work — because a model call is minutes long and there is
@@ -142,20 +158,31 @@ export interface DrainResult {
  * What made holding the transaction dangerous was never its length but its *unboundedness*; the
  * timeouts on the sender are that fix, and they cap the hold at `SEND_TIMEOUT_MS`.
  */
-export async function drainOutbox(sender: Sender | null, limit = 50): Promise<DrainResult> {
-  const out: DrainResult = { sent: 0, failed: 0, skipped: 0 };
+export async function drainOutbox(
+  sender: Sender | null,
+  limit = 50,
+  kind: string | null = null,
+): Promise<DrainResult> {
+  const out: DrainResult = { sent: 0, failed: 0, skipped: 0, lastError: null };
 
   if (!sender) {
     // Nothing configured. Count what is waiting so the run says something true rather than "ok".
     return serviceTxn('system:agents', async (c) => {
       const { rows } = await c.query<{ n: string }>(
-        'SELECT count(*)::text AS n FROM notification_outbox WHERE sent_at IS NULL',
+        `SELECT count(*)::text AS n FROM notification_outbox
+          WHERE sent_at IS NULL AND ($1::text IS NULL OR kind = $1)`,
+        [kind],
       );
       out.skipped = Number(rows[0]!.n);
       return out;
     });
   }
 
+  // Once a pass per row. A row that failed is still unsent and under its limit, so without this the
+  // next claim took it straight back: one pass against a refusing relay spent all five attempts in
+  // a second, and a relay that hiccupped at 08:03 left the brief undeliverable for good. Measured
+  // when the brief began using this: two queued mails, ten sends.
+  const tried: string[] = [];
   for (let i = 0; i < limit; i++) {
     const more = await serviceTxn('system:agents', async (c) => {
       const { rows } = await c.query<{
@@ -163,23 +190,26 @@ export async function drainOutbox(sender: Sender | null, limit = 50): Promise<Dr
       }>(
         `SELECT o.id, o.subject, o.body, u.email
            FROM notification_outbox o JOIN users u ON u.id = o.recipient
-          WHERE o.sent_at IS NULL AND o.attempts < $1
+          WHERE o.sent_at IS NULL AND o.attempts < $1 AND ($2::text IS NULL OR o.kind = $2)
+            AND NOT (o.id = ANY($3::text[]))
           ORDER BY o.queued_at
           FOR UPDATE OF o SKIP LOCKED
           LIMIT 1`,
-        [MAX_SEND_ATTEMPTS],
+        [MAX_SEND_ATTEMPTS, kind, tried],
       );
       const m = rows[0];
       if (!m) return false;
+      tried.push(m.id);
 
       try {
         await sender({ to: m.email, subject: m.subject, body: m.body });
         await c.query('UPDATE notification_outbox SET sent_at = now() WHERE id = $1', [m.id]);
         out.sent++;
       } catch (err) {
+        out.lastError = String(err instanceof Error ? err.message : err).slice(0, 500);
         await c.query(
           'UPDATE notification_outbox SET attempts = attempts + 1, last_error = $2 WHERE id = $1',
-          [m.id, String(err instanceof Error ? err.message : err).slice(0, 500)],
+          [m.id, out.lastError],
         );
         out.failed++;
       }

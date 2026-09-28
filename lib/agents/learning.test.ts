@@ -20,6 +20,15 @@ import { createTestDatabase, dropTestDatabase } from '../../db/testing.ts';
 const DB = `folio_learn_${process.pid}`;
 const ME = 'p1';
 const CO = 'c1';
+/**
+ * An agent of this file's own, still reviewed and still learning.
+ *
+ * These ran on `news-brief` until 28-Sep-2026, when that agent began publishing without review and
+ * stopped learning (0067), so no draft of its waits to be accepted any more. `shapes.ts` declares
+ * nothing for this key, so its shape is inferred from what it wrote, which makes every string
+ * correctable: the same thing these assertions were getting from the brief's declared shape.
+ */
+const LEARNER = 'test-learner';
 
 before(async () => {
   await createTestDatabase(DB);
@@ -31,6 +40,12 @@ before(async () => {
       [CO],
     );
   });
+  await serviceTxn('system:agents', (c) =>
+    c.query(
+      `INSERT INTO agents (key,label,purpose,trigger,model,data_scope,learning)
+       VALUES ($1,'A learner','p','prompt','claude-opus-5','{}',true)`,
+      [LEARNER],
+    ));
 });
 
 after(async () => {
@@ -51,7 +66,7 @@ const HEADLINE = 'Revenue rose on a larger order book and a better mix of engine
 
 /** One draft from a real run, through the real runner, waiting in the queue. */
 async function aDraft(content: Record<string, unknown> = { headline: HEADLINE }) {
-  registerHandler('news-brief', async (ctx) => {
+  registerHandler(LEARNER, async (ctx) => {
     const a = await ctx.ask({ model: ctx.agent.model, system: 's', task: 't', schema: {} });
     if (!a.ok) throw new Error('unexpected');
     return {
@@ -63,7 +78,7 @@ async function aDraft(content: Record<string, unknown> = { headline: HEADLINE })
       },
     };
   });
-  await enqueue({ agentKey: 'news-brief', companyId: CO });
+  await enqueue({ agentKey: LEARNER, companyId: CO });
   await drain(1, scriptedModel([scriptedOk(content)]));
   const [d] = await pendingDrafts();
   assert.ok(d, 'a draft was written');
@@ -104,7 +119,7 @@ test('a corrected draft becomes an exemplar of what was signed off, not of what 
 
   const [e] = await exemplars();
   assert.ok(e);
-  assert.equal(e.agent_id, 'news-brief');
+  assert.equal(e.agent_id, LEARNER);
   assert.equal(e.quality, 'edited');
   assert.equal(e.output['headline'], corrected, 'the exemplar holds the signed-off text');
   assert.match(e.situation, /7-day desk brief/, 'the situation is the agent’s, describing its inputs');
@@ -153,10 +168,14 @@ test('coverage reports held and retrievable separately, and skips agents with no
   await acceptDraft(d.id, null, ME);
 
   const rows = await coverage();
-  const brief = rows.find((r) => r.agentKey === 'news-brief')!;
-  assert.equal(brief.held, 1);
-  assert.equal(brief.retrievable, 0, 'nothing is embedded until R5b, so nothing is retrievable');
-  assert.equal(brief.learning, true);
+  const learner = rows.find((r) => r.agentKey === LEARNER)!;
+  assert.equal(learner.held, 1);
+  assert.equal(learner.retrievable, 0, 'nothing is embedded until R5b, so nothing is retrievable');
+  assert.equal(learner.learning, true);
+  assert.equal(
+    rows.find((r) => r.agentKey === 'news-brief')!.learning, false,
+    'nobody reviews the brief, so its own output is all it could learn from (0067)',
+  );
 
   assert.ok(!rows.some((r) => r.model === 'none'), 'agents 4 and 5 call no model and cannot learn');
   const ganak = rows.find((r) => r.agentKey === 'results-figures')!;
@@ -185,7 +204,7 @@ test('the hotspot view names the field, which is what a rule gets written about'
     await acceptDraft(d.id, { edits: { headline: `${HEADLINE} — corrected ${i}` } }, ME);
   }
   const hot = await fieldHotspots();
-  assert.deepEqual(hot, [{ agentKey: 'news-brief', field: 'headline', corrections: 2 }]);
+  assert.deepEqual(hot, [{ agentKey: LEARNER, field: 'headline', corrections: 2 }]);
 });
 
 test('a field corrected at two positions is one hotspot, not two of one', async () => {
@@ -216,6 +235,6 @@ test('a field corrected at two positions is one hotspot, not two of one', async 
 
   const hot = await fieldHotspots();
   assert.deepEqual(hot, [
-    { agentKey: 'news-brief', field: 'by_company[].why_it_matters', corrections: 2 },
+    { agentKey: LEARNER, field: 'by_company[].why_it_matters', corrections: 2 },
   ]);
 });

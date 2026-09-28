@@ -18,6 +18,12 @@
  * inbox that interrupts: three people who read this before the market opens and after it closes do
  * not need a mail at 14:20 about a filing they will see on `/desk` anyway. If that changes, the
  * honest fix is a second, narrow path for one severity — not a return to mailing everything.
+ *
+ * **The brief is the one exception, by the fund's decision of 28-Sep-2026 (migration 0067).** It is
+ * mailed to everybody as soon as it is written, from jobs/agents.ts, and its outbox rows are kind
+ * `brief`. This file leaves them alone twice over: an unsent one is never folded into a digest,
+ * because it has its own sender and its own retries, and a sent one does not count as the day's
+ * envelope. Otherwise an 08:03 brief would hold every alert raised later that day until tomorrow's.
  */
 
 import { readTxn, serviceTxn } from './db.ts';
@@ -93,10 +99,12 @@ async function waiting(now: Date): Promise<Waiting[]> {
          JOIN users u ON u.id = o.recipient
         WHERE o.sent_at IS NULL
           AND o.attempts < $1
+          AND o.kind <> 'brief'
           AND u.disabled_at IS NULL
           AND NOT EXISTS (
             SELECT 1 FROM notification_outbox s
              WHERE s.recipient = u.id
+               AND s.kind <> 'brief'
                AND s.sent_at IS NOT NULL
                AND (s.sent_at AT TIME ZONE $2)::date = ($3::timestamptz AT TIME ZONE $2)::date)
         GROUP BY u.id, u.email, u.name
@@ -251,7 +259,7 @@ export async function sendDigests(sender: Sender | null, now = new Date()): Prom
       // today's envelope rather than waiting a day for the next one.
       const { rows: mine } = await c.query<{ id: string; kind: string; subject: string; body: string }>(
         `SELECT id, kind, subject, body FROM notification_outbox
-          WHERE recipient = $1 AND sent_at IS NULL AND attempts < $2
+          WHERE recipient = $1 AND sent_at IS NULL AND attempts < $2 AND kind <> 'brief'
           ORDER BY queued_at
           FOR UPDATE SKIP LOCKED`,
         [person.userId, MAX_SEND_ATTEMPTS],

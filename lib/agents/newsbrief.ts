@@ -1,9 +1,11 @@
 /**
  * Agent 6 — news brief and exchange updates.
  *
- * Prompted, not scheduled. v2 ran this at 06:30 on a cron and it was read once; a brief that
- * arrives whether or not anybody wants it becomes something to dismiss rather than something to
- * read.
+ * **Written by itself every day at 08:00 IST, published without review, and mailed to everyone**,
+ * by the fund's decision of 28-Sep-2026 (migration 0067). It had been prompted and not scheduled
+ * since v3: v2 ran it at 06:30 on a cron and it was read once. The fund has now chosen a brief
+ * that is already waiting over one somebody has to remember to ask for. A person can still ask
+ * for one over a longer window; `sweep` below says how the two stay out of each other's way.
  *
  * **Filings first, then press.** For the SME half of this book there is no press — that is the
  * condition, not an accident — and a brief that leads with news finds nothing to say about exactly
@@ -16,9 +18,66 @@
 
 import { assertInScope, raise, registerHandler, type HandlerResult, type RunContext } from './runner.ts';
 import { systemFor } from './prompt.ts';
-import { type Client } from '../db.ts';
+import { rowId, serviceTxn, type Client } from '../db.ts';
+import { IST, istHour } from '../digest.ts';
 
 export const KEY = 'news-brief';
+
+/**
+ * The IST hour at or after which the day's brief is queued.
+ *
+ * Eight, by the fund's decision. An hour after `DIGEST_HOUR` and well before the 09:15 open, so a
+ * brief that takes a few minutes to write is still read before the market is.
+ */
+export const BRIEF_HOUR = 8;
+
+/** What the scheduled brief covers. A day, since the brief is daily; a person may ask for longer. */
+export const SCHEDULED_DAYS = 1;
+
+/**
+ * Queue the day's brief, once, at or after 08:00 IST.
+ *
+ * **The day is the run's subject.** The scheduled run carries its IST date as `subject_ref`, so
+ * this is the house's usual question, "has this subject had a run", asked with NOT EXISTS and not
+ * with a watermark. A pass at 08:05 queues it. Every later pass that day finds it and queues
+ * nothing, whether it is still queued, done or failed. A run that failed on the box is put back by
+ * `requeueErrored`, not by a second run from here. On a box that was down at eight, the first pass
+ * after it comes back still owes today's brief and queues it.
+ *
+ * **A brief somebody asks for is never the day's brief.** It has no `subject_ref`, so:
+ *
+ *   - it cannot suppress the scheduled one: asked for at 07:30, or at 08:02 before the timer's first
+ *     pass after eight, the day's brief is still queued, because the day has still had no run;
+ *   - it cannot duplicate it: however many are asked for, the day has one run, and
+ *     `agent_runs_one_brief_a_day` (0067) holds that even when two sweeps race;
+ *   - it is not a copy of it either. It covers a window from `ASKABLE_DAYS`, never the 24 hours
+ *     this one does, and `askForBrief` refuses while any brief is being written, so two are never
+ *     written from the same material in the same minute.
+ *
+ * Queuing nothing is the ordinary answer on every pass but one a day, and falls under the documented
+ * exemption for agent sweeps (jobs/agents.ts).
+ *
+ * `now` is passed in, and one instant decides both the hour and the day, for the reason `waiting()`
+ * in lib/digest.ts gives: two clocks deciding one thing disagree at midnight.
+ */
+export async function sweep(now = new Date()): Promise<number> {
+  if (istHour(now) < BRIEF_HOUR) return 0;
+  // en-CA writes a date as 2026-09-28, which is the key's whole format.
+  const day = new Intl.DateTimeFormat('en-CA', { timeZone: IST }).format(now);
+  return serviceTxn('system:agents', async (c) => {
+    const { rowCount } = await c.query(
+      `INSERT INTO agent_runs (id, agent_key, subject_ref, request)
+       SELECT $1, a.key, $3::text, $4::jsonb
+         FROM agents a
+        WHERE a.key = $2 AND a.enabled
+          AND NOT EXISTS (
+            SELECT 1 FROM agent_runs r WHERE r.agent_key = a.key AND r.subject_ref = $3::text)
+       ON CONFLICT DO NOTHING`,
+      [rowId(), KEY, day, JSON.stringify({ days: SCHEDULED_DAYS })],
+    );
+    return rowCount ?? 0;
+  });
+}
 
 const READS = ['companies', 'filings', 'news_items', 'news_matches', 'calendar_events', 'alerts'];
 
@@ -95,7 +154,8 @@ export async function gather(c: Client, days: number, companyId: string | null):
 }
 
 export function describe(material: Material[], days: number): string {
-  const lines = [`The last ${days} days, for every name on the book.`, ''];
+  const span = days === SCHEDULED_DAYS ? 'The last 24 hours' : `The last ${days} days`;
+  const lines = [`${span}, for every name on the book.`, ''];
   for (const m of material) {
     lines.push(`--- ${m.name} (${m.symbol}) ---`);
     // Filings first, deliberately. For a company nobody writes about these are the only news there

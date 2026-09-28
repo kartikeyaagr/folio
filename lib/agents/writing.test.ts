@@ -1,17 +1,18 @@
 /**
  * Agents 2, 3 and 6 — the three with no verifier under them.
  *
- * Nothing checks what these write except a person, so what is tested here is the **input**: that
- * the prompt says what is held and what is not, that a missing comparison is stated rather than
- * left for the model to infer, and that the news brief is never built on an ungated candidate.
+ * Nothing checks what these write except a person, and since 28-Sep-2026 not even that for the news
+ * brief, which is published unread. So what is tested here is the **input**: that the prompt says
+ * what is held and what is not, that a missing comparison is stated rather than left for the model
+ * to infer, and that the news brief is never built on an ungated candidate.
  */
 
 import { test, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { readTxn, serviceTxn } from '../db.ts';
 import { scriptedModel, scriptedOk } from './model.ts';
-import { acceptDraft, pendingDrafts } from './review.ts';
-import { briefs, brief, pendingBrief } from '../briefs.ts';
+import { pendingDrafts } from './review.ts';
+import { briefs, brief } from '../briefs.ts';
 import { drain } from './runner.ts';
 import { enqueue } from './queue.ts';
 import * as concall from './concall.ts';
@@ -48,6 +49,7 @@ beforeEach(async () => {
   await serviceTxn('system:agents', async (c) => {
     // Documents before drafts: a document records the draft it came from, and the foreign key
     // holding that link refuses to let the draft go while it does.
+    await c.query('DELETE FROM notification_outbox');
     await c.query('DELETE FROM document_versions');
     await c.query('DELETE FROM documents');
     await c.query('DELETE FROM exemplars');
@@ -233,7 +235,7 @@ test('a handler that runs bad SQL records why, rather than being swallowed', asy
   assert.notEqual(run.status, 'running', 'and it is not left claimed for the lease to clean up');
 });
 
-// ---- an accepted brief becomes a brief ---------------------------------------------------------
+// ---- a written brief becomes a brief ----------------------------------------------------------
 
 const BRIEF = {
   period: 'The last 7 days',
@@ -242,36 +244,35 @@ const BRIEF = {
   coming_up: ['PRAJIND — results, 30 September'],
 };
 
-async function acceptedBrief(): Promise<void> {
+async function writtenBrief(): Promise<void> {
   await enqueue({ agentKey: 'news-brief', requestedBy: ME });
   await drain(1, scriptedModel([scriptedOk(BRIEF)]));
-  const [draft] = await pendingDrafts();
-  await acceptDraft(draft!.id, null, ME);
 }
 
-test('a brief waiting for review is visible before it is accepted', async () => {
-  // Somebody who came to read this morning's brief should be told it exists and is waiting on a
-  // person, not shown yesterday's and left to wonder.
-  await enqueue({ agentKey: 'news-brief', requestedBy: ME });
-  await drain(1, scriptedModel([scriptedOk(BRIEF)]));
-  assert.notEqual(await pendingBrief(), null);
-  assert.deepEqual(await briefs(), [], 'and it is not on the page until somebody accepts it');
+test('a written brief is on the page at once, and nothing waits in Review', async () => {
+  // Published unread, by the fund's decision of 28-Sep-2026. A brief that waited for somebody to
+  // accept it was the brief before this one.
+  await writtenBrief();
+  assert.deepEqual(await pendingDrafts(), [], 'no draft is left for a person to decide');
+  assert.equal((await briefs()).length, 1);
 });
 
-test('an accepted brief is a brief, not an untitled note', async () => {
-  await acceptedBrief();
+test('a published brief is a brief, not an untitled note', async () => {
+  await writtenBrief();
   const [b] = await briefs();
   assert.ok(b, 'findable as a brief');
   assert.match(b.title, /The last 7 days/, 'and titled by its period rather than "news-brief draft"');
   assert.equal(b.covered, 1);
   assert.equal(b.quiet, 1);
-  assert.equal(await pendingBrief(), null, 'and no longer waiting');
+  assert.equal(b.published, true);
+  assert.equal(b.acceptedBy, null, 'nobody accepted it, and it does not say anybody did');
+  assert.equal(b.askedBy, 'T', 'but it does say who asked');
 });
 
-test('an accepted brief still knows which draft it came from', async () => {
-  // The review gate spends its whole design showing provenance before you accept. Losing it at the
-  // moment of acceptance loses it exactly when it starts to matter.
-  await acceptedBrief();
+test('a published brief still knows which draft it came from', async () => {
+  // The review gate spends its whole design showing provenance before you accept. A brief nobody
+  // accepts needs it more, not less.
+  await writtenBrief();
   const [summary] = await briefs();
   const b = await brief(summary!.id);
   assert.ok(b!.fromDraftId, 'the draft is named');
@@ -279,8 +280,8 @@ test('an accepted brief still knows which draft it came from', async () => {
   assert.ok(Number(b!.costUsd) > 0, 'and what it cost came with it');
 });
 
-test('the whole brief survives acceptance, not a summary of it', async () => {
-  await acceptedBrief();
+test('the whole brief is published, not a summary of it', async () => {
+  await writtenBrief();
   const [summary] = await briefs();
   const b = await brief(summary!.id);
   assert.deepEqual(b!.content['coming_up'], ['PRAJIND — results, 30 September']);

@@ -26,21 +26,29 @@
  * under failed runs, and waking somebody at 6am over a model declining a transcript would train
  * them to ignore the alert that matters.
  *
+ * **The brief's mail goes from here, straight after the drain that wrote it.** It is the one mail
+ * that does not wait for the morning digest (migration 0067), so a brief written on this pass is in
+ * everybody's inbox by the end of it. A brief nobody could be sent is never a quiet day either:
+ * with no relay, or a relay that refuses, the rows keep the reason and this run fails, the same
+ * as a failure on the box. Each pass after that tries again, up to `MAX_SEND_ATTEMPTS`, and then
+ * the rows are left for `undeliverable()` to show.
+ *
  *   pnpm exec tsx jobs/agents.ts [limit]
  */
 import './_env.ts';
 
 import { closePool, serviceTxn } from '../lib/db.ts';
+import { drainOutbox, noRelay, smtpFromEnv, smtpSender } from '../lib/notify.ts';
 import { drain } from '../lib/agents/runner.ts';
 import { requeueErrored, sweepScheduled, RETRY_AFTER_HOURS } from '../lib/agents/queue.ts';
 import * as results from '../lib/agents/results.ts';
 import * as forensics from '../lib/agents/forensics.ts';
 import * as concall from '../lib/agents/concall.ts';
-// Imported for their side effect: registering handlers. Agents 4 and 5 have no sweep of their own
-// (sweepScheduled covers them); agent 6 is prompted and enqueued by a person, but every handler
-// must be registered before the queue is drained or a run finds no code to execute.
+import * as newsbrief from '../lib/agents/newsbrief.ts';
+// Imported for its side effect: registering handlers. Agents 4 and 5 have no sweep of their own
+// (sweepScheduled covers them), but every handler must be registered before the queue is drained
+// or a run finds no code to execute.
 import '../lib/agents/notify.ts';
-import '../lib/agents/newsbrief.ts';
 
 async function main(): Promise<void> {
   const limit = Number(process.argv[2] ?? 10);
@@ -58,18 +66,28 @@ async function main(): Promise<void> {
     const back = await requeueErrored();
     const queued =
       (await results.sweep()) + (await forensics.sweep()) + (await concall.sweep()) +
-      (await sweepScheduled());
+      (await newsbrief.sweep()) + (await sweepScheduled());
 
     const r = await drain(limit);
+
+    // The shared relay, never a person's own mailbox. The brief is one message from the desk to
+    // everybody, and a linked mailbox was linked on the promise that it sends only its owner's
+    // digest (lib/mailbox.ts). No relay is a failed send here, not the quiet skip the digest makes.
+    const relay = smtpFromEnv();
+    const mail = await drainOutbox(relay ? smtpSender(relay) : noRelay, 50, 'brief');
+
     const detail =
       `${queued} queued, ${back} put back after ${RETRY_AFTER_HOURS}h; ` +
       `ran ${r.ran}, drafted ${r.drafted}, reclaimed ${r.reclaimed}; ` +
-      `${r.failed} failed (${r.errors} of them on the box, ${r.failed - r.errors} on the subject)`;
+      `${r.failed} failed (${r.errors} of them on the box, ${r.failed - r.errors} on the subject); ` +
+      `brief mailed to ${mail.sent}, ${mail.failed} failed` +
+      (mail.lastError ? ` (${mail.lastError})` : '');
+    const broken = r.errors > 0 || mail.failed > 0;
 
     await serviceTxn('system:agents', async (c) => {
       await c.query(
         'UPDATE ingestion_runs SET finished_at = now(), status = $1, items = $2, detail = $3 WHERE id = $4',
-        [r.errors > 0 ? 'failed' : 'ok', r.drafted, detail, runId],
+        [broken ? 'failed' : 'ok', r.drafted, detail, runId],
       );
     });
     console.log(detail);
@@ -78,6 +96,12 @@ async function main(): Promise<void> {
       throw new Error(
         `${r.errors} of ${r.ran} runs failed on the box rather than on their subject — ` +
           'the agents cannot work here until that is fixed',
+      );
+    }
+    if (mail.failed > 0) {
+      throw new Error(
+        `the brief could not be mailed to ${mail.failed} ${mail.failed === 1 ? 'person' : 'people'}: ` +
+          `${mail.lastError ?? 'no reason recorded'}`,
       );
     }
   } catch (err) {

@@ -9,6 +9,9 @@
  *                                             └───────────────────────────────────────► agent_runs
  *                                                                                        done/failed
  *
+ * The news brief alone goes straight from ai_drafts to the record, published and mailed, with no
+ * person between (`publishDraft` in ./review.ts).
+ *
  * Four properties, each load-bearing:
  *
  *   * **The prompt is assembled at claim time, not at enqueue time.** A run that waited an hour
@@ -33,6 +36,7 @@
 import { readTxn, rowId, serviceTxn, type Client } from '../db.ts';
 import { liveModel, type Answer, type FailureKind, type Model } from './model.ts';
 import { claimRun, claimThisRun, failRun, finishRun, markDone, reclaim, type ClaimedRun } from './queue.ts';
+import { PUBLISHED_WITHOUT_REVIEW, publishDraft } from './review.ts';
 
 export class ScopeViolation extends Error {}
 
@@ -242,6 +246,10 @@ export function raise(answer: Extract<Answer, { ok: false }>): never {
  *
  * The pair is atomic on purpose: a draft whose run still reads 'running' would be re-offered by
  * `reclaim()` half an hour later and drafted a second time, at full price.
+ *
+ * For the news brief, publishing it and queueing its mail belong to the same transaction too.
+ * Otherwise a crash between the two would leave a brief written, marked done, and waiting in
+ * /review for an acceptance nobody is going to give it.
  */
 async function recordDraft(
   runId: string, agent: AgentRow, companyId: string | null, d: Draft,
@@ -267,6 +275,9 @@ async function recordDraft(
     );
     // The statement itself lives in ./queue.ts, with every other thing that writes this row.
     await markDone(c, runId, draftId);
+    // The one agent whose work skips the review gate, by the fund's decision of 28-Sep-2026. The
+    // exception, and what it keeps, is argued at `publishDraft`.
+    if (PUBLISHED_WITHOUT_REVIEW.has(agent.key)) await publishDraft(c, draftId);
   });
   return draftId;
 }

@@ -1,6 +1,6 @@
 import Link from 'next/link';
 
-import { brief, briefInFlight, briefs, pendingBrief } from '@/lib/briefs.ts';
+import { ASKABLE_DAYS, brief, briefInFlight, briefs, provenance } from '@/lib/briefs.ts';
 import { Brief } from '@/components/Brief.tsx';
 import { AppHeader, Card, Empty, Eyebrow } from '@/components/ui.tsx';
 
@@ -11,22 +11,20 @@ import { weekdayTime } from '@/components/ui';
 /**
  * Agent 6's output, where somebody reads it.
  *
- * Prompted rather than scheduled, and this is the screen that makes that decision work: v2 mailed a
- * brief at 06:30 whether or not anybody wanted one, and it became something to dismiss. A brief you
- * asked for ten seconds ago is a brief you are about to read.
+ * The brief writes itself at 08:00 IST, is published without review and is mailed to everybody,
+ * by the fund's decision of 28-Sep-2026 (migration 0067). So this page leads with the latest brief
+ * and says where it came from. Nobody read it before it went out, and the page must not let it
+ * pass for something somebody accepted. Asking for another, over a longer window, still works.
  *
- * The page always says which of four states it is in — one is being written, one is waiting on a
- * person, here is the last one, or nobody has ever asked. A page that showed yesterday's brief while
- * today's sat unaccepted in a queue would be quietly wrong at the moment it mattered.
+ * The page always says which of three states it is in: one is being written, here is the last
+ * one, or none has been written yet.
  */
 
 export const dynamic = 'force-dynamic';
 
 export default async function BriefsPage() {
   await requireUser();
-  const [list, waiting, inFlight] = await Promise.all([
-    briefs(), pendingBrief(), briefInFlight(),
-  ]);
+  const [list, inFlight] = await Promise.all([briefs(), briefInFlight()]);
   const latest = list[0] ? await brief(list[0].id) : null;
 
   return (
@@ -41,36 +39,10 @@ export default async function BriefsPage() {
       />
 
       <div className="page">
-        <Card title="Ask for a brief">
-          <form action={askForBrief} className="ask-form">
-            <span className="ask-label">Cover the last</span>
-            <select className="field" name="days" defaultValue="7" aria-label="Period to cover">
-              <option value="3">3 days</option>
-              <option value="7">7 days</option>
-              <option value="14">14 days</option>
-              <option value="30">30 days</option>
-            </select>
-            <button type="submit" className="btn btn-primary" disabled={inFlight || waiting !== null}>
-              Ask
-            </button>
-          </form>
-          <p className="hint">
-            Every followed name, filings first, using only confirmed news. The brief waits in
-            Review until someone accepts it.
-          </p>
-        </Card>
-
         {inFlight && (
           <p className="notice">
-            A brief is being written. It runs on the next agent sweep and then waits in{' '}
-            <Link href="/review">Review</Link>.
-          </p>
-        )}
-
-        {waiting && (
-          <p className="notice">
-            A brief was written {weekdayTime(waiting.createdAt)} and is waiting for somebody to accept it in{' '}
-            <Link href="/review">Review</Link>. It is not shown here until then.
+            A brief is being written. It runs on the next agent sweep, then appears here and is
+            mailed to everybody.
           </p>
         )}
 
@@ -78,9 +50,7 @@ export default async function BriefsPage() {
           <Card
             title={latest.title}
             action={
-              <span className="draft-meta">
-                accepted by {latest.acceptedBy ?? 'somebody'} · {weekdayTime(latest.writtenAt)}
-              </span>
+              <span className="draft-meta">{provenance(latest, weekdayTime(latest.writtenAt))}</span>
             }
           >
             <Brief content={latest.content} />
@@ -88,11 +58,32 @@ export default async function BriefsPage() {
         ) : (
           <Card title="No brief yet">
             <Empty>
-              Nobody has asked for one. A brief covers what each followed name filed, what news was
-              confirmed, and what is scheduled, including the names that had nothing.
+              The first arrives at 08:00 IST, or ask for one below. A brief covers what each
+              followed name filed, what news was confirmed, and what is scheduled, including the
+              names that had nothing.
             </Empty>
           </Card>
         )}
+
+        <Card title="Ask for another">
+          <form action={askForBrief} className="ask-form">
+            <span className="ask-label">Cover the last</span>
+            <select className="field" name="days" defaultValue="7" aria-label="Period to cover">
+              {ASKABLE_DAYS.map((d) => (
+                <option key={d} value={d}>{d} days</option>
+              ))}
+            </select>
+            <button type="submit" className="btn btn-primary" disabled={inFlight}>
+              Ask
+            </button>
+          </form>
+          <p className="hint">
+            A brief arrives by itself every morning at 08:00 IST, covering the last 24 hours. Ask
+            here for one over a longer window. Every followed name, filings first, using only
+            confirmed news. It is published as soon as it is written, without review, and mailed
+            to everybody.
+          </p>
+        </Card>
 
         {list.length > 1 && (
           <Card title="Earlier">
@@ -108,7 +99,7 @@ export default async function BriefsPage() {
                     {b.covered} {b.covered === 1 ? 'name' : 'names'}
                     {b.quiet > 0 && `, ${b.quiet} quiet`}
                   </span>
-                  <span>{b.acceptedBy ?? ''}</span>
+                  <span>{b.published ? 'not reviewed' : (b.acceptedBy ?? '')}</span>
                 </li>
               ))}
             </ul>

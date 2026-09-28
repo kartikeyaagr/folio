@@ -88,6 +88,10 @@ export async function weeklyDistance(weeks = 12): Promise<WeeklyDistance[]> {
               avg(edit_distance) FILTER (WHERE status = 'accepted')::float8 AS "meanDistance"
          FROM ai_drafts
         WHERE decided_at IS NOT NULL
+          -- A published brief has a decided_at and nobody who decided it (0067). Left in, it would
+          -- add a week of 0 accepted, 0 edited, 0 rejected for an agent nobody reviews: a row of
+          -- zeroes where there should be no row.
+          AND status <> 'published'
           AND decided_at > now() - ($1 || ' weeks')::interval
         GROUP BY agent_key, date_trunc('week', decided_at), nested_editable
         ORDER BY date_trunc('week', decided_at) DESC, agent_key, nested_editable`,

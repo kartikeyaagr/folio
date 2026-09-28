@@ -6,6 +6,10 @@
  * as a quality one: agents read filings and PDFs written by other people, so a crafted document
  * can carry instructions. A human accept is what stands between that and the record.
  *
+ * **One agent is exempt, by the fund's decision of 28-Sep-2026:** the news brief is published the
+ * moment it is written. The exception is `publishDraft` below, and it is kept to one agent here
+ * and in the database alike.
+ *
  * Accepting records **what the person changed**, field by field. The distance between what the
  * model said and what was signed off is the only honest measure of whether an agent is any good,
  * and it is invisible unless it is captured at the moment of acceptance.
@@ -19,6 +23,7 @@ import { draftDistance, positions } from './distance.ts';
 import { recordExemplar } from './exemplars.ts';
 import { removeAt, setPath, UnwritablePath } from './paths.ts';
 import { fieldAt, shapeFor } from './shapes.ts';
+import { queueBriefMail } from '../briefs.ts';
 import { readTxn, rowId, type Client, writeTxn } from '../db.ts';
 
 export class UnknownDraft extends Error {}
@@ -252,6 +257,46 @@ export async function acceptDraft(
   });
 }
 
+/**
+ * The agents whose drafts enter the record unread. One, and it is meant to stay one.
+ *
+ * The same list is a CHECK on `ai_drafts` (`only_the_brief_skips_review`, migration 0067), so a
+ * second entry here fails at the first publish until a migration agrees to it. That is the point.
+ * Widening this is a decision about the fund's record, and it should not be a one-line code change.
+ */
+export const PUBLISHED_WITHOUT_REVIEW: ReadonlySet<string> = new Set(['news-brief']);
+
+/**
+ * Publish a draft nobody reviewed. **This is the exception to the gate, and it happens here.**
+ *
+ * By the fund's decision of 28-Sep-2026 the news brief is published the moment it is written and
+ * mailed to every active user. It does not wait in /review. That sets aside, for this one agent, the
+ * standard this file exists to enforce, so the exception keeps everything the gate would have kept
+ * except the person:
+ *
+ *   - the draft row survives, marked `published` and decided by nobody, so the run, the model and
+ *     the cost stay beside the document, and "not reviewed" is a fact on the record, not a gap in it;
+ *   - the document lands through `landDocument`, the path every accepted draft takes, as
+ *     `system:agents`, so it says a job wrote it rather than borrowing somebody's name;
+ *   - **no exemplar is written.** Nobody signed it off, and an agent that learns from its own
+ *     unreviewed output only reinforces whatever it already does. 0067 turns its learning off too;
+ *   - it is announced to everybody in the same commit (`queueBriefMail`). Something that entered
+ *     the record without anybody reading it should not also enter it without anybody being told.
+ *
+ * Called by the runner on the transaction that wrote the draft, so no state exists in which the
+ * brief was written and not yet published.
+ */
+export async function publishDraft(c: Client, draftId: string): Promise<string> {
+  const draft = await lockDraft(c, draftId);
+  await c.query(
+    "UPDATE ai_drafts SET status = 'published', decided_at = now() WHERE id = $1",
+    [draftId],
+  );
+  const documentId = await landDocument(c, draft, draft.content, 'system:agents');
+  await queueBriefMail(c, documentId);
+  return documentId;
+}
+
 /** Agent 7's answers become a checklist against the company, at the version they were answered under. */
 async function landForensics(
   c: Client,
@@ -335,7 +380,7 @@ async function landDocument(
   draft: DraftRow,
   content: Record<string, unknown>,
   actorId: string,
-): Promise<void> {
+): Promise<string> {
   const docId = rowId();
   await c.query(
     `INSERT INTO documents (id, company_id, title, kind, created_by, from_draft_id)
@@ -352,6 +397,7 @@ async function landDocument(
     'INSERT INTO document_versions (document_id, body, written_by) VALUES ($1,$2,$3)',
     [docId, JSON.stringify(content), actorId],
   );
+  return docId;
 }
 
 /**

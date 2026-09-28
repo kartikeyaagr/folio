@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 
-import { brief } from '@/lib/briefs.ts';
+import { brief, provenance } from '@/lib/briefs.ts';
 import { label, shape } from '@/lib/agents/paths.ts';
 import { Brief } from '@/components/Brief.tsx';
 import { AppHeader, Card, Eyebrow } from '@/components/ui.tsx';
@@ -14,7 +14,8 @@ import { weekdayTime } from '@/components/ui';
  *
  * Shows what the agent originally wrote where a reviewer changed it before accepting. The diff is
  * recorded at acceptance for exactly this: a brief somebody corrected is evidence about the agent,
- * and it is the only evidence there is.
+ * and it is the only evidence there is. Briefs since 28-Sep-2026 are published without review, so
+ * they have no diff, and the subtitle says nobody read them first.
  */
 
 export const dynamic = 'force-dynamic';
@@ -35,7 +36,7 @@ export default async function OneBriefPage({ params }: { params: Promise<{ id: s
     <>
       <AppHeader
         title="Brief"
-        subtitle={`${weekdayTime(b.writtenAt)} · accepted by ${b.acceptedBy ?? 'somebody'}`}
+        subtitle={provenance(b, weekdayTime(b.writtenAt))}
         back="/news/brief"
         backTitle="Briefs"
       />
