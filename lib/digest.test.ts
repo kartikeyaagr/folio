@@ -9,10 +9,9 @@
 
 import { test, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 
-import { migrate } from '../db/migrate.ts';
-import { closePool, readTxn, serviceTxn } from './db.ts';
+import { createTestDatabase, dropTestDatabase } from '../db/testing.ts';
+import { readTxn, serviceTxn } from './db.ts';
 import { composeDigest, DIGEST_HOUR, istHour, sendDigests } from './digest.ts';
 import { forgetMailbox, linkMailbox } from './mailbox.ts';
 import type { Mail } from './notify.ts';
@@ -31,9 +30,7 @@ const collecting = async (m: Mail): Promise<void> => { outbox.push(m); };
 const refusing = async (): Promise<void> => { throw new Error('relay said no'); };
 
 before(async () => {
-  execFileSync('createdb', [DB]);
-  process.env.DATABASE_URL = `postgres:///${DB}`;
-  await migrate();
+  await createTestDatabase(DB);
   await serviceTxn('system:auth', async (c) => {
     for (const [id, email, name] of [
       [ANNA, 'anna@trisulacapital.com', 'Anna'],
@@ -46,8 +43,7 @@ before(async () => {
 });
 
 after(async () => {
-  await closePool();
-  execFileSync('dropdb', ['--if-exists', DB]);
+  await dropTestDatabase(DB);
 });
 
 beforeEach(async () => {

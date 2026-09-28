@@ -9,10 +9,9 @@
 
 import { test, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 
-import { migrate } from '../db/migrate.ts';
-import { closePool, readTxn, serviceTxn } from './db.ts';
+import { createTestDatabase, dropTestDatabase } from '../db/testing.ts';
+import { readTxn, serviceTxn } from './db.ts';
 import {
   configFor, forgetMailbox, linkMailbox, mailboxFor, MailboxRefused, NoMailboxKey,
   open, recordMailboxResult, seal, shouldPromptForMailbox,
@@ -35,10 +34,8 @@ const link = (over: Partial<Parameters<typeof linkMailbox>[1]> = {}, probe = acc
   }, probe);
 
 before(async () => {
-  execFileSync('createdb', [DB]);
-  process.env.DATABASE_URL = `postgres:///${DB}`;
   process.env['MAILBOX_KEY'] = Buffer.alloc(32, 7).toString('base64');
-  await migrate();
+  await createTestDatabase(DB);
   await serviceTxn('system:auth', async (c) => {
     await c.query("INSERT INTO actors (id,kind,label) VALUES ($1,'person','K')", [ME]);
     await c.query("INSERT INTO users (id,email,name) VALUES ($1,'k@trisulacapital.com','K')", [ME]);
@@ -46,8 +43,7 @@ before(async () => {
 });
 
 after(async () => {
-  await closePool();
-  execFileSync('dropdb', ['--if-exists', DB]);
+  await dropTestDatabase(DB);
 });
 
 beforeEach(async () => {

@@ -12,10 +12,9 @@
 
 import { test, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 
-import { migrate } from '../../db/migrate.ts';
-import { closePool, listen, serviceTxn, writeTxn } from '../db.ts';
+import { createTestDatabase, dropTestDatabase } from '../../db/testing.ts';
+import { listen, serviceTxn, writeTxn } from '../db.ts';
 
 const DB = `trisula_notify_${process.pid}`;
 const ME = 'p1';
@@ -25,9 +24,7 @@ let heard = 0;
 let stop: (() => Promise<void>) | undefined;
 
 before(async () => {
-  execFileSync('createdb', [DB]);
-  process.env.DATABASE_URL = `postgres:///${DB}`;
-  await migrate();
+  await createTestDatabase(DB);
   await serviceTxn('system:auth', async (c) => {
     await c.query("INSERT INTO actors (id,kind,label) VALUES ($1,'person','T')", [ME]);
     await c.query("INSERT INTO users (id,email,name) VALUES ($1,'t@x.com','T')", [ME]);
@@ -38,8 +35,7 @@ before(async () => {
 
 after(async () => {
   await stop?.();
-  await closePool();
-  execFileSync('dropdb', ['--if-exists', DB]);
+  await dropTestDatabase(DB);
 });
 
 beforeEach(() => { heard = 0; });

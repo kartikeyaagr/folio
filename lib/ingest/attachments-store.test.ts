@@ -10,31 +10,27 @@
 import { test, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { execFileSync, } from 'node:child_process';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 
-import { migrate } from '../../db/migrate.ts';
-import { closePool, readTxn, serviceTxn } from '../db.ts';
+import { createTestDatabase, dropTestDatabase } from '../../db/testing.ts';
+import { readTxn, serviceTxn } from '../db.ts';
 import { clearMissingBytes, fetchAttachments, pathFor } from './attachments.ts';
 import { extractPending } from './extract.ts';
 
 const DB = `trisula_store_${process.pid}`;
 
 before(async () => {
-  execFileSync('createdb', [DB]);
-  process.env.DATABASE_URL = `postgres:///${DB}`;
   // Its own store. The default is the VM's /var/lib/trisula/attachments, which is not writable
   // here — and a test that passes or fails on the ambient environment is not a test.
   process.env['ATTACHMENT_DIR'] = mkdtempSync(join(tmpdir(), 'trisula-store-'));
-  await migrate();
+  await createTestDatabase(DB);
 });
 
 after(async () => {
-  await closePool();
-  execFileSync('dropdb', ['--if-exists', DB]);
+  await dropTestDatabase(DB);
   rmSync(process.env['ATTACHMENT_DIR'] ?? '', { recursive: true, force: true });
 });
 

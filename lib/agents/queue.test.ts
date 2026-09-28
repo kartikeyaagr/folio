@@ -14,10 +14,9 @@
 
 import { test, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 
-import { migrate } from '../../db/migrate.ts';
-import { closePool, readTxn, serviceTxn } from '../db.ts';
+import { createTestDatabase, dropTestDatabase } from '../../db/testing.ts';
+import { readTxn, serviceTxn } from '../db.ts';
 import { scriptedModel, scriptedOk } from './model.ts';
 import { drain, raise, registerHandler } from './runner.ts';
 import { enqueue, failedRuns, MAX_ATTEMPTS, requeue } from './queue.ts';
@@ -26,9 +25,7 @@ const DB = `trisula_queue_${process.pid}`;
 const CO = 'c1';
 
 before(async () => {
-  execFileSync('createdb', [DB]);
-  process.env.DATABASE_URL = `postgres:///${DB}`;
-  await migrate();
+  await createTestDatabase(DB);
   await serviceTxn('system:auth', async (c) => {
     await c.query("INSERT INTO companies (id,symbol,name) VALUES ($1,'TEGA','Tega')", [CO]);
   });
@@ -48,8 +45,7 @@ before(async () => {
 });
 
 after(async () => {
-  await closePool();
-  execFileSync('dropdb', ['--if-exists', DB]);
+  await dropTestDatabase(DB);
 });
 
 beforeEach(async () => {

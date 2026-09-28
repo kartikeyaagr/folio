@@ -12,10 +12,9 @@
  */
 import { test, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
-import { migrate } from '../../db/migrate.ts';
-import { closePool, readTxn, serviceTxn } from '../db.ts';
+import { createTestDatabase, dropTestDatabase } from '../../db/testing.ts';
+import { readTxn, serviceTxn } from '../db.ts';
 import {
   announce,
   broke,
@@ -46,12 +45,10 @@ const DB = `trisula_backfill_${process.pid}`;
 const ME = 'u1';
 
 before(async () => {
-  execFileSync('createdb', [DB]);
-  process.env.DATABASE_URL = `postgres:///${DB}`;
   // Its own store. The default is the VM's /var/lib/trisula/attachments, which is not writable
   // here — and a test that passes or fails on the ambient environment is not a test.
   process.env['ATTACHMENT_DIR'] = mkdtempSync(join(tmpdir(), 'trisula-attach-'));
-  await migrate();
+  await createTestDatabase(DB);
   await serviceTxn('system:auth', async (c) => {
     await c.query("INSERT INTO actors (id,kind,label) VALUES ($1,'person','T')", [ME]);
     await c.query("INSERT INTO users (id,email,name) VALUES ($1,'t@x.com','T')", [ME]);
@@ -59,8 +56,7 @@ before(async () => {
 });
 
 after(async () => {
-  await closePool();
-  execFileSync('dropdb', ['--if-exists', DB]);
+  await dropTestDatabase(DB);
   rmSync(process.env['ATTACHMENT_DIR'] ?? '', { recursive: true, force: true });
 });
 

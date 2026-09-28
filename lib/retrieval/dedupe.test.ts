@@ -18,9 +18,8 @@
  */
 import { test, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
-import { migrate } from '../../db/migrate.ts';
-import { closePool, readTxn, serviceTxn } from '../db.ts';
+import { createTestDatabase, dropTestDatabase } from '../../db/testing.ts';
+import { readTxn, serviceTxn } from '../db.ts';
 import { registerAll } from './register.ts';
 
 const DB = `trisula_dedupe_${process.pid}`;
@@ -28,14 +27,11 @@ const CO = 'c1';
 const WORDS = 'Management guided to a mid-teens margin for the full year. '.repeat(40);
 
 before(async () => {
-  execFileSync('createdb', [DB]);
-  process.env.DATABASE_URL = `postgres:///${DB}`;
-  await migrate();
+  await createTestDatabase(DB);
 });
 
 after(async () => {
-  await closePool();
-  execFileSync('dropdb', ['--if-exists', DB]);
+  await dropTestDatabase(DB);
 });
 
 beforeEach(async () => {

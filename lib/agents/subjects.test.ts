@@ -10,10 +10,9 @@
 
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 
-import { migrate } from '../../db/migrate.ts';
-import { closePool, serviceTxn } from '../db.ts';
+import { createTestDatabase, dropTestDatabase } from '../../db/testing.ts';
+import { serviceTxn } from '../db.ts';
 import { MIN_TRANSCRIPT_CHARS as CONCALL_FLOOR } from './concall.ts';
 import { isSubjectFor, MIN_TRANSCRIPT_CHARS, subjectsFor } from './subjects.ts';
 
@@ -33,9 +32,7 @@ const transcript = (id: string, company: string, chars: number, title = 'Q1 call
   });
 
 before(async () => {
-  execFileSync('createdb', [DB]);
-  process.env.DATABASE_URL = `postgres:///${DB}`;
-  await migrate();
+  await createTestDatabase(DB);
   await serviceTxn('system:auth', async (c) => {
     await c.query("INSERT INTO actors (id,kind,label) VALUES ($1,'person','T')", [ME]);
     await c.query("INSERT INTO users (id,email,name) VALUES ($1,'t@x.com','T')", [ME]);
@@ -56,8 +53,7 @@ before(async () => {
 });
 
 after(async () => {
-  await closePool();
-  execFileSync('dropdb', ['--if-exists', DB]);
+  await dropTestDatabase(DB);
 });
 
 const refs = async (key: string, co: string | null): Promise<string[]> =>
