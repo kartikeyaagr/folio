@@ -407,13 +407,20 @@ export default async function CompanyPage({
                     <tr key={r.key} className={r.doc?.archivedAt ? 'pf-void' : undefined}>
                       <td>
                         {/* A filed document opens as the PDF the company published, in a new tab.
-                            `target` only on those: a note opens in place like every other page. */}
-                        <Link
-                          href={r.href}
-                          {...(r.external ? { target: '_blank', rel: 'noreferrer' } : {})}
-                        >
-                          <b>{r.label}</b>
-                        </Link>
+                            A note opens in place like every other page. The PDF is a plain `<a>`
+                            because the route is a handler, not a page: `<Link>` prefetches every
+                            link that scrolls into view, and a prefetch of this route is the whole
+                            file. Measured on /company/TEGA: 41 background requests on load, one
+                            per filing. */}
+                        {r.external ? (
+                          <a href={r.href} target="_blank" rel="noreferrer">
+                            <b>{r.label}</b>
+                          </a>
+                        ) : (
+                          <Link href={r.href}>
+                            <b>{r.label}</b>
+                          </Link>
+                        )}
                       </td>
                       {/* One column, two facts, and the cell says which. A document the exchange
                           published is dated when it was released; one written here is dated when it
