@@ -191,5 +191,3 @@ Recorded so a gap is not mistaken for a decision:
    is no theme control on a phone at all.
 2. **Skeletons and quiet-day empty states**, above.
 3. **`.split`**, above.
-4. **Three classes a component names and no stylesheet defines:** `.item-sub`, `.doc-edit`,
-   `.sheet`.

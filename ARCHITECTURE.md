@@ -252,8 +252,8 @@ uses `FOR UPDATE SKIP LOCKED` with a 30-minute lease. "Event" agents are not pus
 `NOT EXISTS` sweeps against `agent_runs`, per the house rule.
 
 **Four of the six can be asked for work by hand** — every agent that calls a model — and
-`lib/agents/invocable.ts` is the single list of which, read by `/agents`' form, by chat's
-`run_agent`, and by the server action behind the form. Membership is a property of the handler, not
+`lib/agents/invocable.ts` is the single list of which, read by the Ask form on `/chat`, by its
+subject pickers, and by the server action behind the form. Membership is a property of the handler, not
 of the `trigger` column: an agent belongs there iff everything it reads off the run can be picked.
 It was two while a form could offer a company and nothing else; `/chat` now has real subject
 pickers (`subjects.ts`), so the two that need a specific filed period or a specific transcript are

@@ -1,10 +1,11 @@
 /**
  * Money as an agent reads it.
  *
- * `CRORE` and this formatter were copied into `lib/agents/results.ts`, `lib/agents/tools/financials.ts`
- * and `lib/retrieval/register.ts`, and only one of the three carried the reasoning. All three feed a
- * model — two build a prompt, the third builds a corpus chunk — so a drift between them is a drift
- * in what the agents are told, which is the worst place in this tree for three copies of a rule.
+ * `CRORE` and this formatter were copied into `lib/agents/results.ts`, `lib/retrieval/register.ts`
+ * and chat's `lib/agents/tools/financials.ts`, which went with agent 8. Only one of the three
+ * carried the reasoning. Both importers left feed a model, one through a prompt and one through a
+ * corpus chunk, so a drift between them is a drift in what the agents are told. That is the worst
+ * place in this tree for copies of a rule.
  */
 
 /** A crore is 10^7. The unit this fund thinks in. */
