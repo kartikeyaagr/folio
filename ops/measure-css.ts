@@ -138,6 +138,23 @@ for (const file of tsxFiles) {
   for (const prefix of p) prefixes.add(prefix);
 }
 
+/*
+ * Classes that `lib/` builds and a component applies. A cell's format and a document's typography
+ * are composed in `lib/sheet/format.ts` and `lib/prose/typography.ts` (`cf-face-${face}`) and
+ * returned as a string, so no `className` attribute ever spells them. Until 28-Sep-2026 this census
+ * read only `.tsx`, and it reported all 22 `cf-*` rules as dead. A cleanup that trusted it would
+ * have removed spreadsheet formatting, which is `.fl-note`'s trap again, one directory over.
+ *
+ * Only the stem immediately before an interpolation is read, never whole strings, for the
+ * apostrophe reason `harvest` gives. A stem can only make more classes count as used, which is the
+ * one direction this census is allowed to be wrong in.
+ */
+for (const file of walk('lib', '.ts')) {
+  for (const m of readFileSync(join(ROOT, file), 'utf8').matchAll(/[`\s]([A-Za-z_][\w-]*-)\$\{/g)) {
+    prefixes.add(m[1]!);
+  }
+}
+
 const coveredByPrefix = (cls: string) => [...prefixes].some((p) => p.length > 0 && cls.startsWith(p));
 
 const dead = [...definedIn.keys()].filter((c) => !used.has(c) && !coveredByPrefix(c)).sort();
