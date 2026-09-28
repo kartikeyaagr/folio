@@ -4,7 +4,7 @@ import { readTxn } from '../db.ts';
 import { parseMaster, refreshSecurities } from './securities.ts';
 import { createTestDatabase, dropTestDatabase } from '../../db/testing.ts';
 
-const DB = `trisula_sec_${process.pid}`;
+const DB = `folio_sec_${process.pid}`;
 
 // The two masters really do spell their columns differently. That is the whole reason field()
 // exists, so the fixtures keep the difference rather than tidying it away.

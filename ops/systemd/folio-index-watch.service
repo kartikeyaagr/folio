@@ -1,16 +1,16 @@
 [Unit]
 # Indexes within seconds of a save, instead of within ten minutes of one.
 #
-# This does NOT replace trisula-index-content.timer, and enabling it is not a reason to disable
+# This does NOT replace folio-index-content.timer, and enabling it is not a reason to disable
 # that. The timer is what guarantees the queue drains; this only makes the common case fast. A
 # NOTIFY sent while this unit was restarting is gone and nothing replays it — the durable queue is
 # `sources.indexed_at IS NULL`, which the timer sweeps regardless of what was heard.
 #
-# Long-running, so this is a `simple` service and not an instance of trisula-job@.service: that
+# Long-running, so this is a `simple` service and not an instance of folio-job@.service: that
 # template is Type=oneshot with a 30-minute TimeoutStartSec, which would kill this on the half hour.
 Description=Index content as it is saved
 After=postgresql.service
-# Not OnFailure=trisula-alert@%n.service. This restarts on its own and the timer covers what it
+# Not OnFailure=folio-alert@%n.service. This restarts on its own and the timer covers what it
 # misses, so a transient database blip here is not something to wake anybody for. A watcher that is
 # genuinely dead shows up as indexing lag on /admin, which is the figure that already means this.
 
@@ -24,9 +24,9 @@ StartLimitBurst=10
 
 [Service]
 Type=simple
-User=trisula
-WorkingDirectory=/srv/trisula
-EnvironmentFile=/etc/trisula/trisula.env
+User=folio
+WorkingDirectory=/srv/folio
+EnvironmentFile=/etc/folio/folio.env
 ExecStart=/usr/bin/pnpm exec tsx jobs/index-content.ts --watch
 
 Restart=always
@@ -49,7 +49,7 @@ ProtectHome=yes
 ProtectKernelTunables=yes
 ProtectControlGroups=yes
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
-ReadWritePaths=/var/lib/trisula
+ReadWritePaths=/var/lib/folio
 
 StandardOutput=journal
 StandardError=journal

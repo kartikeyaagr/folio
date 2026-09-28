@@ -1,6 +1,6 @@
 # SECURITY.md
 
-How Trisula protects the fund's positions, its three people and its secrets. These are the rules;
+How Folio protects the fund's positions, its three people and its secrets. These are the rules;
 the reasoning behind each lives in the file it names, usually in the header comment. Read this
 before touching authentication, a server action, a route handler, an environment variable, or
 anything that writes.
@@ -8,7 +8,7 @@ anything that writes.
 ## 1. The perimeter
 
 - **One VM, reachable only over Tailscale.** The web unit runs `next start -H 127.0.0.1`, so the
-  app listens on loopback only (`ops/systemd/trisula-web.service`). That is `-H`, because `next start`
+  app listens on loopback only (`ops/systemd/folio-web.service`). That is `-H`, because `next start`
   ignores `HOSTNAME`, and until 25-Sep-2026 the unit set `HOSTNAME` and listened on every interface.
   `tailscale serve` puts it on the tailnet with a certificate Tailscale issues and renews. TLS
   terminates on the box, and 443 is open on the tailnet interface only, with no public listener
@@ -16,10 +16,10 @@ anything that writes.
   go once Tailscale SSH has worked once (SETUP §1).
 - **The web process can write almost nothing.** Its unit runs `ProtectSystem=strict` with
   `ReadWritePaths=` limited to the build output and the attachments directory, so a compromised web
-  process cannot touch the backups or the embedding model beside them in `/var/lib/trisula`.
+  process cannot touch the backups or the embedding model beside them in `/var/lib/folio`.
 - **The tailnet is the outer wall, not the only one.** Every page, action and route handler
   authenticates as though the wall were not there.
-- **The app reaches Postgres over the unix socket** (`postgres:///trisula`). The package default
+- **The app reaches Postgres over the unix socket** (`postgres:///folio`). The package default
   also listens on `127.0.0.1:5432`, loopback only; never widen it (SETUP §4).
 
 ## 2. Authentication
@@ -28,7 +28,7 @@ anything that writes.
   unknown address is verified against a dummy hash, so it costs the same time and gets the same
   message as a wrong password. A page must never tell those two cases apart.
 - **Sessions** are 32 random bytes; only their sha256 is stored. The life is a fixed 30 days with
-  no idle timeout. In production the cookie is `__Host-trisula_session`, `httpOnly`, `Secure`,
+  no idle timeout. In production the cookie is `__Host-folio_session`, `httpOnly`, `Secure`,
   `SameSite=Lax`, `Path=/` (`app/_lib/session.ts`, `app/_lib/session-cookie.ts`).
 - **Recovery** is 8 single-use codes of 80 bits each, stored as sha256. `/reset` redeems one
   together with the email in a single UPDATE, sets a new password, and revokes every session.
@@ -103,7 +103,7 @@ and the `reset` and `signup` pages:
 
 | Where | What |
 |---|---|
-| `/etc/trisula/trisula.env` | Production. `640 root:trisula`: the app can read it but not rewrite it (SETUP §6). The VM never reads an env file from the repo. |
+| `/etc/folio/folio.env` | Production. `640 root:folio`: the app can read it but not rewrite it (SETUP §6). The VM never reads an env file from the repo. |
 | `.env.local` | Development, one per worktree. Every `.env*` file is gitignored except `.env.example`. |
 | `.env.example` | **Every variable the code reads, by name only.** Add a new variable here *and* to `ops/SETUP.md` §6 in the same change. |
 
@@ -131,7 +131,7 @@ and the `reset` and `signup` pages:
 
 - **A known domain error becomes a sentence via `flash()`.** Anything else is rethrown to
   `app/error.tsx` or `app/global-error.tsx`. These render `components/Failure.tsx` with Next's
-  digest, which ties the screen to the line in `journalctl -u trisula-web`, and never the message
+  digest, which ties the screen to the line in `journalctl -u folio-web`, and never the message
   or stack.
 - **Route handlers return `{ error: string }` with a status**, never a stack or a filesystem path.
   The attachment 404 logs its path server-side instead of returning it.

@@ -33,12 +33,12 @@ test('a relay that accepts and then goes silent fails the send rather than hangi
     const send = smtpSender({
       host: '127.0.0.1',
       port: relay.port,
-      from: 'desk@trisula.test',
+      from: 'desk@folio.test',
       timeoutMs: 750,
     });
     const started = Date.now();
     await assert.rejects(
-      send({ to: 'a@trisula.test', subject: 'x', body: 'y' }),
+      send({ to: 'a@folio.test', subject: 'x', body: 'y' }),
       'a silent relay must reject, not hang',
     );
     assert.ok(Date.now() - started < 10_000, 'it must reject on the timeout, not eventually');
@@ -49,6 +49,6 @@ test('a relay that accepts and then goes silent fails the send rather than hangi
 
 test('a refused connection fails the send', async () => {
   // Port 1 on loopback refuses; the outbox records an attempt and moves on.
-  const send = smtpSender({ host: '127.0.0.1', port: 1, from: 'desk@trisula.test', timeoutMs: 750 });
-  await assert.rejects(send({ to: 'a@trisula.test', subject: 'x', body: 'y' }));
+  const send = smtpSender({ host: '127.0.0.1', port: 1, from: 'desk@folio.test', timeoutMs: 750 });
+  await assert.rejects(send({ to: 'a@folio.test', subject: 'x', body: 'y' }));
 });

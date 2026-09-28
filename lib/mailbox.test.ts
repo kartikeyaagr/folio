@@ -18,7 +18,7 @@ import {
 } from './mailbox.ts';
 import type { SmtpConfig } from './notify.ts';
 
-const DB = `trisula_mbx_${process.pid}`;
+const DB = `folio_mbx_${process.pid}`;
 const ME = 'u1';
 const PASSWORD = 'the-mailbox-password-nobody-should-see';
 

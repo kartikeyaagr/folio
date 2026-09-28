@@ -1,18 +1,18 @@
 [Unit]
 # One template for every tsx job. %i is the filename under jobs/ without its extension, so
-# `systemctl start trisula-job@ingest-eod` runs jobs/ingest-eod.ts.
-Description=Trisula job %i
+# `systemctl start folio-job@ingest-eod` runs jobs/ingest-eod.ts.
+Description=Folio job %i
 After=postgresql.service
-OnFailure=trisula-alert@%n.service
+OnFailure=folio-alert@%n.service
 
 [Service]
 Type=oneshot
 # Without this a hung socket holds the unit in "activating" forever: it never fails, so
 # OnFailure= never fires and the job simply never runs again.
 TimeoutStartSec=30min
-User=trisula
-WorkingDirectory=/srv/trisula
-EnvironmentFile=/etc/trisula/trisula.env
+User=folio
+WorkingDirectory=/srv/folio
+EnvironmentFile=/etc/folio/folio.env
 ExecStart=/usr/bin/pnpm exec tsx jobs/%i.ts
 
 # Postgres over a unix socket, so it needs no TCP listener.
@@ -27,7 +27,7 @@ ProtectHome=yes
 ProtectKernelTunables=yes
 ProtectControlGroups=yes
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
-ReadWritePaths=/var/lib/trisula
+ReadWritePaths=/var/lib/folio
 
 StandardOutput=journal
 StandardError=journal

@@ -219,8 +219,8 @@ export function Rail({
   const active = activeHub(usePathname() ?? '/');
   return (
     <nav className="rail" aria-label="Hubs">
-      <Link href="/" className="rail-brand" title="Trisula">
-        T
+      <Link href="/" className="rail-brand" title="Folio">
+        F
       </Link>
       {HUBS.map((hub) => {
         const badge = hub.key === 'desk' ? badges.desk : hub.key === 'agents' ? badges.agents : 0;

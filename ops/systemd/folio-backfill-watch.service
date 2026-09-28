@@ -1,17 +1,17 @@
 [Unit]
 # Fills a name in the moment somebody clicks Follow.
 #
-# `trisula-backfill-company.timer` is still the drainer and is still what guarantees the work
+# `folio-backfill-company.timer` is still the drainer and is still what guarantees the work
 # happens: a NOTIFY with nobody listening is discarded, and this unit being down is exactly the
 # state where that matters. This removes the wait, it does not replace the queue — which is why
 # both are enabled and why the watcher drains the whole queue on every wake rather than trusting
 # the symbol in the payload.
 #
-# Not a `trisula-job@` instance: that template is Type=oneshot with a 30-minute TimeoutStartSec,
+# Not a `folio-job@` instance: that template is Type=oneshot with a 30-minute TimeoutStartSec,
 # and this process is meant to stay up.
-Description=Trisula backfill watcher
+Description=Folio backfill watcher
 After=postgresql.service
-OnFailure=trisula-alert@%n.service
+OnFailure=folio-alert@%n.service
 
 # These belong in [Unit], and sat in [Service] until 21-Sep-2026 where systemd ignores them —
 # they moved sections in v229 and the old placement is silently accepted. So the fix written for
@@ -24,9 +24,9 @@ StartLimitBurst=10
 
 [Service]
 Type=simple
-User=trisula
-WorkingDirectory=/srv/trisula
-EnvironmentFile=/etc/trisula/trisula.env
+User=folio
+WorkingDirectory=/srv/folio
+EnvironmentFile=/etc/folio/folio.env
 ExecStart=/usr/bin/pnpm exec tsx jobs/backfill-company.ts --watch
 
 # A watcher that exits on a bad NSE ten minutes is a watcher that is down when the next name is
@@ -37,7 +37,7 @@ RestartSec=10
 # The rate limit that makes the above reachable is StartLimitIntervalSec/StartLimitBurst, and it
 # is in [Unit] at the top of this file, not here. Without it RestartSec=10 can never exceed
 # systemd's default burst, so the unit never reaches `failed` and OnFailure= never fires — the
-# trap §2.6 of the readiness audit found on trisula-web.service.
+# trap §2.6 of the readiness audit found on folio-web.service.
 
 # Postgres over a unix socket, so it needs no TCP listener.
 Environment=PGHOST=/var/run/postgresql
@@ -51,7 +51,7 @@ ProtectHome=yes
 ProtectKernelTunables=yes
 ProtectControlGroups=yes
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
-ReadWritePaths=/var/lib/trisula
+ReadWritePaths=/var/lib/folio
 
 StandardOutput=journal
 StandardError=journal

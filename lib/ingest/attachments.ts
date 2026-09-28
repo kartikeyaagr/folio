@@ -25,7 +25,7 @@ import { serviceTxn } from '../db.ts';
  * the process was started, so `pnpm dev` wrote imported files into the repo root.
  */
 export const attachmentDir = (): string =>
-  process.env['ATTACHMENT_DIR'] || '/var/lib/trisula/attachments';
+  process.env['ATTACHMENT_DIR'] || '/var/lib/folio/attachments';
 
 /**
  * Fanned out by the first two hex characters. One flat directory of tens of thousands of files is

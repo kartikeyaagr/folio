@@ -78,7 +78,7 @@ export async function followCompany(form: FormData): Promise<void> {
     // happened to catch — not the company's history.
     //
     // It used to name `backfill-filings.ts` for a person to type. `0035` built the queue precisely
-    // to remove that sentence, and `trisula-backfill-company.timer` drains it every ten minutes, so
+    // to remove that sentence, and `folio-backfill-company.timer` drains it every ten minutes, so
     // the instruction had been wrong since the unit shipped — and it named the narrower job, which
     // fetches announcements and none of the results, documents, actions, shareholding or prices the
     // name is also owed. The name is in the queue the moment this row exists; the table says where

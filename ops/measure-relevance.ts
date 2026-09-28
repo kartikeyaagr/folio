@@ -17,7 +17,7 @@
  *      that file — its prose (an anchor sentence per question) is for people, not a parser, and a
  *      parser brittle enough to break on prose edits would fail exactly when the desk is fixing
  *      something.
- *   2. DATABASE_URL=postgres:///trisula_v3_dev EMBED_MODEL_DIR=.models/bge-small-en-v1.5 \
+ *   2. DATABASE_URL=postgres:///folio_dev EMBED_MODEL_DIR=.models/bge-small-en-v1.5 \
  *        pnpm exec tsx ops/measure-relevance.ts
  *
  * The printed snippet is what "genuinely relevant" is judged against — read it, don't just read

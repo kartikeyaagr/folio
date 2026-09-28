@@ -5,7 +5,7 @@ import { readTxn, serviceTxn } from '../db.ts';
 import { parseBhavcopy, storePrices, UnreadableBhavcopy, unzipSingle } from './bhavcopy.ts';
 import { createTestDatabase, dropTestDatabase } from '../../db/testing.ts';
 
-const DB = `trisula_bhav_${process.pid}`;
+const DB = `folio_bhav_${process.pid}`;
 
 // Shaped like the real UDiFF file, including a Sovereign Gold Bond row and an SME row, because
 // both are in the live file and neither is a followed equity.

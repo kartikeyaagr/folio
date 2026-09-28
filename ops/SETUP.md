@@ -1,6 +1,6 @@
 # Setting up the VM
 
-Everything Trisula needs on one box: Postgres, the web app, 19 scheduled jobs, and encrypted
+Everything Folio needs on one box: Postgres, the web app, 19 scheduled jobs, and encrypted
 backups going off-site. Written to be followed top to bottom in one sitting; expect about an hour,
 most of it waiting for installs.
 
@@ -10,6 +10,11 @@ are **not** independent: §10 works by pinning an Anthropic-side rule to this in
 role ARN and attaching a token-minting policy to that same role. Rebuild the box under a different
 role, or rename the one it has, and the agents stop authenticating — with a `401` that says nothing
 about roles. §10 is the only place that dependency is written down.
+
+**AWS still says `trisula`.** The system was called Trisula until 28-Sep-2026. The key pair,
+security group, bucket, instance role and its policies kept that name, because IAM roles and
+buckets cannot be renamed and the role is the one §10 pins. Everything on the box says `folio`. A
+box set up before the rename is moved across once, by §15.
 
 Before you start you need: an AWS account, a domain or Tailscale, and a password manager you trust
 with one secret that must never touch the server.
@@ -96,8 +101,8 @@ later.
 
 **Installing the package is not enough: the extension has to be created by `postgres`, in
 `template1`.** pgvector is not a *trusted* extension — its control file has no `trusted = true` —
-so only a superuser can `CREATE EXTENSION vector`, and `trisula` is deliberately not one. Created in
-`template1`, every database made after it inherits the extension: `trisula` itself, so migration
+so only a superuser can `CREATE EXTENSION vector`, and `folio` is deliberately not one. Created in
+`template1`, every database made after it inherits the extension: `folio` itself, so migration
 0040's `CREATE EXTENSION IF NOT EXISTS` finds it and moves on, and every database `ops/restore.sh`
 and the weekly drill create, which is the only way a backup can be restored at all (`ops/backup.sh`
 leaves the extension out of the dump for this reason). Until 25-Sep-2026 this check ran in the
@@ -113,9 +118,9 @@ through `/var/run/postgresql`. The package's default `listen_addresses = 'localh
 `127.0.0.1:5432`, which is loopback and unreachable from off the box; never widen it.
 
 ```bash
-sudo -u postgres createuser --createdb trisula
-sudo -u postgres createdb --owner=trisula trisula
-sudo -u postgres psql -c "ALTER DATABASE trisula SET timezone = 'Asia/Kolkata'"
+sudo -u postgres createuser --createdb folio
+sudo -u postgres createdb --owner=folio folio
+sudo -u postgres psql -c "ALTER DATABASE folio SET timezone = 'Asia/Kolkata'"
 ```
 
 **The database's timezone is not optional either, and `TZ` on the units does not set it.** `initdb`
@@ -127,11 +132,11 @@ the first box on 09-Sep-2026 and was missing from here until 25-Sep; `pnpm prefl
 ## 5. The application user and code
 
 ```bash
-# NOT --create-home: it fills /srv/trisula from /etc/skel, and `git clone` into a
+# NOT --create-home: it fills /srv/folio from /etc/skel, and `git clone` into a
 # non-empty directory is a fatal error. The clone needs the directory empty.
-sudo useradd --system --home-dir /srv/trisula --shell /bin/bash trisula
-sudo mkdir -p /srv/trisula /var/lib/trisula/{backups,attachments} /etc/trisula
-sudo chown -R trisula:trisula /srv/trisula /var/lib/trisula
+sudo useradd --system --home-dir /srv/folio --shell /bin/bash folio
+sudo mkdir -p /srv/folio /var/lib/folio/{backups,attachments} /etc/folio
+sudo chown -R folio:folio /srv/folio /var/lib/folio
 ```
 
 ### The embedding model
@@ -139,8 +144,8 @@ sudo chown -R trisula:trisula /srv/trisula /var/lib/trisula
 The agents' retrieval runs a local model; nothing is sent to a vendor. Two files, ~130MB:
 
 ```bash
-sudo mkdir -p /var/lib/trisula/models/bge-small-en-v1.5
-cd /var/lib/trisula/models/bge-small-en-v1.5
+sudo mkdir -p /var/lib/folio/models/bge-small-en-v1.5
+cd /var/lib/folio/models/bge-small-en-v1.5
 
 # Pinned to a commit, not to `main`. `/resolve/main` is a moving reference — the repo owner can
 # push to it whenever — and a model that moves is every vector in `chunks` needing a rebuild.
@@ -159,7 +164,7 @@ sudo curl -fsSL -o tokenizer.json "$base/tokenizer.json"  || echo "tokenizer.jso
 [ "$(wc -c <model.onnx)" = 133093490 ] && echo "model.onnx: OK" || echo "model.onnx: FAILED (wrong size)"
 echo 'd241a60d5e8f04cc1b2b3e9ef7a4921b27bf526d9f6050ab90f9267a1f9e5c66  tokenizer.json' | sha256sum -c -
 
-sudo chown -R trisula:trisula /var/lib/trisula/models
+sudo chown -R folio:folio /var/lib/folio/models
 ```
 
 Not vendored in the repo: 130MB of binary in git costs every clone forever, and this file never
@@ -171,9 +176,9 @@ reaches this one repo and cannot write to it. Keep it outside the repo directory
 the same non-empty-target problem.
 
 ```bash
-sudo ssh-keygen -t ed25519 -f /etc/trisula/deploy_key -N "" -C "trisula-vm"
-sudo chown trisula:trisula /etc/trisula/deploy_key /etc/trisula/deploy_key.pub
-cat /etc/trisula/deploy_key.pub
+sudo ssh-keygen -t ed25519 -f /etc/folio/deploy_key -N "" -C "folio-vm"
+sudo chown folio:folio /etc/folio/deploy_key /etc/folio/deploy_key.pub
+cat /etc/folio/deploy_key.pub
 ```
 
 Add that public key to the repo under **Settings → Deploy keys → Add deploy key**, with *Allow
@@ -181,32 +186,32 @@ write access* left unchecked. A personal access token in the clone URL also work
 grants everything the token can reach, and it persists in `git remote -v` and in shell history.
 
 ```bash
-export GSC='ssh -i /etc/trisula/deploy_key -o IdentitiesOnly=yes'
-sudo -u trisula GIT_SSH_COMMAND="$GSC" \
-  git clone git@github.com:kartikeyaagr/trisula-v3.git /srv/trisula
+export GSC='ssh -i /etc/folio/deploy_key -o IdentitiesOnly=yes'
+sudo -u folio GIT_SSH_COMMAND="$GSC" \
+  git clone git@github.com:kartikeyaagr/folio.git /srv/folio
 
 # Persist it, so `git pull` on later deploys uses the same key.
-sudo -u trisula git -C /srv/trisula config core.sshCommand "$GSC"
+sudo -u folio git -C /srv/folio config core.sshCommand "$GSC"
 
-cd /srv/trisula
-sudo -u trisula pnpm install --frozen-lockfile
+cd /srv/folio
+sudo -u folio pnpm install --frozen-lockfile
 ```
 
 ## 6. Environment
 
 ```bash
-sudo tee /etc/trisula/trisula.env >/dev/null <<'EOF'
-DATABASE_URL=postgres:///trisula
+sudo tee /etc/folio/folio.env >/dev/null <<'EOF'
+DATABASE_URL=postgres:///folio
 TZ=Asia/Kolkata
 
 # Where this box is reached. `app/logout/route.ts` redirects here after signing out and falls back
 # to http://localhost:3100 when it is unset — which is correct on a laptop and sends everybody to a
 # dead tab on the VM. Under Tailscale (§8a) this is the MagicDNS name.
-APP_URL=https://trisula.<your-tailnet>.ts.net
+APP_URL=https://folio.<your-tailnet>.ts.net
 
 # Backups — the PUBLIC half only. See §7.
 BACKUP_AGE_RECIPIENT=
-BACKUP_DIR=/var/lib/trisula/backups
+BACKUP_DIR=/var/lib/folio/backups
 BACKUP_S3_BUCKET=
 BACKUP_S3_ENDPOINT=
 
@@ -217,7 +222,7 @@ BACKUP_S3_ENDPOINT=
 # the same private network usually needs neither.
 SMTP_HOST=
 SMTP_PORT=587
-SMTP_FROM=trisula@yourdomain
+SMTP_FROM=folio@yourdomain
 
 # The dead man's switch. `jobs/heartbeat.ts` POSTs here every fifteen minutes, and ONLY when
 # Postgres answers — so a database outage stops the ping rather than reporting through it. The
@@ -250,7 +255,7 @@ MAILBOX_KEY=
 # A plain key is what this box ships with, because federation (§10) cannot be completed until an
 # Anthropic organization with a payment method exists, and until one does the agents do not run at
 # all. It is a secret on disk — so is SMTP_PASSWORD above, and so is MAILBOX_KEY — and
-# this file is 640 root:trisula precisely so that it can hold them. §10 is the upgrade path and
+# this file is 640 root:folio precisely so that it can hold them. §10 is the upgrade path and
 # moving to it is one line here plus one timer.
 #
 # Left blank rather than commented, unlike the federation block below, and the difference is not
@@ -272,14 +277,14 @@ ANTHROPIC_API_KEY=
 #ANTHROPIC_FEDERATION_RULE_ID=
 #ANTHROPIC_ORGANIZATION_ID=
 #ANTHROPIC_SERVICE_ACCOUNT_ID=
-#ANTHROPIC_IDENTITY_TOKEN_FILE=/run/trisula/identity-token
+#ANTHROPIC_IDENTITY_TOKEN_FILE=/run/folio/identity-token
 #ANTHROPIC_WORKSPACE_ID=
 EOF
-sudo chown root:trisula /etc/trisula/trisula.env
-sudo chmod 640 /etc/trisula/trisula.env
+sudo chown root:folio /etc/folio/folio.env
+sudo chmod 640 /etc/folio/folio.env
 ```
 
-`640 root:trisula` means the app can read it and cannot rewrite it.
+`640 root:folio` means the app can read it and cannot rewrite it.
 
 ## 7. Backup keys — the one step to get right
 
@@ -291,15 +296,15 @@ compatible with keeping the fund's data on your own box.
 
 ```bash
 # On your laptop:
-age-keygen -o trisula-backup.key
-age-keygen -y trisula-backup.key      # prints the public key, age1...
+age-keygen -o folio-backup.key
+age-keygen -y folio-backup.key      # prints the public key, age1...
 ```
 
 Then:
 
-1. Put `trisula-backup.key` (the **private** half) in your password manager. Not on the server, not
+1. Put `folio-backup.key` (the **private** half) in your password manager. Not on the server, not
    in the repo, not in a note. Without it every backup is unreadable ciphertext forever.
-2. Put the **public** key in `BACKUP_AGE_RECIPIENT` in `/etc/trisula/trisula.env`.
+2. Put the **public** key in `BACKUP_AGE_RECIPIENT` in `/etc/folio/folio.env`.
 3. Delete the private key file from your laptop's disk once it is in the password manager.
 
 > A backup you cannot decrypt is not a backup. Test the restore path from wherever that key lives,
@@ -312,13 +317,13 @@ nothing else — no keys on disk. Set `BACKUP_S3_BUCKET` in the env file.
 ## 8. The web app
 
 ```bash
-cd /srv/trisula
+cd /srv/folio
 pnpm install --frozen-lockfile
 pnpm build
 
-sudo cp ops/systemd/trisula-web.service /etc/systemd/system/
+sudo cp ops/systemd/folio-web.service /etc/systemd/system/
 sudo systemctl daemon-reload
-sudo systemctl enable --now trisula-web
+sudo systemctl enable --now folio-web
 curl -sS localhost:3100/api/health
 ```
 
@@ -350,7 +355,7 @@ curl -fsSL https://tailscale.com/install.sh | sh
 
 # --ssh lets you reach this box without the EC2 key pair, which means §1's security-group rule for
 # port 22 can later be removed entirely. Do that only once you have signed in over Tailscale once.
-sudo tailscale up --ssh --hostname=trisula
+sudo tailscale up --ssh --hostname=folio
 ```
 
 Then put the app on the tailnet, with a certificate Tailscale issues and renews itself:
@@ -359,7 +364,7 @@ Then put the app on the tailnet, with a certificate Tailscale issues and renews 
 # MagicDNS and HTTPS certificates both have to be on for the tailnet, in the admin console under
 # DNS. `tailscale serve` fails with a clear message if they are not.
 sudo tailscale serve --bg 3100
-tailscale serve status        # prints the https://trisula.<tailnet>.ts.net URL
+tailscale serve status        # prints the https://folio.<tailnet>.ts.net URL
 ```
 
 That URL is what goes in `APP_URL` in §6. It is also what the three of you open — no VPN client
@@ -373,56 +378,56 @@ somebody else out of it.
 Confirm from a second machine on the tailnet, not from the box:
 
 ```bash
-curl -sS https://trisula.<tailnet>.ts.net/api/health      # {"ok":true}
+curl -sS https://folio.<tailnet>.ts.net/api/health      # {"ok":true}
 ```
 
 ## 9. Schedules
 
 ```bash
-cd /srv/trisula
+cd /srv/folio
 sudo cp ops/systemd/*.service ops/systemd/*.timer /etc/systemd/system/
 sudo systemctl daemon-reload
 
 sudo systemctl enable --now \
-  trisula-refresh-securities.timer \
-  trisula-ingest-intraday.timer \
-  trisula-ingest-eod.timer \
-  trisula-ingest-fundamentals.timer \
-  trisula-ingest-calendar.timer \
-  trisula-ingest-insider.timer \
-  trisula-ingest-shareholding.timer \
-  trisula-ingest-corporate-actions.timer \
-  trisula-news-poll.timer \
-  trisula-news-gate.timer \
-  trisula-agents.timer \
-  trisula-index-content.timer \
-  trisula-backfill-company.timer \
-  trisula-distil-rules.timer \
-  trisula-alerts.timer \
-  trisula-backup.timer \
-  trisula-backup-verify.timer \
-  trisula-heartbeat.timer
+  folio-refresh-securities.timer \
+  folio-ingest-intraday.timer \
+  folio-ingest-eod.timer \
+  folio-ingest-fundamentals.timer \
+  folio-ingest-calendar.timer \
+  folio-ingest-insider.timer \
+  folio-ingest-shareholding.timer \
+  folio-ingest-corporate-actions.timer \
+  folio-news-poll.timer \
+  folio-news-gate.timer \
+  folio-agents.timer \
+  folio-index-content.timer \
+  folio-backfill-company.timer \
+  folio-distil-rules.timer \
+  folio-alerts.timer \
+  folio-backup.timer \
+  folio-backup-verify.timer \
+  folio-heartbeat.timer
 
-# Not a timer: a long-running watcher. `addCompany` announces on `trisula_backfill` inside the
+# Not a timer: a long-running watcher. `addCompany` announces on `folio_backfill` inside the
 # transaction that inserts the row, so a name followed at 10:02 starts fetching at 10:02 rather
 # than at 10:10. The timer above stays enabled and is still the guarantee — a NOTIFY with nobody
 # listening is discarded, and this unit being down is exactly when that happens.
-sudo systemctl enable --now trisula-backfill-watch.service
+sudo systemctl enable --now folio-backfill-watch.service
 
-systemctl list-timers 'trisula-*'
-systemctl status trisula-backfill-watch
+systemctl list-timers 'folio-*'
+systemctl status folio-backfill-watch
 ```
 
 One unit is not a timer and is enabled separately, because it stays up:
 
 ```bash
-sudo systemctl enable --now trisula-index-watch.service
-systemctl status trisula-index-watch
+sudo systemctl enable --now folio-index-watch.service
+systemctl status folio-index-watch
 ```
 
 It listens on the `trisula_content` channel that migration `0052` makes `documents`,
 `document_versions` and `attachments` announce on, and indexes within seconds of a save rather than
-within ten minutes of one. **It does not replace `trisula-index-content.timer` and enabling it is
+within ten minutes of one. **It does not replace `folio-index-content.timer` and enabling it is
 not a reason to disable that.** A `NOTIFY` with no listener attached is dropped and nothing replays
 it, so the watcher is a latency improvement and never the guarantee; the durable queue is
 `sources.indexed_at IS NULL` and the timer is what promises it drains. Skipping the watcher costs
@@ -448,7 +453,7 @@ person gets one envelope a day and never more.
 
 The fund's mail is on **Hostinger**, which speaks SMTP with STARTTLS on 587 and AUTH LOGIN — which
 is exactly what `smtpSender` in `lib/notify.ts` already does, so there is nothing to build. Five
-variables in `/etc/trisula/trisula.env`:
+variables in `/etc/folio/folio.env`:
 
 ```bash
 SMTP_HOST=smtp.hostinger.com
@@ -469,9 +474,9 @@ waiting. Nothing is lost by leaving this unset; mail simply starts flowing the d
 Check it end to end without waiting for 07:00:
 
 ```bash
-sudo -u trisula bash -c 'set -a; . /etc/trisula/trisula.env; set +a; \
+sudo -u folio bash -c 'set -a; . /etc/folio/folio.env; set +a; \
   pnpm exec tsx jobs/agents.ts 1'
-psql -d trisula -c "select kind, recipient, sent_at, attempts, last_error from notification_outbox
+psql -d folio -c "select kind, recipient, sent_at, attempts, last_error from notification_outbox
                      order by queued_at desc limit 10"
 ```
 
@@ -490,7 +495,7 @@ neither of which can be. `lib/mailbox.ts` keeps the exception narrow, and the ke
 lives here:
 
 ```bash
-MAILBOX_KEY=$(openssl rand -base64 32)    # 32 bytes, base64. Put the value in trisula.env.
+MAILBOX_KEY=$(openssl rand -base64 32)    # 32 bytes, base64. Put the value in folio.env.
 ```
 
 Four things worth knowing before you set it:
@@ -498,7 +503,7 @@ Four things worth knowing before you set it:
 - **Without it, linking refuses.** There is no path that stores a mailbox password in the clear.
   The feature is simply unavailable until the key exists, which is the correct failure.
 - **It is not in a database backup.** `ops/backup.sh` dumps Postgres; the key is in
-  `/etc/trisula/trisula.env`. Restoring a dump onto a box with a different key leaves every stored
+  `/etc/folio/folio.env`. Restoring a dump onto a box with a different key leaves every stored
   mailbox unopenable — which is the point, and why the env file belongs in whatever holds
   `BACKUP_AGE_RECIPIENT`.
 - **Rotating it orphans every linked mailbox.** They are not lost silently: `open()` raises,
@@ -529,8 +534,8 @@ So the order is: ship on the key, come back here. What the upgrade buys is real 
 back for — no model secret on the box, so a copy of the disk is not a copy of the credential — but
 it buys nothing on a box that is not running.
 
-**The key is not a new class of secret on this box.** `/etc/trisula/trisula.env` is `640
-root:trisula` and already holds `SMTP_PASSWORD`, `MAILBOX_KEY` and `BACKUP_AGE_RECIPIENT`; the
+**The key is not a new class of secret on this box.** `/etc/folio/folio.env` is `640
+root:folio` and already holds `SMTP_PASSWORD`, `MAILBOX_KEY` and `BACKUP_AGE_RECIPIENT`; the
 difference federation makes is narrower than "secrets on disk or not" — it is one fewer, and the
 one that bills. Moving is one line in §6 plus one timer in step 4, and `client.ts` passes
 `apiKey: null` explicitly in the federation branch so the old line cannot shadow the new one while
@@ -636,22 +641,22 @@ The SDK refreshes the *access* token itself. It cannot re-mint the *identity* to
 the timer is for. `/run`, not `/etc` — tmpfs, so the token never reaches the disk.
 
 ```bash
-sudo cp ops/systemd/trisula-identity-token.{service,timer} /etc/systemd/system/
+sudo cp ops/systemd/folio-identity-token.{service,timer} /etc/systemd/system/
 sudo systemctl daemon-reload
-sudo systemctl enable --now trisula-identity-token.timer
-sudo systemctl start trisula-identity-token.service     # do not wait for the first tick
-sudo ls -l /run/trisula/identity-token                  # expect 0640 root:trisula
+sudo systemctl enable --now folio-identity-token.timer
+sudo systemctl start folio-identity-token.service     # do not wait for the first tick
+sudo ls -l /run/folio/identity-token                  # expect 0640 root:folio
 ```
 
 ### 5. Tell the box
 
-In `/etc/trisula/trisula.env`:
+In `/etc/folio/folio.env`:
 
 ```
 ANTHROPIC_FEDERATION_RULE_ID=fdrl_…
 ANTHROPIC_ORGANIZATION_ID=…                       # the org UUID
 ANTHROPIC_SERVICE_ACCOUNT_ID=svac_…
-ANTHROPIC_IDENTITY_TOKEN_FILE=/run/trisula/identity-token
+ANTHROPIC_IDENTITY_TOKEN_FILE=/run/folio/identity-token
 ANTHROPIC_WORKSPACE_ID=wrkspc_…                   # see below
 ```
 
@@ -701,11 +706,11 @@ this runbook.
 Order matters — each step needs the one before it.
 
 ```bash
-cd /srv/trisula
-sudo -u trisula bash -c 'set -a; . /etc/trisula/trisula.env; set +a; pnpm migrate'
+cd /srv/folio
+sudo -u folio bash -c 'set -a; . /etc/folio/folio.env; set +a; pnpm migrate'
 
 # The security master. Nothing can add a company before this.
-sudo -u trisula bash -c 'set -a; . /etc/trisula/trisula.env; set +a; \
+sudo -u folio bash -c 'set -a; . /etc/folio/folio.env; set +a; \
   pnpm exec tsx jobs/refresh-securities.ts'
 
 # The FIRST account. /signup only records a request, and --email/--name is the bootstrap: it has to
@@ -716,7 +721,7 @@ sudo -u trisula bash -c 'set -a; . /etc/trisula/trisula.env; set +a; \
 # The holder changes that password from the avatar menu, and redeems a code at /reset if they lose
 # it — the code plus the address sets a new password and signs out every session. Somebody who has
 # lost the password AND all eight codes still needs a person with shell access to re-issue them.
-sudo -u trisula bash -c 'set -a; . /etc/trisula/trisula.env; set +a; \
+sudo -u folio bash -c 'set -a; . /etc/folio/folio.env; set +a; \
   pnpm exec tsx jobs/seed-user.ts --email you@trisulacapital.com --name "Your Name"'
 
 # Make that first account an admin. NOT optional, and it is a separate step because `seed-user.ts`
@@ -726,18 +731,18 @@ sudo -u trisula bash -c 'set -a; . /etc/trisula/trisula.env; set +a; \
 # CAN EVER BE CREATED THROUGH THE UI. It also cannot toggle an agent or a feed, or requeue a failed
 # run. Nothing hints at it either: components/Rail.tsx relabels the hub "Review" for non-admins,
 # so the panel does not appear to exist rather than appearing to be locked.
-sudo -u trisula bash -c 'set -a; . /etc/trisula/trisula.env; set +a; \
+sudo -u folio bash -c 'set -a; . /etc/folio/folio.env; set +a; \
   pnpm exec tsx jobs/set-admin.ts --email you@trisulacapital.com'
 
 # Confirm. `admin` in the left column is the thing to see.
-sudo -u trisula bash -c 'set -a; . /etc/trisula/trisula.env; set +a; \
+sudo -u folio bash -c 'set -a; . /etc/folio/folio.env; set +a; \
   pnpm exec tsx jobs/set-admin.ts --list'
 ```
 
 Then check the box against this runbook before you trust it:
 
 ```bash
-sudo -u trisula bash -c 'set -a; . /etc/trisula/trisula.env; set +a; pnpm preflight'
+sudo -u folio bash -c 'set -a; . /etc/folio/folio.env; set +a; pnpm preflight'
 ```
 
 It reads and changes nothing, exits non-zero on anything wrong, and separates what it checked and
@@ -751,7 +756,7 @@ Then add the names you follow, and let the timers fill in filings, prices and re
 ```bash
 # The restore drill: dump, encrypt, decrypt, restore to a scratch database, compare row counts
 # and per-table content hashes.
-sudo -u trisula /srv/trisula/ops/verify-backup.sh trisula
+sudo -u folio /srv/folio/ops/verify-backup.sh folio
 ```
 
 Expect `OK: N tables, M rows, content identical after a full round trip`. **If this does not pass,
@@ -763,21 +768,21 @@ Then, separately and by hand, from wherever the private key lives:
 # On your laptop, with the real key. Proves the actual archive is readable, which the on-box
 # drill deliberately cannot: it uses a throwaway key precisely because the real one is not there.
 aws s3 cp s3://<bucket>/<latest>.dump.age .
-./ops/restore.sh <latest>.dump.age scratch_check ~/trisula-backup.key
+./ops/restore.sh <latest>.dump.age scratch_check ~/folio-backup.key
 ```
 
 `restore.sh` refuses a database that already exists — a wrong target name costs the most at exactly
 the moment you are least able to afford it. If `scratch_check` is left over from the last time you
 did this, either drop it or pass `--replace` before the archive name, which drops it for you.
 
-Then sign in, from a second machine on the tailnet, at the `https://trisula.<tailnet>.ts.net` URL.
+Then sign in, from a second machine on the tailnet, at the `https://folio.<tailnet>.ts.net` URL.
 Nothing short of this proves the path a person takes, and three things can fail only here:
 
 - **The session cookie is `__Host-` and `Secure` in production.** Over anything but HTTPS the
   browser drops it, and sign-in silently loops back to `/login`.
 - **Login is a server action, and Next refuses every server action whose `Origin` does not match
   the `Host` or `X-Forwarded-Host` it receives.** `tailscale serve` is the proxy in between. If
-  sign-in fails with "Invalid Server Actions request" in `journalctl -u trisula-web`, the proxy
+  sign-in fails with "Invalid Server Actions request" in `journalctl -u folio-web`, the proxy
   is not passing the host through. Nothing on a laptop can check this.
 - **Import a PDF over 10 MB** from any company page, and see it land as a document. Next refuses
   an action body over 1 MB and truncates any body over 10 MB that passes through the middleware,
@@ -785,7 +790,7 @@ Nothing short of this proves the path a person takes, and three things can fail 
   journal says `Body exceeded` or `Request body exceeded 10MB`.
 
 ```bash
-curl -sI https://trisula.<tailnet>.ts.net/login | grep -i -E 'strict-transport|content-security'
+curl -sI https://folio.<tailnet>.ts.net/login | grep -i -E 'strict-transport|content-security'
 ```
 
 Both headers should be present. `Strict-Transport-Security` is sent only by a production build.
@@ -793,9 +798,9 @@ Both headers should be present. `Strict-Transport-Security` is sent only by a pr
 ## 13. Day-to-day
 
 ```bash
-systemctl list-timers 'trisula-*'              # what runs when
-journalctl -u trisula-job@ingest-eod -n 50     # what one job did
-sudo -u trisula psql -d trisula -c \
+systemctl list-timers 'folio-*'              # what runs when
+journalctl -u folio-job@ingest-eod -n 50     # what one job did
+sudo -u folio psql -d folio -c \
   "SELECT source, status, items, detail FROM ingestion_runs ORDER BY id DESC LIMIT 10"
 pnpm exec tsx jobs/requeue.ts                  # what failed, and put it back
 ```
@@ -812,31 +817,31 @@ Every step is safe to repeat, so run all of them; skipping the one that mattered
 up serving old code against a new schema.
 
 ```bash
-cd /srv/trisula
-sudo -u trisula git pull
+cd /srv/folio
+sudo -u folio git pull
 
 # Only if package.json changed, but harmless otherwise.
-sudo -u trisula pnpm install --frozen-lockfile
+sudo -u folio pnpm install --frozen-lockfile
 
 # Migrations first, then the build. They are one transaction each and checksummed, so a re-run
 # applies nothing and a tampered file refuses rather than running twice.
-sudo -u trisula bash -c 'set -a; . /etc/trisula/trisula.env; set +a; pnpm migrate'
-sudo -u trisula pnpm build
+sudo -u folio bash -c 'set -a; . /etc/folio/folio.env; set +a; pnpm migrate'
+sudo -u folio pnpm build
 
 # New or changed units. Copying is cheap; working out which changed is not.
 sudo cp ops/systemd/*.service ops/systemd/*.timer /etc/systemd/system/
 sudo systemctl daemon-reload
 
-sudo systemctl restart trisula-web
+sudo systemctl restart folio-web
 curl -sS localhost:3100/api/health
 
 # Everything §4-§11 asked for, checked rather than remembered. Exits 1 on anything wrong, 2 on
 # anything it could not check.
-sudo -u trisula bash -c 'set -a; . /etc/trisula/trisula.env; set +a; pnpm preflight'
+sudo -u folio bash -c 'set -a; . /etc/folio/folio.env; set +a; pnpm preflight'
 ```
 
 **A new timer is not enabled by copying it.** `systemctl enable --now <name>.timer` for anything
-added since the last deploy — §9 lists the full set, and `systemctl list-timers 'trisula-*'`
+added since the last deploy — §9 lists the full set, and `systemctl list-timers 'folio-*'`
 against that list is the check. `pnpm preflight` reads `ops/systemd/` and reports any timer in it
 that is not enabled, which is the same check without the list to keep in step.
 
@@ -852,48 +857,65 @@ operations, and only one of them is cheap.**
 
 ```bash
 # Code only. Safe whenever the schema did not move — which is most deploys.
-cd /srv/trisula
-sudo -u trisula git log --oneline -5          # find the last good commit
-sudo -u trisula git checkout <sha>
-sudo -u trisula pnpm install --frozen-lockfile && sudo -u trisula pnpm build
-sudo systemctl restart trisula-web
+cd /srv/folio
+sudo -u folio git log --oneline -5          # find the last good commit
+sudo -u folio git checkout <sha>
+sudo -u folio pnpm install --frozen-lockfile && sudo -u folio pnpm build
+sudo systemctl restart folio-web
 ```
 
 An older build against a newer schema is usually the safe direction — extra columns are simply
 unread. Not always: a newer migration that added a `NOT NULL` column with no default, a trigger or
 a `CHECK` will refuse the older code's inserts, so read what the migrations since `<sha>` did before
-relying on it. The checkout leaves the repo on a detached HEAD; `sudo -u trisula git checkout main`
+relying on it. The checkout leaves the repo on a detached HEAD; `sudo -u folio git checkout main`
 before the next §14 deploy, or its `git pull` fails.
 
 **If a migration is the thing that is wrong, restore; do not improvise.** §12's drill is the
 rehearsal for exactly this. Restore *beside* production, look at it, then swap names. Never
 `--replace` the live database: `restore.sh` drops the target before it decrypts, so any failure
-after that — a key the `trisula` user cannot read, a missing extension — leaves an empty database
+after that — a key the `folio` user cannot read, a missing extension — leaves an empty database
 where production was.
 
 ```bash
 # 1. Beside production. Nothing is dropped, so a failure here costs nothing. The private key comes
-#    onto the box for this and leaves straight after (§7): `trisula` cannot read your home directory.
-sudo install -o trisula -m 400 ~/trisula-backup.key /tmp/restore.key
-sudo -u trisula /srv/trisula/ops/restore.sh <archive>.dump.age trisula_restored /tmp/restore.key
+#    onto the box for this and leaves straight after (§7): `folio` cannot read your home directory.
+sudo install -o folio -m 400 ~/folio-backup.key /tmp/restore.key
+sudo -u folio /srv/folio/ops/restore.sh <archive>.dump.age folio_restored /tmp/restore.key
 sudo shred -u /tmp/restore.key
 
 # 2. Look before trusting it: the last migration it carries, and a table you know.
-sudo -u trisula psql -d trisula_restored -c 'SELECT max(filename) FROM schema_migrations'
+sudo -u folio psql -d folio_restored -c 'SELECT max(filename) FROM schema_migrations'
 
 # 3. Swap, with everything that writes stopped. The broken database is renamed, not dropped.
-sudo systemctl stop trisula-web 'trisula-*.timer' trisula-index-watch trisula-backfill-watch \
-  'trisula-job@*'
-sudo -u trisula psql -d postgres -c 'ALTER DATABASE trisula RENAME TO trisula_broken' \
-  -c 'ALTER DATABASE trisula_restored RENAME TO trisula'
-sudo systemctl start trisula-web trisula-index-watch trisula-backfill-watch 'trisula-*.timer'
+sudo systemctl stop folio-web 'folio-*.timer' folio-index-watch folio-backfill-watch \
+  'folio-job@*'
+sudo -u folio psql -d postgres -c 'ALTER DATABASE folio RENAME TO folio_broken' \
+  -c 'ALTER DATABASE folio_restored RENAME TO folio'
+sudo systemctl start folio-web folio-index-watch folio-backfill-watch 'folio-*.timer'
 ```
 
-Stop the timers *and* any job already running (`trisula-job@*`): a job that runs mid-swap writes
+Stop the timers *and* any job already running (`folio-job@*`): a job that runs mid-swap writes
 into the wrong database, and the `ingestion_runs` row it leaves makes the gap look like a quiet day
 rather than an outage. `restore.sh` reapplies the database's timezone, which a dump does not carry
 and a rename keeps. `pnpm preflight` afterwards checks it, with everything else. Drop
-`trisula_broken` once the restored database has run a day.
+`folio_broken` once the restored database has run a day.
+
+## 15. Once: a box set up before the rename
+
+The first deploy that carries the rename replaces §14 with this. §14's `cp` would put the `folio-*`
+units in beside the enabled `trisula-*` ones, and both would run.
+
+```bash
+sudo systemctl stop 'trisula-*'          # timers, web, both watchers, any job mid-run
+sudo -u trisula git -C /srv/trisula pull
+sudo bash /srv/trisula/ops/rename-box.sh
+```
+
+It renames the user, the directories, the env file, the database and its role, the Tailscale node
+and `APP_URL`, and the units. Then it installs, migrates, builds, and re-enables exactly the units
+that were enabled before. The header of `ops/rename-box.sh` lists what it leaves alone. It is safe
+to re-run if it stops partway. Afterwards the app answers at `https://folio.<tailnet>.ts.net`, and
+everyone signs in once more, because the session cookie's name changed with the system's.
 
 ---
 
@@ -915,7 +937,7 @@ Genuinely open:
   next person to need it does not have to guess. `pnpm preflight` checks the recipient is
   well-formed and cannot check that it is the right one — only §12's laptop-side restore can, and
   only if somebody can find the key.
-- **A heartbeat URL.** `jobs/heartbeat.ts` and `trisula-heartbeat.timer` exist and ping every
+- **A heartbeat URL.** `jobs/heartbeat.ts` and `folio-heartbeat.timer` exist and ping every
   fifteen minutes; `HEARTBEAT_URL` in §6 is empty, so nothing is listening and nothing would notice
   a dead box. Create a check on healthchecks.io or Better Stack — a free tier covers it — and paste
   its URL in. Set the monitor's grace period above fifteen minutes. `pnpm preflight` reports this
@@ -923,7 +945,7 @@ Genuinely open:
 - **An Anthropic organization and its payment method**, to finish §10. The usage then lands on an
   Anthropic invoice in USD rather than on the AWS India INR bill, and the key leaves the disk.
 - **Three `OnCalendar=` expressions have never been validated on Linux** —
-  `trisula-ingest-fundamentals`, `trisula-news-poll` and `trisula-distil-rules` were rewritten from
+  `folio-ingest-fundamentals`, `folio-news-poll` and `folio-distil-rules` were rewritten from
   `systemd.time(7)` and macOS has no `systemd-analyze` to check them with. First thing to run on
   the box: `systemd-analyze calendar '<expression>'` for each, and compare the next elapse against
   what §9 says it should be.

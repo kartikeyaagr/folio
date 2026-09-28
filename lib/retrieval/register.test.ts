@@ -5,7 +5,7 @@ import { contentHash, registerAll, textFor } from './register.ts';
 import { chunkCells } from './chunk.ts';
 import { createTestDatabase, dropTestDatabase } from '../../db/testing.ts';
 
-const DB = `trisula_reg_${process.pid}`;
+const DB = `folio_reg_${process.pid}`;
 const CO = 'c1'; // Praj Industries Limited — the fund's own name
 const CO2 = 'c2'; // a second followed name, for the news fan-out case
 

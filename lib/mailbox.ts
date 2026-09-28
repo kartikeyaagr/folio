@@ -11,7 +11,7 @@
  *
  *   1. **AES-256-GCM under `MAILBOX_KEY`**, 32 bytes of base64 in the box's environment. Not
  *      pgcrypto — `vector` is this schema's only extension, and a key inside the database next to
- *      the ciphertext is filing, not encryption. `MAILBOX_KEY` lives in `/etc/trisula/trisula.env`
+ *      the ciphertext is filing, not encryption. `MAILBOX_KEY` lives in `/etc/folio/folio.env`
  *      with the other credentials and is not in a backup of the database.
  *   2. **No plaintext fallback.** `seal` throws with `MAILBOX_KEY` unset. A system that stores a
  *      password in the clear when a setting is missing is worse than one that refuses, because
@@ -47,7 +47,7 @@ function key(): Buffer {
   if (!raw) {
     throw new NoMailboxKey(
       'MAILBOX_KEY is not set, so a mailbox password cannot be stored. Generate one with ' +
-        '`openssl rand -base64 32` and put it in /etc/trisula/trisula.env. See ops/SETUP.md §9b.',
+        '`openssl rand -base64 32` and put it in /etc/folio/folio.env. See ops/SETUP.md §9b.',
     );
   }
   const aesKey = Buffer.from(raw, 'base64');
@@ -202,12 +202,12 @@ export async function linkMailbox(
 const defaultProbe = async (cfg: SmtpConfig, to: string): Promise<void> => {
   await smtpSender(cfg)({
     to,
-    subject: 'Trisula — your mailbox is linked',
+    subject: 'Folio — your mailbox is linked',
     body:
       'This is the message that proved it.\n\n' +
       'Your daily update will arrive from this address from tomorrow morning. Nothing reads this ' +
       'mailbox; the password is used only to send you your own digest, and it is stored encrypted.\n\n' +
-      'Trisula',
+      'Folio',
   });
 };
 

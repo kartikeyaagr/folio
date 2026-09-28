@@ -7,7 +7,7 @@ Description=Tell the outside world this box is alive
 # outage within about half an hour, which is the right trade for a box the desk opens twice a day.
 OnCalendar=*:0/15
 Persistent=false
-Unit=trisula-job@heartbeat.service
+Unit=folio-job@heartbeat.service
 
 [Install]
 WantedBy=timers.target

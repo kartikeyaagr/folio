@@ -8,7 +8,7 @@ Description=Financial results XBRL
 # evening at all. The list belongs in the hour field.
 OnCalendar=*-*-* 08,20:15:00 Asia/Kolkata
 Persistent=true
-Unit=trisula-job@ingest-fundamentals.service
+Unit=folio-job@ingest-fundamentals.service
 
 [Install]
 WantedBy=timers.target

@@ -1,6 +1,6 @@
 # API.md
 
-How the parts of Trisula talk to each other and to the outside world. **There is no REST API and
+How the parts of Folio talk to each other and to the outside world. **There is no REST API and
 no public API.** The browser talks to server components and server actions, jobs talk to Postgres,
 and a handful of outbound integrations feed both. Security rules for everything below are in
 SECURITY.md.
@@ -72,7 +72,7 @@ reveals nothing beyond reachable or not.
 ## 4. Jobs
 
 - **Jobs are `tsx` scripts in `jobs/`.** Most run on a systemd timer through
-  `trisula-job@<name>.service` (`ops/systemd/`). `report-failure` is run by `OnFailure=`. The
+  `folio-job@<name>.service` (`ops/systemd/`). `report-failure` is run by `OnFailure=`. The
   operator tools (`seed-user`, `set-admin`, `reset-password`, `requeue`) and the catch-up jobs
   (`ingest-attachments`, `backfill-filings`, `backfill-prices`) are run by hand. Jobs import the
   same `lib/` as the app and never import `app/`.
@@ -81,7 +81,7 @@ reveals nothing beyond reachable or not.
   The rest write their own: `agents`, `alerts`, `distil-rules`, `index-content`,
   `backfill-company`, `ingest-fundamentals`, `news-gate` and `refresh-securities`. `heartbeat`
   writes none, because it must survive the database being what failed.
-- **A failure is reported by the machine.** `OnFailure=trisula-alert@%n` runs
+- **A failure is reported by the machine.** `OnFailure=folio-alert@%n` runs
   `jobs/report-failure.ts`, which queues a notice for the morning digest.
 - **Readers gate on `ingestion_runs`, not on the clock.** `jobs/alerts.ts` evaluates price alerts
   only after today's EOD ingest succeeded. Filing and insider alerts do not depend on prices, so

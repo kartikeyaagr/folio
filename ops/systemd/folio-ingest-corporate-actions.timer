@@ -7,7 +7,7 @@ Description=Bonuses, splits and dividends for followed names
 # which is why the window looks forward a quarter as well as back a month.
 OnCalendar=*-*-* 07:50 Asia/Kolkata
 Persistent=true
-Unit=trisula-job@ingest-corporate-actions.service
+Unit=folio-job@ingest-corporate-actions.service
 
 [Install]
 WantedBy=timers.target

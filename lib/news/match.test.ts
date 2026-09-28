@@ -8,7 +8,7 @@ import {
 import { createTestDatabase, dropTestDatabase } from '../../db/testing.ts';
 
 
-const DB = `trisula_match_${process.pid}`;
+const DB = `folio_match_${process.pid}`;
 const CO = 'c_praj';
 
 before(async () => {

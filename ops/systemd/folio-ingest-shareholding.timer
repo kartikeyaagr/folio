@@ -7,7 +7,7 @@ Description=Quarterly shareholding patterns
 # knowing the date it will arrive.
 OnCalendar=*-*-* 20:30 Asia/Kolkata
 Persistent=true
-Unit=trisula-job@ingest-shareholding.service
+Unit=folio-job@ingest-shareholding.service
 
 [Install]
 WantedBy=timers.target

@@ -18,7 +18,7 @@ import {
 } from './workspace.ts';
 import { createTestDatabase, dropTestDatabase } from '../db/testing.ts';
 
-const DB = `trisula_workspace_${process.pid}`;
+const DB = `folio_workspace_${process.pid}`;
 const CO = 'c1'; // Aeron Composite Limited — one of the two names this path exists for
 const ME = 'p1';
 
@@ -29,7 +29,7 @@ const PDF = Buffer.from('%PDF-1.4\nfake, just needs the magic number for this te
 let attachDir: string;
 
 before(async () => {
-  attachDir = mkdtempSync(join(tmpdir(), 'trisula-workspace-test-'));
+  attachDir = mkdtempSync(join(tmpdir(), 'folio-workspace-test-'));
   process.env['ATTACHMENT_DIR'] = attachDir;
 
   await createTestDatabase(DB);

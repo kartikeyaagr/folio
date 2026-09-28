@@ -14,7 +14,7 @@ import {
 } from './book.ts';
 import { createTestDatabase, dropTestDatabase } from '../db/testing.ts';
 
-const DB = `trisula_book_${process.pid}`;
+const DB = `folio_book_${process.pid}`;
 const ME = 'p1';
 const CO = 'c1';
 

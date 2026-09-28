@@ -13,7 +13,7 @@ Description=Fill in a newly followed name
 # each and nothing else — this is the one queue in the system that is usually empty on purpose.
 OnCalendar=*:0/10
 Persistent=true
-Unit=trisula-job@backfill-company.service
+Unit=folio-job@backfill-company.service
 
 [Install]
 WantedBy=timers.target

@@ -420,6 +420,13 @@
   font-weight: 800;
   font-size: 13px;
 }
+.login-firm {
+  display: block;
+  font-weight: 500;
+  font-size: 12px;
+  letter-spacing: 0;
+  color: var(--muted);
+}
 .login-copy h1 {
   font-family: var(--font);
   font-weight: 500;

@@ -20,12 +20,12 @@ import { readTxn, serviceTxn } from '../db.ts';
 import { clearMissingBytes, fetchAttachments, pathFor } from './attachments.ts';
 import { extractPending } from './extract.ts';
 
-const DB = `trisula_store_${process.pid}`;
+const DB = `folio_store_${process.pid}`;
 
 before(async () => {
-  // Its own store. The default is the VM's /var/lib/trisula/attachments, which is not writable
+  // Its own store. The default is the VM's /var/lib/folio/attachments, which is not writable
   // here — and a test that passes or fails on the ambient environment is not a test.
-  process.env['ATTACHMENT_DIR'] = mkdtempSync(join(tmpdir(), 'trisula-store-'));
+  process.env['ATTACHMENT_DIR'] = mkdtempSync(join(tmpdir(), 'folio-store-'));
   await createTestDatabase(DB);
 });
 

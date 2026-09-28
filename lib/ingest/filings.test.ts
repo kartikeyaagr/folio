@@ -4,7 +4,7 @@ import { readTxn, serviceTxn } from '../db.ts';
 import { linkFilingsForCompany, parseAnnouncements, storeFilings } from './filings.ts';
 import { createTestDatabase, dropTestDatabase } from '../../db/testing.ts';
 
-const DB = `trisula_fil_${process.pid}`;
+const DB = `folio_fil_${process.pid}`;
 
 /**
  * Shaped like the live feed. The SME row deliberately carries `sm_isin: null`, because that is

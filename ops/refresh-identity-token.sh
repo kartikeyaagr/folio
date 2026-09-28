@@ -2,7 +2,7 @@
 #
 # Mint the AWS-signed JWT that the Anthropic SDK exchanges for an access token (SETUP.md §10).
 #
-#   ./ops/refresh-identity-token.sh [path]     # default /run/trisula/identity-token
+#   ./ops/refresh-identity-token.sh [path]     # default /run/folio/identity-token
 #
 # This is the whole reason no model secret lives on this box. The instance role signs a token
 # addressed to Anthropic; the SDK trades it at /v1/oauth/token and refreshes the *access* token by
@@ -12,7 +12,7 @@
 # lived and re-mintable, which is a different kind of thing from the age key or a password.
 set -euo pipefail
 
-OUT="${1:-/run/trisula/identity-token}"
+OUT="${1:-/run/folio/identity-token}"
 AUD="https://api.anthropic.com"
 
 # ES384 rather than RS256: same claims, roughly a fifth shorter on the wire, and both are minted
@@ -29,10 +29,10 @@ case "$TOKEN" in
   *) echo "refresh-identity-token: not a JWT (got ${#TOKEN} chars)" >&2; exit 1 ;;
 esac
 
-install -d -m 0750 -o root -g trisula "$(dirname "$OUT")"
+install -d -m 0750 -o root -g folio "$(dirname "$OUT")"
 TMP="$(mktemp "${OUT}.XXXXXX")"
 printf '%s' "$TOKEN" > "$TMP"
-chown root:trisula "$TMP"
+chown root:folio "$TMP"
 chmod 0640 "$TMP"
 # Atomic. A reader that opens the file mid-write would otherwise get half a token, and half a
 # token is indistinguishable at the far end from a revoked one.

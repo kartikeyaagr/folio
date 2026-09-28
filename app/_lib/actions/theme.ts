@@ -32,7 +32,7 @@ import { requireUser } from '../session.ts';
 /** A year, because a theme choice is not a session-scoped preference. */
 export async function setTheme(theme: 'light' | 'dark'): Promise<void> {
   await requireUser();
-  (await cookies()).set('trisula_theme', theme, {
+  (await cookies()).set('folio_theme', theme, {
     path: '/', maxAge: 60 * 60 * 24 * 365, sameSite: 'lax',
   });
   revalidatePath('/', 'layout');

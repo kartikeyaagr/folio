@@ -28,7 +28,7 @@ import {
 } from './rules.ts';
 import { createTestDatabase, dropTestDatabase } from '../../db/testing.ts';
 
-const DB = `trisula_rules_${process.pid}`;
+const DB = `folio_rules_${process.pid}`;
 const ME = 'p1';
 const CO = 'c1';
 const AGENT = 'concall-insights';

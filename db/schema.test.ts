@@ -18,7 +18,7 @@ import pg from 'pg';
 import { migrate } from './migrate.ts';
 import { createTestDatabase, dropTestDatabase } from './testing.ts';
 
-const DB = `trisula_test_${process.pid}`;
+const DB = `folio_test_${process.pid}`;
 let client: pg.Client;
 
 before(async () => {

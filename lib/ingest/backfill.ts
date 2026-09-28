@@ -137,7 +137,7 @@ export async function claim(only?: string | null): Promise<Target[]> {
  * Sent from inside the transaction that inserts the company, so it fires if and only if the row
  * committed. `pg_notify` is transactional; a rolled-back follow announces nothing.
  */
-export const CHANNEL = 'trisula_backfill';
+export const CHANNEL = 'folio_backfill';
 
 export async function announce(c: Client, symbol: string): Promise<void> {
   await c.query('SELECT pg_notify($1, $2)', [CHANNEL, symbol]);

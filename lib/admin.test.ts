@@ -26,7 +26,7 @@ import {
 } from './admin.ts';
 import { createTestDatabase, dropTestDatabase } from '../db/testing.ts';
 
-const DB = `trisula_admin_${process.pid}`;
+const DB = `folio_admin_${process.pid}`;
 const ONE = 'p1'; // admin
 const TWO = 'p2'; // admin
 const MEMBER = 'p3';

@@ -4,7 +4,7 @@ Description=NSE security master, weekly
 [Timer]
 OnCalendar=Sun *-*-* 06:00:00 Asia/Kolkata
 Persistent=true
-Unit=trisula-job@refresh-securities.service
+Unit=folio-job@refresh-securities.service
 
 [Install]
 WantedBy=timers.target

@@ -77,8 +77,11 @@ export default async function ResetPage({
     <main className="login">
       <section className="login-copy">
         <div className="login-brand">
-          <span className="login-mark">T</span>
-          Trisula Capital
+          <span className="login-mark">F</span>
+          <span>
+            Folio
+            <span className="login-firm">Trisula Capital</span>
+          </span>
         </div>
         <div>
           <h1>

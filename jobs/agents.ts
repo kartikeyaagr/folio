@@ -19,7 +19,7 @@
  * desk where nothing new was filed, and says so. What is never a quiet day is a run that failed
  * with `failure_kind = 'error'` — a missing credential, a network that is gone, a database that is
  * not there. Every run in the batch fails the same way and the exit code is the only thing that
- * reaches a person, so those fail the run and `OnFailure=trisula-alert@%n.service` fires.
+ * reaches a person, so those fail the run and `OnFailure=folio-alert@%n.service` fires.
  *
  * A `refusal`, `truncated`, `unparseable`, `schema_mismatch` or `too_large` deliberately does not.
  * Those are one agent having a bad day on one subject; the run records itself, `/agents` lists it

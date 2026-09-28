@@ -15,7 +15,7 @@ import { enqueue, failedRuns, MAX_ATTEMPTS, requeue, requeueErrored, RETRY_AFTER
 import { acceptDraft, diffFields, pendingDrafts, ReasonRequired, rejectDraft } from './review.ts';
 import { createTestDatabase, dropTestDatabase } from '../../db/testing.ts';
 
-const DB = `trisula_agents_${process.pid}`;
+const DB = `folio_agents_${process.pid}`;
 const ME = 'p1';
 const CO = 'c1';
 

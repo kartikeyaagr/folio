@@ -19,7 +19,7 @@ import * as results from './results.ts';
 import * as forensics from './forensics.ts';
 import { createTestDatabase, dropTestDatabase } from '../../db/testing.ts';
 
-const DB = `trisula_ag2_${process.pid}`;
+const DB = `folio_ag2_${process.pid}`;
 const ME = 'p1';
 const CO = 'c1';
 const CRORE = 10_000_000;

@@ -31,7 +31,7 @@ import './concall.ts';
 import './forensics.ts';
 import './newsbrief.ts';
 
-const DB = `trisula_inv_${process.pid}`;
+const DB = `folio_inv_${process.pid}`;
 const CO = 'c1';
 const CRORE = 10_000_000;
 

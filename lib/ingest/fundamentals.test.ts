@@ -6,7 +6,7 @@ import { canonicalFigures } from './fundamentals.ts';
 import { parse } from './xbrl.ts';
 import { createTestDatabase, dropTestDatabase } from '../../db/testing.ts';
 
-const DB = `trisula_fun_${process.pid}`;
+const DB = `folio_fun_${process.pid}`;
 const fixture = () => readFileSync(new URL('./__fixtures__/vsttillers-q3fy25.xml', import.meta.url));
 // AERON's FY24 annual, the real thing: the SME board files Non-Ind-AS, which renames most of the
 // P&L and carries a full cash flow statement. Nothing in the corpus exercised either until

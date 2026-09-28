@@ -41,13 +41,13 @@ const settle = async (c: pg.Client): Promise<void> => {
   await c.query('SELECT 1');
 };
 
-const DB = `trisula_backfill_${process.pid}`;
+const DB = `folio_backfill_${process.pid}`;
 const ME = 'u1';
 
 before(async () => {
-  // Its own store. The default is the VM's /var/lib/trisula/attachments, which is not writable
+  // Its own store. The default is the VM's /var/lib/folio/attachments, which is not writable
   // here — and a test that passes or fails on the ambient environment is not a test.
-  process.env['ATTACHMENT_DIR'] = mkdtempSync(join(tmpdir(), 'trisula-attach-'));
+  process.env['ATTACHMENT_DIR'] = mkdtempSync(join(tmpdir(), 'folio-attach-'));
   await createTestDatabase(DB);
   await serviceTxn('system:auth', async (c) => {
     await c.query("INSERT INTO actors (id,kind,label) VALUES ($1,'person','T')", [ME]);

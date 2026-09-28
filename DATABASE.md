@@ -1,6 +1,6 @@
 # DATABASE.md
 
-How Trisula's data is held, related and changed safely. The table-by-table map lives in
+How Folio's data is held, related and changed safely. The table-by-table map lives in
 `ARCHITECTURE.md` §2 and is not repeated here. This file covers the rules that map does not state.
 
 ## 1. Stack
@@ -9,8 +9,8 @@ How Trisula's data is held, related and changed safely. The table-by-table map l
   extension, so only a superuser can create it. It is created once in `template1` by `postgres`,
   and every database inherits it (SETUP §4), including the app's, every restore and the drill's.
 - **Raw `pg`, no ORM.** An ORM was refused on a count (`docs/specs/capabilities.md` E2).
-- **Reached over the unix socket.** Production is `postgres:///trisula`, development
-  `postgres:///trisula_v3_dev`. `DATABASE_URL` always comes from the environment (SECURITY.md §6).
+- **Reached over the unix socket.** Production is `postgres:///folio`, development
+  `postgres:///folio_dev`. `DATABASE_URL` always comes from the environment (SECURITY.md §6).
 - **One lazy pool per process, `max: 10`** (`lib/db.ts`). The web app and every job import that
   same file.
 - **Postgres `date` arrives in JS as the string `YYYY-MM-DD`,** never a `Date`: a trading date has
@@ -91,7 +91,7 @@ pnpm migrate --status   # list applied and pending, change nothing
 - **Plain SQL in `db/migrations/NNNN_a_sentence_in_snake_case.sql`,** applied in filename order.
   Each file runs in one transaction, with `app.actor_id = 'system:migration'` and its ledger row
   in `schema_migrations`.
-- **Migrations run as `trisula`, which is not a superuser.** Anything that needs one, such as an
+- **Migrations run as `folio`, which is not a superuser.** Anything that needs one, such as an
   untrusted extension, belongs in SETUP §4 and not in a migration.
 - **Forward only. There are no down migrations.** To undo something, write a new migration, as
   `0053` did when it dropped chat's three tables.
@@ -99,7 +99,7 @@ pnpm migrate --status   # list applied and pending, change nothing
   sha256 on each run, and a changed hash is a hard stop. On the VM that is an outage.
 - **Seed data a table needs to exist belongs in the migration:** actors, agents, alert rules, news
   sources, sector terms, the forensics template.
-- **Test a migration against a fresh database before it ships.** `trisula_v3_dev` is not a
+- **Test a migration against a fresh database before it ships.** `folio_dev` is not a
   rehearsal for the VM, and it carries an orphan `0052` row from a merge.
 - **On deploy, migrate before restarting the web unit** (`ops/SETUP.md` §14). Otherwise the new
   build queries a schema it does not have yet.
@@ -116,12 +116,12 @@ pnpm migrate --status   # list applied and pending, change nothing
 
 | What | When | How |
 |---|---|---|
-| `ops/backup.sh` | nightly 01:30 IST | `pg_dump -Fc --exclude-extension=vector` piped straight into `age -r $BACKUP_AGE_RECIPIENT`, so the plaintext never touches disk. The extension is left out because the restoring role cannot create it or comment on it; the target inherits it from `template1`. It is kept 14 days in `/var/lib/trisula/backups`, and copied to S3 when `BACKUP_S3_BUCKET` is set. |
+| `ops/backup.sh` | nightly 01:30 IST | `pg_dump -Fc --exclude-extension=vector` piped straight into `age -r $BACKUP_AGE_RECIPIENT`, so the plaintext never touches disk. The extension is left out because the restoring role cannot create it or comment on it; the target inherits it from `template1`. It is kept 14 days in `/var/lib/folio/backups`, and copied to S3 when `BACKUP_S3_BUCKET` is set. |
 | `ops/verify-backup.sh` | Sundays 03:00 | The whole round trip with a throwaway key. It compares row counts, then per-table content hashes, and fails loudly on any difference. |
 | `ops/restore.sh` | by hand | `age -d` into `pg_restore --single-transaction`, then it reapplies the database's timezone, which a dump does not carry. It refuses a database that exists unless given `--replace`. To roll production back, restore *beside* it and swap names (SETUP §14); never `--replace` the live database. |
 
 The age private key lives off the box (`ops/SETUP.md` §7). `MAILBOX_KEY` lives in
-`/etc/trisula/trisula.env`, not in the database, so a restore brings back sealed mailbox passwords
+`/etc/folio/folio.env`, not in the database, so a restore brings back sealed mailbox passwords
 without the key that opens them. Keep a copy of it beside the age private key.
 
 ## 7. Production safety
@@ -133,7 +133,7 @@ without the key that opens them. Keep a copy of it beside the age private key.
   unqualified. It is audited unless the table is one of the exemptions in §2.
 - **Never hand-edit production to skip a migration.**
 - **Tests create and drop their own database per file** (`db/testing.ts`, database name
-  `trisula_<name>_<pid>`) against a real Postgres, so they need `createdb` and `dropdb` on PATH.
+  `folio_<name>_<pid>`) against a real Postgres, so they need `createdb` and `dropdb` on PATH.
   They cannot catch a dev database that has drifted from the tree.
 - **No `statement_timeout` or `lock_timeout` is set anywhere.** A long query holds its pool slot
   for as long as it runs.

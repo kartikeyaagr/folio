@@ -25,7 +25,7 @@ import { createTestDatabase, dropTestDatabase } from '../../db/testing.ts';
  * over-eager direction this suite exists to rule out.
  */
 
-const DB = `trisula_reap_${process.pid}`;
+const DB = `folio_reap_${process.pid}`;
 const CO = 'c1'; // Praj Industries Limited — the fund's own name
 const CO2 = 'c2'; // a second followed name, for the news re-attribution case
 

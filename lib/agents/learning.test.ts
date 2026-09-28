@@ -17,7 +17,7 @@ import { acceptDraft, pendingDrafts, rejectDraft } from './review.ts';
 import { coverage, fieldHotspots, weeklyDistance } from './learning.ts';
 import { createTestDatabase, dropTestDatabase } from '../../db/testing.ts';
 
-const DB = `trisula_learn_${process.pid}`;
+const DB = `folio_learn_${process.pid}`;
 const ME = 'p1';
 const CO = 'c1';
 

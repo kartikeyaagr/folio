@@ -29,7 +29,7 @@ const mono = Geist_Mono({ subsets: ['latin'], variable: '--font-mono', display: 
  * matters. The title and description are what a browser tab and a bookmark show.
  */
 export const metadata: Metadata = {
-  title: 'Trisula Capital',
+  title: 'Folio · Trisula Capital',
   description: 'Investment research and portfolio management',
   robots: { index: false, follow: false },
 };

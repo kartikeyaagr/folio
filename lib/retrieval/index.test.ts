@@ -8,7 +8,7 @@ import { EMBED_MODEL, isLoaded } from './embed.ts';
 import { registerAll, contentHash } from './register.ts';
 import { createTestDatabase, dropTestDatabase } from '../../db/testing.ts';
 
-const DB = `trisula_idx_${process.pid}`;
+const DB = `folio_idx_${process.pid}`;
 
 // Repo-local model, fetched once with `pnpm fetch-model` and left in place (see embed.test.ts,
 // which sets this the same way and for the same reason).
@@ -92,7 +92,7 @@ test('a source that fails records why and stays in the queue', async () => {
     await newDocument(c, 'd_fail', 'note', { text: 'a memo the indexer will never get to embed' });
   });
 
-  process.env.EMBED_MODEL_DIR = '/nonexistent/trisula-model-dir';
+  process.env.EMBED_MODEL_DIR = '/nonexistent/folio-model-dir';
   let out;
   try {
     out = await drain();

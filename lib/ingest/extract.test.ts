@@ -14,7 +14,7 @@ import { serviceTxn } from '../db.ts';
 import { pendingAttachments, promoteTranscript, writeExtracted, type Row } from './extract.ts';
 import { createTestDatabase, dropTestDatabase } from '../../db/testing.ts';
 
-const DB = `trisula_extract_${process.pid}`;
+const DB = `folio_extract_${process.pid}`;
 const CO = 'c1';
 
 const LONG_TEXT = 'the auditor raised a going-concern note and management pushed back. '.repeat(80);

@@ -2,7 +2,7 @@
 #
 # Can this AWS account create anything yet?
 #
-#   ./ops/check-activation.sh [profile]     # profile defaults to "trisula"
+#   ./ops/check-activation.sh [profile]     # profile defaults to "folio"
 #
 # Exit 0 = ready, provision.sh will get past preflight. 1 = not yet. 2 = cannot tell.
 #
@@ -14,7 +14,7 @@
 # service subscription that never completed, and those need different things from a support case.
 set -uo pipefail
 
-PROFILE="${1:-trisula}"
+PROFILE="${1:-folio}"
 REGION="ap-south-1"
 
 # A scheduled task or a systemd unit does not get the login shell's PATH.

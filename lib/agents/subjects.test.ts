@@ -16,7 +16,7 @@ import { serviceTxn } from '../db.ts';
 import { MIN_TRANSCRIPT_CHARS as CONCALL_FLOOR } from './concall.ts';
 import { isSubjectFor, MIN_TRANSCRIPT_CHARS, subjectsFor } from './subjects.ts';
 
-const DB = `trisula_subj_${process.pid}`;
+const DB = `folio_subj_${process.pid}`;
 const ME = 'p1';
 const A = 'c1';
 const B = 'c2';

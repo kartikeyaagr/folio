@@ -18,7 +18,7 @@ import { approveRule, writeRule, retireRule } from './rules.ts';
 import type { AgentRow } from './runner.ts';
 import { createTestDatabase, dropTestDatabase } from '../../db/testing.ts';
 
-const DB = `trisula_prompt_${process.pid}`;
+const DB = `folio_prompt_${process.pid}`;
 const ME = 'p1';
 const CO = 'c1';
 

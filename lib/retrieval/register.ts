@@ -438,7 +438,7 @@ async function registerFundamentals(c: Client): Promise<string[]> {
  * exchange's own endpoint is dated *today* until the announcement feed supplies a filings row —
  * then the source moves to the real date, the text never changed, `content_hash` keeps it out of
  * the re-index queue, and an excluded chunk would go on claiming to be this week's material
- * forever. Measured 15-Sep-2026 on `trisula_v3_dev`: 21 attachments hold no filings row yet, and
+ * forever. Measured 15-Sep-2026 on `folio_dev`: 21 attachments hold no filings row yet, and
  * 1,003 attachment↔filing pairs already disagree on the date. The remaining three cannot move at
  * all — `ingest/filings.ts`'s upsert omits `announced_at`, `news_items` is `DO NOTHING`, and a
  * restated `fundamentals_period` is a new row — so sweeping them costs nothing and keeps the rule

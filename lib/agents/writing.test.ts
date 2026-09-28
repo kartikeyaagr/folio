@@ -18,7 +18,7 @@ import * as concall from './concall.ts';
 import './newsbrief.ts';
 import { createTestDatabase, dropTestDatabase } from '../../db/testing.ts';
 
-const DB = `trisula_wr_${process.pid}`;
+const DB = `folio_wr_${process.pid}`;
 const ME = 'p1';
 const CO = 'c1';
 

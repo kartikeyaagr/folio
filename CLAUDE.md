@@ -1,9 +1,17 @@
-# Trisula
+# Folio
 
 Investment research and portfolio management for a three-person SEBI Category III AIF running a
 long-only Indian small/mid-cap book. Internal tool, behind a private network, no public signup, no
 guest access. The people using it open it before the market opens and after it closes; the work is
 reading and judgement, not reacting.
+
+**Folio is the system; Trisula Capital is the firm.** The system was called Trisula until
+28-Sep-2026. That name correctly remains wherever it means the fund (its forensic checklist, its
+severity calibration, its email domain). It also remains wherever it cannot move. That covers v2 at
+`../trisula` and v2's Python module names. It covers every file in `db/migrations/`, which is
+sha256-checksummed, comments included, and with it the `trisula_content` channel migration 0052's
+trigger sends on, which `jobs/index-content.ts` must go on listening to. It also covers the AWS
+resources `ops/provision.sh` pins. None of those are missed renames.
 
 **This tree is v3, extended by v4.** v3 is what is built and running; **v4 is the retrieval, chat
 and learning layer being added on top of it**, and it does not replace v3 — `v4.md` §2 describes the
@@ -62,7 +70,7 @@ C8 declines a news vendor. The investor-letter agent was cut and its number not 
 ## Running it
 
 ```bash
-export DATABASE_URL=postgres:///trisula_v3_dev
+export DATABASE_URL=postgres:///folio_dev
 pnpm exec tsx db/migrate.ts      # migrations are one transaction each, checksummed
 pnpm check                       # lint + typecheck + 859 tests
 pnpm dev                         # port 3100

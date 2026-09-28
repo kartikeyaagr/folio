@@ -12,7 +12,7 @@ import { readTxn, serviceTxn } from '../db.ts';
 import { asDate, parseAnnouncements, storeAnnouncements } from './corporate-actions.ts';
 import { createTestDatabase, dropTestDatabase } from '../../db/testing.ts';
 
-const DB = `trisula_ca_${process.pid}`;
+const DB = `folio_ca_${process.pid}`;
 const OURS = 'c_ours';
 
 /** Shaped like the live feed, "-" and all. */

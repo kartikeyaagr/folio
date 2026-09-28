@@ -16,7 +16,7 @@
  * ten-second database blip looks like to the desk.
  *
  * The digest is shown deliberately. It is the only handle that ties what the person saw to the
- * line in `journalctl -u trisula-web` that explains it, and without it the report is "it broke".
+ * line in `journalctl -u folio-web` that explains it, and without it the report is "it broke".
  * It reveals nothing: Next generates it precisely so the message itself does not have to be sent.
  */
 import { Failure } from '@/components/Failure.tsx';

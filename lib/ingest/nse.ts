@@ -19,7 +19,7 @@ const BASE = 'https://www.nseindia.com';
  *
  * A socket NSE accepts and never answers holds a `oneshot` unit in "activating" indefinitely: it
  * never fails, so `OnFailure=` never fires, and the job simply never runs again. The 30-minute
- * `TimeoutStartSec` on `trisula-job@.service` is the backstop for that and costs half an hour of
+ * `TimeoutStartSec` on `folio-job@.service` is the backstop for that and costs half an hour of
  * silence; this is the actual fix, and `lib/news/poll.ts` has had it since it was written.
  *
  * Generous on purpose. The bhavcopy is a multi-megabyte zip and the announcements endpoint answers

@@ -9,7 +9,7 @@ Description=News feeds, and the net
 # run the original never had — the step belongs on the range: `07..21/2`.
 OnCalendar=*-*-* 07..21/2:05:00 Asia/Kolkata
 Persistent=true
-Unit=trisula-job@news-poll.service
+Unit=folio-job@news-poll.service
 
 [Install]
 WantedBy=timers.target

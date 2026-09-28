@@ -5,7 +5,7 @@ import { asDate, parseCalendar, storeCalendar } from './calendar.ts';
 import { upcoming } from '../alerts.ts';
 import { createTestDatabase, dropTestDatabase } from '../../db/testing.ts';
 
-const DB = `trisula_cal_${process.pid}`;
+const DB = `folio_cal_${process.pid}`;
 const OURS = 'c_ours';
 
 /** Shaped like the live feed, including a name the fund does not follow. */

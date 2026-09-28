@@ -13,7 +13,7 @@
  * re-run, resumes after a crash, and cannot lose a filing to a window. Run it repeatedly to work
  * through a backlog; there is no state to reset between runs.
  *
- * `ATTACHMENT_DIR` decides where the bytes go, defaulting to the `/var/lib/trisula/attachments`
+ * `ATTACHMENT_DIR` decides where the bytes go, defaulting to the `/var/lib/folio/attachments`
  * that `ops/SETUP.md` §5 creates.
  */
 import { attachmentDir, fetchAttachments } from '../lib/ingest/attachments.ts';

@@ -116,7 +116,7 @@ export interface DrainResult {
  * announcements or, following two new companies in one window, ~32 annual reports.
  *
  * Measured 11-Sep-2026, live corpus: 25 annual-report sources inside one `drain` batch took 922s
- * end to end and wrote 12,168 chunks — 36.9s/source, ~75.8ms/chunk. `ops/systemd/trisula-job@.service`
+ * end to end and wrote 12,168 chunks — 36.9s/source, ~75.8ms/chunk. `ops/systemd/folio-job@.service`
  * sets `TimeoutStartSec=30min`; a 50-source batch of that shape is already ~30.7min, past the
  * timeout, and the failure is silent — see the finding this constant fixes for the full chain
  * (systemd kills the transaction, every claimed row including its `index_error` rows rolls back,

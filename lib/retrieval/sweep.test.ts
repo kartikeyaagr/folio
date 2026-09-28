@@ -19,7 +19,7 @@ import { indexOne } from './index.ts';
 import { registerAll } from './register.ts';
 import { createTestDatabase, dropTestDatabase } from '../../db/testing.ts';
 
-const DB = `trisula_sweep_${process.pid}`;
+const DB = `folio_sweep_${process.pid}`;
 const MODEL_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '.models', 'bge-small-en-v1.5');
 
 async function saveNewVersion(c: Client, docId: string, body: Record<string, unknown>): Promise<void> {

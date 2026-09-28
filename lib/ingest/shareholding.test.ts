@@ -4,7 +4,7 @@ import { readTxn, serviceTxn } from '../db.ts';
 import { parseIndex, parseShareholding, shpDate, storeShareholding } from './shareholding.ts';
 import { createTestDatabase, dropTestDatabase } from '../../db/testing.ts';
 
-const DB = `trisula_shp_${process.pid}`;
+const DB = `folio_shp_${process.pid}`;
 const CO = 'c_praj';
 
 /**

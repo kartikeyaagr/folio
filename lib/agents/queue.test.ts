@@ -21,7 +21,7 @@ import { scriptedModel, scriptedOk } from './model.ts';
 import { drain, raise, registerHandler } from './runner.ts';
 import { enqueue, failedRuns, MAX_ATTEMPTS, requeue } from './queue.ts';
 
-const DB = `trisula_queue_${process.pid}`;
+const DB = `folio_queue_${process.pid}`;
 const CO = 'c1';
 
 before(async () => {

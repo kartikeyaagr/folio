@@ -7,7 +7,7 @@ Description=Index what the fund holds
 # wait on a model load, and a failure there must not cost them the acceptance".
 OnCalendar=*:0/10
 Persistent=true
-Unit=trisula-job@index-content.service
+Unit=folio-job@index-content.service
 
 [Install]
 WantedBy=timers.target

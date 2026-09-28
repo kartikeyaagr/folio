@@ -14,7 +14,7 @@
  * TLS, so the prefix is present everywhere it matters.
  */
 export const SESSION_COOKIE =
-  process.env.NODE_ENV === 'production' ? '__Host-trisula_session' : 'trisula_session';
+  process.env.NODE_ENV === 'production' ? '__Host-folio_session' : 'folio_session';
 
 /**
  * The same fact as the name above, and it has to stay the same fact.

@@ -1,19 +1,19 @@
 [Unit]
 # Re-mints the AWS-signed JWT the model client authenticates with. See ops/SETUP.md §10.
 Description=Refresh the Anthropic identity token
-OnFailure=trisula-alert@%n.service
+OnFailure=folio-alert@%n.service
 
 [Service]
 Type=oneshot
-# Root, not trisula: the instance role is reachable either way, but the token is written
-# 0640 root:trisula so the app can read it and cannot replace it — the same shape as trisula.env.
+# Root, not folio: the instance role is reachable either way, but the token is written
+# 0640 root:folio so the app can read it and cannot replace it — the same shape as folio.env.
 User=root
-# The directory survives the unit exiting. Without this systemd removes /run/trisula the moment
+# The directory survives the unit exiting. Without this systemd removes /run/folio the moment
 # this oneshot finishes, taking the token with it.
-RuntimeDirectory=trisula
+RuntimeDirectory=folio
 RuntimeDirectoryMode=0750
 RuntimeDirectoryPreserve=yes
-ExecStart=/srv/trisula/ops/refresh-identity-token.sh /run/trisula/identity-token
+ExecStart=/srv/folio/ops/refresh-identity-token.sh /run/folio/identity-token
 
 Environment=AWS_REGION=ap-south-1
 Environment=TZ=Asia/Kolkata

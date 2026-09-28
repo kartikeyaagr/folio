@@ -5,7 +5,7 @@ import { parseInsider, pitDate, storeInsider } from './insider.ts';
 import { pickRows } from './nse.ts';
 import { createTestDatabase, dropTestDatabase } from '../../db/testing.ts';
 
-const DB = `trisula_pit_${process.pid}`;
+const DB = `folio_pit_${process.pid}`;
 const CO = 'c_praj';
 
 /** Two halves of one real inter-se transfer, shaped exactly as NSE returned them. */

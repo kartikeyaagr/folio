@@ -13,7 +13,7 @@ import { serviceTxn } from '../db.ts';
 import { indexingLag } from './health.ts';
 import { createTestDatabase, dropTestDatabase } from '../../db/testing.ts';
 
-const DB = `trisula_health_${process.pid}`;
+const DB = `folio_health_${process.pid}`;
 
 before(async () => {
   await createTestDatabase(DB);

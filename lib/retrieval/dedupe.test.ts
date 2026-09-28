@@ -22,7 +22,7 @@ import { createTestDatabase, dropTestDatabase } from '../../db/testing.ts';
 import { readTxn, serviceTxn } from '../db.ts';
 import { registerAll } from './register.ts';
 
-const DB = `trisula_dedupe_${process.pid}`;
+const DB = `folio_dedupe_${process.pid}`;
 const CO = 'c1';
 const WORDS = 'Management guided to a mid-teens margin for the full year. '.repeat(40);
 

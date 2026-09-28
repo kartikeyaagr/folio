@@ -13,7 +13,7 @@ import { serviceTxn } from '../db.ts';
 import { createTestDatabase, dropTestDatabase } from '../../db/testing.ts';
 import { collectCalls, resolveCalls } from './data.ts';
 
-const DB = `trisula_sheetdata_${process.pid}`;
+const DB = `folio_sheetdata_${process.pid}`;
 const CO = 'c_praj';
 
 before(async () => {

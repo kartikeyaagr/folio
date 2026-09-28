@@ -15,7 +15,7 @@ Description=Distil recurring corrections into candidate rules
 # "after the desk has closed" fired at 01:00 IST the following morning.
 OnCalendar=*-*-* 19:30:00 Asia/Kolkata
 Persistent=true
-Unit=trisula-job@distil-rules.service
+Unit=folio-job@distil-rules.service
 
 [Install]
 WantedBy=timers.target

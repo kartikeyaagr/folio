@@ -4,7 +4,7 @@
 #
 # Runs the whole round trip — dump, encrypt, decrypt, restore into a fresh database, compare row
 # counts and row *content* table by table — and fails loudly on any difference. Weekly on the box
-# (`trisula-backup-verify.timer`), because a restore path that quietly rots should be caught by a
+# (`folio-backup-verify.timer`), because a restore path that quietly rots should be caught by a
 # machine rather than by an outage. There is no CI; this header said there was until 25-Sep-2026.
 #
 # It generates a **throwaway** age keypair for the drill. The real private key is deliberately not
@@ -14,7 +14,7 @@
 # Usage:  ./ops/verify-backup.sh [source-database]
 set -euo pipefail
 
-SRC="${1:-trisula}"
+SRC="${1:-folio}"
 WORK="$(mktemp -d)"
 TARGET="verify_${SRC}_$$"
 trap 'rm -rf "$WORK"; dropdb --if-exists "$TARGET" 2>/dev/null || true' EXIT

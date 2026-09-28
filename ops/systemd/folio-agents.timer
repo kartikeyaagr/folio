@@ -4,7 +4,7 @@ Description=Sweep for agent work and drain the queue
 [Timer]
 OnBootSec=2min
 OnUnitActiveSec=5min
-Unit=trisula-job@agents.service
+Unit=folio-job@agents.service
 
 [Install]
 WantedBy=timers.target

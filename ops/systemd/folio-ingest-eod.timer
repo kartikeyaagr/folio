@@ -4,7 +4,7 @@ Description=End-of-day prices, after the exchange publishes
 [Timer]
 OnCalendar=Mon..Fri *-*-* 18:45:00 Asia/Kolkata
 Persistent=true
-Unit=trisula-job@ingest-eod.service
+Unit=folio-job@ingest-eod.service
 
 [Install]
 WantedBy=timers.target

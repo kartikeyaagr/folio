@@ -1,9 +1,13 @@
-# Trisula
+# Folio
 
 An all-in-one desk for a three-person fund: research a name, see the book, know what happened, and
 ask agents to do the reading.
 
 Long-only Indian small/mid-cap, ~40 names, end-of-day only, three users, one VM in Mumbai.
+
+Folio is the system and Trisula Capital is the fund. The system was called Trisula until
+28-Sep-2026, and the name remains where it means the fund, v2, a checksummed migration, or an AWS
+resource that cannot be renamed.
 
 ## This is v3, extended by v4
 
@@ -62,7 +66,7 @@ with the `vector` extension available. pnpm is pinned by `packageManager` in `pa
 `corepack enable` gets you the right one.
 
 ```bash
-export DATABASE_URL=postgres:///trisula_v3_dev
+export DATABASE_URL=postgres:///folio_dev
 pnpm install
 pnpm fetch-model                 # ~130 MB embedding model, validated on download
 pnpm exec tsx db/migrate.ts      # migrations are one transaction each, checksummed

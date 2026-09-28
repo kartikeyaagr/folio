@@ -1,6 +1,6 @@
 # Architecture
 
-How Trisula is put together, and why it is put together that way. Accurate against the tree at the
+How Folio is put together, and why it is put together that way. Accurate against the tree at the
 time of writing: **62 migrations, 50 tables, 6 agents, 24 job entry points, 19 systemd timers, two
 long-running watchers, 18 pages and 4 route handlers, 859 tests.** Every number here was counted,
 not remembered; if you change the shape, count again rather than editing around it.
@@ -131,8 +131,8 @@ reports, the documents those filings point at and the text inside them, the resu
 feed and Integrated Filing), the corporate actions, the shareholding pattern, the insider and pledge
 disclosures back to 2015, and the price series.
 
-`addCompany` announces on `trisula_backfill` inside the transaction that inserts the row, so
-`trisula-backfill-watch.service` starts the fetch in about a second. The ten-minute timer stays
+`addCompany` announces on `folio_backfill` inside the transaction that inserts the row, so
+`folio-backfill-watch.service` starts the fetch in about a second. The ten-minute timer stays
 enabled and remains the guarantee: a `NOTIFY` with nobody listening is discarded, and the watcher
 being down is exactly when that matters. The watcher drains the whole queue on every wake and never
 trusts the symbol in the payload.
@@ -226,7 +226,7 @@ a memo actually edited costs one re-embed and its stale vectors are gone in the 
 What tells it to look is a statement-level trigger (`0052`) on `documents`, `document_versions` and
 `attachments`, which `pg_notify`s a constant payload on `trisula_content` — constant so an
 eleven-tab import is one notification rather than twenty-two. `jobs/index-content.ts --watch`
-listens and indexes seconds after a save; `trisula-index-watch.service` runs it. **The notification
+listens and indexes seconds after a save; `folio-index-watch.service` runs it. **The notification
 is a nudge and never the record**: one sent with no listener attached is gone, so the durable queue
 is still `indexed_at IS NULL` and the ten-minute timer is still what guarantees it drains. Indexing
 deliberately does not happen on the write path — saving a memo must not block on a 130 MB model
@@ -450,7 +450,7 @@ Read `.interface-design/system.md` before adding any screen.
 ## 10. Running it
 
 ```bash
-export DATABASE_URL=postgres:///trisula_v3_dev
+export DATABASE_URL=postgres:///folio_dev
 pnpm install
 pnpm fetch-model                 # ~130 MB, bge-small-en-v1.5, validated on download
 pnpm exec tsx db/migrate.ts      # one transaction each, checksummed

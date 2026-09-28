@@ -1,4 +1,4 @@
-# Trisula — design system (v4)
+# Folio — design system (v4)
 
 The standing rules. Read this before adding any screen; if a decision here is wrong, change it here
 first and then change the code, so the two never drift.

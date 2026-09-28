@@ -6,7 +6,7 @@ Description=Insider and pledge disclosures
 # nothing here is time-critical to the minute.
 OnCalendar=*-*-* 19:30 Asia/Kolkata
 Persistent=true
-Unit=trisula-job@ingest-insider.service
+Unit=folio-job@ingest-insider.service
 
 [Install]
 WantedBy=timers.target

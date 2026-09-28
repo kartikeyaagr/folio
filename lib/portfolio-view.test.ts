@@ -13,7 +13,7 @@ import { serviceTxn } from './db.ts';
 import { pendingActions } from './portfolio-view.ts';
 import { createTestDatabase, dropTestDatabase } from '../db/testing.ts';
 
-const DB = `trisula_pview_${process.pid}`;
+const DB = `folio_pview_${process.pid}`;
 const ME = 'p1';
 const CO = 'c1';
 

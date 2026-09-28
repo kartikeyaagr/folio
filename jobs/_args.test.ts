@@ -55,7 +55,7 @@ test('a positional argument is refused, because no job here takes one', () => {
 });
 
 test('every flag a systemd unit passes is one the job it runs will accept', async () => {
-  // `trisula-backfill-watch.service` ran `backfill-company.ts --watch` from the day it was
+  // `folio-backfill-watch.service` ran `backfill-company.ts --watch` from the day it was
   // written, and `backfill-company.ts` parsed with `strict: true` without declaring `watch`. So
   // the watcher died on startup with "Unknown option '--watch'" every time, and the on-add
   // backfill silently fell back to the ten-minute timer — the design's second half, dead, with
@@ -107,7 +107,7 @@ test('every flag a systemd unit passes is one the job it runs will accept', asyn
 });
 
 test('a timer that names a wall-clock time names the zone it means', async () => {
-  // `trisula-distil-rules.timer` said `OnCalendar=*-*-* 19:30` and was the only one of fifteen
+  // `folio-distil-rules.timer` said `OnCalendar=*-*-* 19:30` and was the only one of fifteen
   // without `Asia/Kolkata`. systemd reads a bare time in the *manager's* zone, which on this VM
   // is UTC, so "once a day, after the desk has closed" fired at 01:00 IST the next morning.
   //
@@ -134,8 +134,8 @@ test('a timer that names a wall-clock time names the zone it means', async () =>
 test('StartLimit lives in [Unit], where systemd still reads it', async () => {
   // Moved out of [Service] in systemd v229, and silently ignored if left there. Both watchers had
   // it in [Service] until 21-Sep-2026, each under a comment explaining that without it a crash
-  // loop never reaches `failed` — so neither property held, and `trisula-backfill-watch`'s
-  // `OnFailure=trisula-alert@%n.service` could never fire. Exactly §2.6's "a crash-looping
+  // loop never reaches `failed` — so neither property held, and `folio-backfill-watch`'s
+  // `OnFailure=folio-alert@%n.service` could never fire. Exactly §2.6's "a crash-looping
   // service reaches nobody", with the fix written into the wrong section.
   const { readdir, readFile } = await import('node:fs/promises');
   const units = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'ops', 'systemd');

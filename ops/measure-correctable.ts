@@ -12,7 +12,7 @@
  * floor was refused because *"shipping an unmeasured threshold is the mistake that finding exists
  * to prevent"* — so the figure goes in the plan file rather than staying an assumption.
  *
- *   DATABASE_URL=postgres:///trisula_v3_dev pnpm exec tsx ops/measure-correctable.ts
+ *   DATABASE_URL=postgres:///folio_dev pnpm exec tsx ops/measure-correctable.ts
  *
  * Read-only, no model call. Counts positions; it does not run the distiller.
  */

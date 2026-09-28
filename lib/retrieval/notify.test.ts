@@ -16,7 +16,7 @@ import assert from 'node:assert/strict';
 import { createTestDatabase, dropTestDatabase } from '../../db/testing.ts';
 import { listen, serviceTxn, writeTxn } from '../db.ts';
 
-const DB = `trisula_notify_${process.pid}`;
+const DB = `folio_notify_${process.pid}`;
 const ME = 'p1';
 const CO = 'c1';
 

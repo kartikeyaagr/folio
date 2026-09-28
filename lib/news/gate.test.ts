@@ -6,7 +6,7 @@ import { gatePrompt, MAX_GATE_ATTEMPTS, runGate, ungated } from './gate.ts';
 import { matchNewItems } from './match.ts';
 import { createTestDatabase, dropTestDatabase } from '../../db/testing.ts';
 
-const DB = `trisula_gate_${process.pid}`;
+const DB = `folio_gate_${process.pid}`;
 const CO = 'c_praj';
 
 before(async () => {

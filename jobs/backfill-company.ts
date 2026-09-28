@@ -404,7 +404,7 @@ async function drain(only: string | undefined, priceDays: number): Promise<void>
  *
  * The ten-minute timer still exists and is still what *guarantees* the work happens: a `NOTIFY`
  * with nobody listening is discarded, and a watcher that has died is a watcher nobody notices. This
- * only removes the wait — `addCompany` announces on `trisula_backfill` inside the transaction that
+ * only removes the wait — `addCompany` announces on `folio_backfill` inside the transaction that
  * inserts the row, so Follow and the first fetch are a second apart rather than ten minutes.
  *
  * It drains the whole queue on every wake rather than the symbol it was handed, and drains once at
@@ -438,7 +438,7 @@ async function watch(priceDays: number): Promise<void> {
 async function main(): Promise<void> {
   // `watch` is declared here, not read off `process.argv` below it. `readFlags` parses with
   // `strict: true`, so an undeclared `--watch` threw BadUsage — "Unknown option '--watch'" —
-  // before the dispatch that reads it could run. `trisula-backfill-watch.service` has invoked
+  // before the dispatch that reads it could run. `folio-backfill-watch.service` has invoked
   // exactly that command since it was written, so the watcher never started: every name added
   // waited for the ten-minute timer instead of being filled in on the NOTIFY. Nothing was lost,
   // because the timer is what guarantees the work, but the second half of the design was dead.

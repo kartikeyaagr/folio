@@ -54,7 +54,7 @@ interface Waiting {
 /**
  * Whether it is late enough in the day, in IST, wherever the box thinks it is.
  *
- * Derived from the instant rather than from the box's timezone: `ops/systemd/trisula-job@.service`
+ * Derived from the instant rather than from the box's timezone: `ops/systemd/folio-job@.service`
  * sets `TZ=Asia/Kolkata` and a developer's laptop does not, and a digest that goes out at a
  * different hour depending on whose machine ran it is the kind of thing nobody notices until a
  * Monday.
@@ -159,7 +159,7 @@ export function composeDigest(
   const summary = kinds
     .map((k) => `${counts.get(k)} ${k === 'unit_failure' ? 'job failure' : k}${counts.get(k) === 1 ? '' : 's'}`)
     .join(', ');
-  const subject = `Trisula — ${day}${summary ? `: ${summary}` : ''}`;
+  const subject = `Folio — ${day}${summary ? `: ${summary}` : ''}`;
 
   const lines: string[] = [`${person.name},`, ''];
   for (const kind of kinds) {
@@ -182,7 +182,7 @@ export function composeDigest(
       `  ${also.runsNeedingSomebody} agent run${also.runsNeedingSomebody === 1 ? '' : 's'} out of attempts.`,
     );
   }
-  lines.push('', 'Trisula');
+  lines.push('', 'Folio');
   return { subject, body: lines.join('\n') };
 }
 

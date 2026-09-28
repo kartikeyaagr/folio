@@ -90,7 +90,7 @@ test('an empty zip has no report to pick', () => {
 // the archive host wants only a browser-shaped User-Agent), and skipping `open()` means no test
 // has to also fake the homepage priming call.
 
-const DB = `trisula_annual_reports_${process.pid}`;
+const DB = `folio_annual_reports_${process.pid}`;
 const CO = 'c1';
 
 let attachDir: string;
@@ -106,7 +106,7 @@ const report: AnnualReport = {
 };
 
 before(async () => {
-  attachDir = mkdtempSync(join(tmpdir(), 'trisula-annual-reports-test-'));
+  attachDir = mkdtempSync(join(tmpdir(), 'folio-annual-reports-test-'));
   process.env['ATTACHMENT_DIR'] = attachDir;
 
   await createTestDatabase(DB);

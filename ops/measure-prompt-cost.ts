@@ -20,7 +20,7 @@
  * `count_tokens` is not inference — it generates nothing and costs nothing to speak of — but it is
  * still a call, so it is opt-in:
  *
- *   DATABASE_URL=postgres:///trisula_v3_dev pnpm exec tsx ops/measure-prompt-cost.ts
+ *   DATABASE_URL=postgres:///folio_dev pnpm exec tsx ops/measure-prompt-cost.ts
  *   DATABASE_URL=… pnpm exec tsx ops/measure-prompt-cost.ts --tokens
  *
  * Read-only. Runs no `writeTxn`/`serviceTxn`, and embeds with the local model.

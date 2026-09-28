@@ -34,7 +34,7 @@ export const EMBED_MODEL = 'bge-small-en-v1.5';
 export const EMBED_DIM = 384;
 
 /** Where `ops/SETUP.md` provisions it on the box. */
-const VM_MODEL_DIR = '/var/lib/trisula/models/bge-small-en-v1.5';
+const VM_MODEL_DIR = '/var/lib/folio/models/bge-small-en-v1.5';
 
 /**
  * Where `ops/fetch-model.sh` actually writes it when called with no argument.

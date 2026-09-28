@@ -61,7 +61,7 @@ const FED = {
   ANTHROPIC_FEDERATION_RULE_ID: 'fdrl_01ExampleNotReal',
   ANTHROPIC_ORGANIZATION_ID: '00000000-0000-0000-0000-000000000000',
   ANTHROPIC_SERVICE_ACCOUNT_ID: 'svac_01ExampleNotReal',
-  ANTHROPIC_IDENTITY_TOKEN_FILE: '/run/trisula/identity-token',
+  ANTHROPIC_IDENTITY_TOKEN_FILE: '/run/folio/identity-token',
 };
 
 test('a federation rule id selects the first-party API with no key on disk', () => {

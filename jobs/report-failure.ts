@@ -15,7 +15,7 @@
  * down neither lands, which is what the heartbeat is for — it is the only signal that survives
  * the database being the thing that failed.
  *
- *   pnpm exec tsx jobs/report-failure.ts trisula-job@ingest-eod.service
+ *   pnpm exec tsx jobs/report-failure.ts folio-job@ingest-eod.service
  */
 import { closePool } from '../lib/db.ts';
 import { recordUnitFailure } from '../lib/notify.ts';

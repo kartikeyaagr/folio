@@ -28,7 +28,7 @@ import {
 import { reset as resetLimits } from './rate-limit.ts';
 import { createTestDatabase, dropTestDatabase } from '../db/testing.ts';
 
-const DB = `trisula_auth_${process.pid}`;
+const DB = `folio_auth_${process.pid}`;
 const USER = 'p1';
 
 before(async () => {

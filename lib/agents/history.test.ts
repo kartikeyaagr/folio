@@ -16,7 +16,7 @@ import { createTestDatabase, dropTestDatabase } from '../../db/testing.ts';
 import { serviceTxn } from '../db.ts';
 import { askedCounts, askedRuns } from './history.ts';
 
-const DB = `trisula_hist_${process.pid}`;
+const DB = `folio_hist_${process.pid}`;
 const ANNA = 'u1';
 const BOB = 'u2';
 const BOSS = 'u3';

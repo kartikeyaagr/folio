@@ -33,9 +33,9 @@
 /*
  * KNOWN COLLISION, currently benign: `.grow`. Tailwind emits `.grow{flex-grow:1}` as a static
  * utility; `globals.css` already defines `.grow{flex:1 1 0;min-width:0}`, and the `min-width:0` is
- * what makes an ellipsis work in a flex child — `.app-sub` depends on it. Trisula's rule is
+ * what makes an ellipsis work in a flex child — `.app-sub` depends on it. Folio's rule is
  * unlayered and later in the sheet, so it wins on both counts and behaviour is unchanged. Verified
- * in the built CSS, not assumed. It stays fragile until the Trisula classes move into
+ * in the built CSS, not assumed. It stays fragile until the Folio classes move into
  * `@layer components`, which is the re-skin's job, not this file's.
  */
 @layer theme, base, components, utilities;

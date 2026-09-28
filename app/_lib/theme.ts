@@ -9,6 +9,6 @@ export type Theme = 'light' | 'dark';
  * attribute is absent rather than guessed. Guessing means a flash of the wrong theme on first load.
  */
 export async function currentTheme(): Promise<Theme | null> {
-  const value = (await cookies()).get('trisula_theme')?.value;
+  const value = (await cookies()).get('folio_theme')?.value;
   return value === 'light' || value === 'dark' ? value : null;
 }

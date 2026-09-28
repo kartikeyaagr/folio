@@ -7,7 +7,7 @@ import { embed, toVector, EMBED_MODEL } from './embed.ts';
 import { search, FTS_QUERY, MAX_PER_SOURCE } from './search.ts';
 import { createTestDatabase, dropTestDatabase } from '../../db/testing.ts';
 
-const DB = `trisula_search_${process.pid}`;
+const DB = `folio_search_${process.pid}`;
 
 // Repo-local model — see index.test.ts and embed.test.ts, which set this the same way.
 const MODEL_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '.models', 'bge-small-en-v1.5');

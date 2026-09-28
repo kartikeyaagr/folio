@@ -18,7 +18,7 @@ import { CHANNEL } from './ingest/backfill.ts';
 import pg from 'pg';
 import { createTestDatabase, dropTestDatabase } from '../db/testing.ts';
 
-const DB = `trisula_co_${process.pid}`;
+const DB = `folio_co_${process.pid}`;
 const ME = 'p1';
 
 before(async () => {

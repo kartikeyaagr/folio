@@ -16,7 +16,7 @@ import { composeDigest, DIGEST_HOUR, istHour, sendDigests } from './digest.ts';
 import { forgetMailbox, linkMailbox } from './mailbox.ts';
 import type { Mail } from './notify.ts';
 
-const DB = `trisula_digest_${process.pid}`;
+const DB = `folio_digest_${process.pid}`;
 const ANNA = 'u1';
 const BOB = 'u2';
 
@@ -183,7 +183,7 @@ test('nobody with nothing waiting gets an empty mail', async () => {
 // ---- the pieces ----------------------------------------------------------------------------------
 
 test('the hour is read in IST wherever the box thinks it is', async () => {
-  // `ops/systemd/trisula-job@.service` sets TZ=Asia/Kolkata and a laptop does not. A digest whose
+  // `ops/systemd/folio-job@.service` sets TZ=Asia/Kolkata and a laptop does not. A digest whose
   // hour depends on whose machine ran it is the kind of thing nobody notices until a Monday.
   assert.equal(istHour(new Date('2026-09-17T02:30:00Z')), 8);
   assert.equal(istHour(new Date('2026-09-16T22:30:00Z')), 4);
@@ -198,7 +198,7 @@ test('the subject says what is inside, so opening it is a decision made once', a
     MORNING,
     { draftsWaiting: 0, runsNeedingSomebody: 0 },
   );
-  assert.match(subject, /^Trisula — 17 Sep/);
+  assert.match(subject, /^Folio — 17 Sep/);
   assert.match(subject, /1 reminder\b/, 'singular where it is one');
   assert.match(subject, /2 alerts/, 'plural where it is more');
 });

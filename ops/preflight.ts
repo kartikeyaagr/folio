@@ -133,7 +133,7 @@ async function checkTimezone(): Promise<void> {
       'bad',
       'db timezone',
       `${zone}, so current_date is yesterday before 05:30 IST. ` +
-        "ALTER DATABASE trisula SET timezone = 'Asia/Kolkata' (SETUP §4)",
+        "ALTER DATABASE folio SET timezone = 'Asia/Kolkata' (SETUP §4)",
     );
 }
 
@@ -142,7 +142,7 @@ async function checkTimezone(): Promise<void> {
  *
  * A file on disk with no row is un-applied schema — the app will query columns that do not exist.
  * A row with no file is a migration that was renamed or deleted after it ran, which is how
- * `trisula_v3_dev` ended up carrying both 0052 and the renumbered 0062 of the same migration.
+ * `folio_dev` ended up carrying both 0052 and the renumbered 0062 of the same migration.
  */
 async function checkMigrations(): Promise<void> {
   const onDisk = readdirSync(path.join(REPO, 'db', 'migrations'))
@@ -315,7 +315,7 @@ function checkCredential(): void {
       say(
         'bad',
         'model credential',
-        `federation selected but ${file} does not exist — is trisula-identity-token.timer enabled?`,
+        `federation selected but ${file} does not exist — is folio-identity-token.timer enabled?`,
       );
       return;
     }
@@ -338,7 +338,7 @@ function checkBackups(): void {
     );
   else say('ok', 'backup key', 'recipient well-formed (shape only — §12 proves it is the right one)');
 
-  const dir = env('BACKUP_DIR') ?? '/var/lib/trisula/backups';
+  const dir = env('BACKUP_DIR') ?? '/var/lib/folio/backups';
   if (writable(dir)) say('ok', 'backup dir', dir);
   else say('bad', 'backup dir', `${dir} is not writable by this user`);
 
@@ -456,16 +456,16 @@ function checkUnits(): void {
   for (const file of timers) {
     const unit = file;
     // The token refresher is only wanted when federation is the backend it refreshes for.
-    if (unit === 'trisula-identity-token.timer' && !federated) continue;
+    if (unit === 'folio-identity-token.timer' && !federated) continue;
     if (state(unit, 'is-enabled') !== 'enabled') off.push(unit);
   }
   if (off.length > 0) say('bad', 'timers', `${off.length} not enabled: ${off.join(', ')}`);
   else say('ok', 'timers', `${timers.length - (federated ? 0 : 1)} enabled`);
 
-  for (const unit of ['trisula-web.service', 'trisula-index-watch.service', 'trisula-backfill-watch.service']) {
+  for (const unit of ['folio-web.service', 'folio-index-watch.service', 'folio-backfill-watch.service']) {
     const s = state(unit, 'is-active');
-    if (s === 'active') say('ok', unit.replace(/^trisula-|\.service$/g, ''), 'active');
-    else say('bad', unit.replace(/^trisula-|\.service$/g, ''), `is-active says ${s}`);
+    if (s === 'active') say('ok', unit.replace(/^folio-|\.service$/g, ''), 'active');
+    else say('bad', unit.replace(/^folio-|\.service$/g, ''), `is-active says ${s}`);
   }
 }
 

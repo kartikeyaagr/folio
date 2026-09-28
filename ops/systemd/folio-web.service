@@ -1,5 +1,5 @@
 [Unit]
-Description=Trisula web app
+Description=Folio web app
 After=network-online.target postgresql.service
 Wants=network-online.target
 # The web app is the one unit a person notices going down, and until 23-Sep-2026 it had no
@@ -11,16 +11,16 @@ Wants=network-online.target
 #
 # In [Unit], not [Service]: systemd moved these in v229 and ignores them in the old place without
 # complaining. Both watcher units were silently broken that way until 21-Sep-2026.
-OnFailure=trisula-alert@%n.service
+OnFailure=folio-alert@%n.service
 StartLimitIntervalSec=60
 StartLimitBurst=5
 
 [Service]
 Type=simple
-User=trisula
-WorkingDirectory=/srv/trisula
-EnvironmentFile=/etc/trisula/trisula.env
-# postgres:///trisula parses to an empty host, so pg falls through to PGHOST and then to
+User=folio
+WorkingDirectory=/srv/folio
+EnvironmentFile=/etc/folio/folio.env
+# postgres:///folio parses to an empty host, so pg falls through to PGHOST and then to
 # localhost:5432 over TCP — which §4 deliberately never opens. The job units already set this.
 Environment=PGHOST=/var/run/postgresql
 # TZ on the unit, like every job. Every date this system computes is an Indian trading date, and
@@ -44,17 +44,17 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
-# Two paths, not one. `.next` is the build output. /var/lib/trisula/attachments is ATTACHMENT_DIR's
+# Two paths, not one. `.next` is the build output. /var/lib/folio/attachments is ATTACHMENT_DIR's
 # default, and `keepUploadAsAttachment` (lib/workspace.ts) does mkdir + writeFile there when
 # somebody imports a file from the UI — under ProtectSystem=strict that failed EROFS with only
 # `.next` listed, so every job unit could write attachments and the web process could not.
 #
-# The attachments directory and not its parent. /var/lib/trisula also holds the nightly backups
+# The attachments directory and not its parent. /var/lib/folio also holds the nightly backups
 # and the embedding model the jobs load, and this is the one process that faces the network: a
 # compromised web process must not be able to delete the backups recovery depends on or swap the
 # model. The backup unit already grants itself only `backups/`. Move ATTACHMENT_DIR and this line
 # moves with it.
-ReadWritePaths=/srv/trisula/.next /var/lib/trisula/attachments
+ReadWritePaths=/srv/folio/.next /var/lib/folio/attachments
 
 [Install]
 WantedBy=multi-user.target

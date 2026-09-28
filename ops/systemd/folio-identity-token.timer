@@ -8,7 +8,7 @@ Description=Keep the Anthropic identity token fresh
 # can be minted on the box, read its `exp` and set this to a third of what is left.
 OnBootSec=30sec
 OnUnitActiveSec=10min
-Unit=trisula-identity-token.service
+Unit=folio-identity-token.service
 
 [Install]
 WantedBy=timers.target

@@ -23,10 +23,10 @@ export default function GlobalError({ error }: { error: Error & { digest?: strin
   return (
     <html lang="en">
       <body>
-        <Failure eyebrow="Something broke" title="Trisula could not start this page.">
+        <Failure eyebrow="Something broke" title="Folio could not start this page.">
           <p>
             The failure is below the screen you asked for, so reloading is unlikely to help. If this
-            persists, <code>systemctl status trisula-web</code> on the box is where the reason is.
+            persists, <code>systemctl status folio-web</code> on the box is where the reason is.
           </p>
           {error.digest && (
             <p className="failure-digest">

@@ -6,7 +6,7 @@ import {
 } from './alerts.ts';
 import { createTestDatabase, dropTestDatabase } from '../db/testing.ts';
 
-const DB = `trisula_alerts_${process.pid}`;
+const DB = `folio_alerts_${process.pid}`;
 const A = 'u_a';
 const B = 'u_b';
 const COVERED = 'c_covered';

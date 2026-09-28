@@ -4,7 +4,7 @@ import { serviceTxn } from './db.ts';
 import { clear, dismissalsByTier, mark, newsFor } from './engagement.ts';
 import { createTestDatabase, dropTestDatabase } from '../db/testing.ts';
 
-const DB = `trisula_eng_${process.pid}`;
+const DB = `folio_eng_${process.pid}`;
 const ANA = 'u_a';
 const BO = 'u_b';
 const CO = 'c1';

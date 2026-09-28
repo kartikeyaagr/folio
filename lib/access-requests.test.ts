@@ -22,7 +22,7 @@ import {
 } from './access-requests.ts';
 import { createTestDatabase, dropTestDatabase } from '../db/testing.ts';
 
-const DB = `trisula_req_${process.pid}`;
+const DB = `folio_req_${process.pid}`;
 const ADMIN = 'p1';
 
 before(async () => {

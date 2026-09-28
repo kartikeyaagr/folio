@@ -3,7 +3,7 @@
 # Provision the EC2 instance described in SETUP.md §1, plus the backup bucket and instance role
 # from §7. Everything up to the point where you can SSH in; §2 onward is done on the box.
 #
-#   ./ops/provision.sh [profile]        # profile defaults to "trisula"
+#   ./ops/provision.sh [profile]        # profile defaults to "folio"
 #
 # Safe to re-run. Every step checks for what it would create and reuses it, so a half-finished run
 # is resumed rather than duplicated. It will not reshape something that already exists into what
@@ -18,10 +18,15 @@
 # month's address in place beside this month's was how that stopped being true.
 set -euo pipefail
 
-PROFILE="${1:-trisula}"
+PROFILE="${1:-folio}"
 REGION="ap-south-1"           # §1. India, because the fund's data sits in India.
 INSTANCE_TYPE="t4g.small"     # Graviton. Burstable suits a workload idle until 18:45.
 VOLUME_GB=40
+# Every AWS-side name keeps "trisula", from before the system was renamed Folio on 28-Sep-2026.
+# These resources already exist in 577483323158, and IAM roles and S3 buckets cannot be renamed,
+# only recreated. The Anthropic federation rule (SETUP.md §10) pins this role's ARN by exact
+# match, so a new role would stop every agent run until someone re-pointed that rule by hand in the
+# Console. A re-run with new names would not rename anything; it would build a second VM.
 KEY_NAME="trisula"
 PUBKEY="$HOME/.ssh/trisula.pub"
 SG_NAME="trisula-vm"

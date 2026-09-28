@@ -6,7 +6,7 @@ Description=Board meetings and results dates
 # board meeting does it days ahead, not minutes.
 OnCalendar=*-*-* 07:45 Asia/Kolkata
 Persistent=true
-Unit=trisula-job@ingest-calendar.service
+Unit=folio-job@ingest-calendar.service
 
 [Install]
 WantedBy=timers.target

@@ -82,6 +82,10 @@ async function drainAll(): Promise<DrainResult> {
 /**
  * The channel migration `0052` nudges. A statement-level trigger on `documents`,
  * `document_versions` and `attachments` sends one notification per committed transaction.
+ *
+ * Still `trisula_`, and it has to stay that way. The name is in the trigger's body, migrations are
+ * sha256-checksummed, and a listener renamed on its own would wait on a channel nobody sends to. The
+ * 10-minute timer would hide that, so it would read as a slow indexer rather than a broken one.
  */
 const CHANNEL = 'trisula_content';
 

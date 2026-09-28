@@ -1,6 +1,6 @@
 {
   "version": "0.0.1",
   "configurations": [
-    { "name": "trisula", "runtimeExecutable": "pnpm", "runtimeArgs": ["dev"], "port": 3100 }
+    { "name": "folio", "runtimeExecutable": "pnpm", "runtimeArgs": ["dev"], "port": 3100 }
   ]
 }

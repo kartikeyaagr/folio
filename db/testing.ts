@@ -10,7 +10,7 @@
  * than about the pool.
  *
  * The second is that `createdb` was called without first dropping. These names carry the pid
- * (`trisula_admin_${process.pid}`), pids are reused, and a run that crashed before its `after`
+ * (`folio_admin_${process.pid}`), pids are reused, and a run that crashed before its `after`
  * leaves the database behind — so the next run to draw that pid fails at startup on something
  * that is not its fault.
  *

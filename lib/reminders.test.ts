@@ -12,7 +12,7 @@ import { sweepScheduled } from './agents/queue.ts';
 import './agents/notify.ts';
 import { createTestDatabase, dropTestDatabase } from '../db/testing.ts';
 
-const DB = `trisula_rem_${process.pid}`;
+const DB = `folio_rem_${process.pid}`;
 const A = 'u_a';
 const B = 'u_b';
 
@@ -197,7 +197,7 @@ test('a failed unit is recorded AND addressed to somebody', async () => {
   // The whole point. Before this the job wrote one ingestion_runs row and stopped, which is a
   // pull: the row shows on /admin?tab=ops and waits for an admin to choose to look, so a unit that
   // dies at 04:00 reaches nobody until morning.
-  const told = await recordUnitFailure('trisula-job@ingest-eod.service');
+  const told = await recordUnitFailure('folio-job@ingest-eod.service');
   assert.ok(told > 0, 'a notice with no recipient is the failure this replaced');
 
   const rows = await readTxn(async (c) => {
@@ -213,13 +213,13 @@ test('a failed unit is recorded AND addressed to somebody', async () => {
   });
   assert.equal(rows.length, told);
   assert.match(rows[0]!.subject, /ingest-eod.*failed/);
-  assert.equal(rows[0]!.source, 'systemd:trisula-job@ingest-eod.service');
+  assert.equal(rows[0]!.source, 'systemd:folio-job@ingest-eod.service');
 });
 
 test('with no admin yet, everyone active is told rather than nobody', async () => {
   // A fresh box has no admin until somebody is made one, and that is exactly when a unit failing
   // matters most. Addressing the notice to the empty set would record it and tell no one.
-  const told = await recordUnitFailure('trisula-job@refresh-securities.service');
+  const told = await recordUnitFailure('folio-job@refresh-securities.service');
   assert.equal(told, 2, 'both seeded users, neither of whom is an admin');
 });
 
@@ -227,7 +227,7 @@ test('once there is an admin, the notice goes to them', async () => {
   await serviceTxn('system:auth', async (c) => {
     await c.query('UPDATE users SET is_admin = true WHERE id = $1', [A]);
   });
-  const told = await recordUnitFailure('trisula-job@ingest-calendar.service');
+  const told = await recordUnitFailure('folio-job@ingest-calendar.service');
   assert.equal(told, 1, 'a failed unit is an operations matter');
   await serviceTxn('system:auth', async (c) => {
     await c.query('UPDATE users SET is_admin = false WHERE id = $1', [A]);

@@ -18,8 +18,8 @@
 # Env:    BACKUP_AGE_RECIPIENT (required)  BACKUP_DIR  BACKUP_S3_BUCKET  BACKUP_S3_ENDPOINT
 set -euo pipefail
 
-DB="${1:-trisula}"
-DIR="${BACKUP_DIR:-/var/lib/trisula/backups}"
+DB="${1:-folio}"
+DIR="${BACKUP_DIR:-/var/lib/folio/backups}"
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 NAME="${DB}-${STAMP}.dump.age"
 
@@ -34,7 +34,7 @@ mkdir -p "$DIR"
 # -Fc is the custom format: compressed, and pg_restore can read a single table out of it.
 #
 # --exclude-extension=vector because the restore cannot carry it. pgvector is not a trusted
-# extension, so only a superuser can create it, and every restore runs as `trisula`: the dump's
+# extension, so only a superuser can create it, and every restore runs as `folio`: the dump's
 # CREATE EXTENSION is refused, and the COMMENT ON EXTENSION after it fails "must be owner", which
 # under --single-transaction rolls the whole restore back to an empty database. The weekly drill
 # restores through the same path, so it would fail the same way. Every database on the box inherits the
