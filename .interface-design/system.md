@@ -156,8 +156,11 @@ the kit above. A primitive is never used directly in a page.
 **What shadcn is not allowed to bring.** `Tabs`, `ToggleGroup` and `Select` are client-state
 components, and adopting them would convert server pages into client ones — see *State lives in the
 URL*. `Form` assumes react-hook-form and would do the same to all 41 forms. `Sonner` replaces a
-server-set flash cookie with client state. The native `<dialog>` in `DialogButton` and the native
-`<details>` in `AvatarMenu` are deliberately script-free and stay that way.
+server-set flash cookie with client state. The native `<dialog>` in `DialogButton`, the native
+`<details>` in `AvatarMenu`, and the native `<progress>` behind `components/BackfillProgress.tsx`
+(added 28-Sep-2026, styled by the `.progress` class in `globals.css`) are deliberately script-free
+and stay that way — the browser owns the fraction and the `progressbar` semantics, so there is no
+hand-built bar to keep in step with `value`/`max`.
 
 ## State lives in the URL
 

@@ -1,8 +1,8 @@
 # Architecture
 
 How Folio is put together, and why it is put together that way. Accurate against the tree at the
-time of writing: **62 migrations, 50 tables, 6 agents, 24 job entry points, 19 systemd timers, two
-long-running watchers, 18 pages and 4 route handlers, 862 tests.** Every number here was counted,
+time of writing: **67 migrations, 51 tables, 6 agents, 24 job entry points, 19 systemd timers, two
+long-running watchers, 18 pages and 4 route handlers, 933 tests.** Every number here was counted,
 not remembered; if you change the shape, count again rather than editing around it.
 
 For the product argument — what was built, what was deliberately cut, and on whose authority — see
@@ -50,9 +50,9 @@ no build step, and that is the trade.
 
 ## 2. The data model
 
-50 tables. None was ever dropped until `0053` took the three that were chat's and nothing else's;
+51 tables. None was ever dropped until `0053` took the three that were chat's and nothing else's;
 the rule it replaces — "none ever dropped" — held for fifty migrations and is worth keeping as the
-default. Forty-seven are grouped below by what they are for. The other three are outside the
+default. Forty-eight are grouped below by what they are for. The other three are outside the
 grouping because none of them holds fund data: `annual_report_attempts` records the *ask* rather
 than the result, so a year we requested and did not get is distinguishable from one we never
 requested without a watermark (`0046`); `index_levels` is a benchmark series and an index is not a
@@ -62,7 +62,7 @@ created by the migrator rather than by a migration.
 ```
 IDENTITY & AUDIT   actors · users · sessions · recovery_codes · audit_log
                    access_requests · ingestion_runs · mailboxes
-COMPANIES          securities · companies · company_aliases · sector_terms
+COMPANIES          securities · companies · company_aliases · backfill_steps · sector_terms
                    documents · document_versions · attachments
 FORENSICS          forensics_templates · forensics_template_items
                    forensics_checklists · forensics_answers
@@ -147,6 +147,34 @@ attempts, then the name leaves the queue by that bound rather than by being call
 `/companies` shows where every name has got to. `backfill_started_at` is the lease, so two passes
 never run over one name.
 
+**A backfill now says how far it has got, step by step** (`backfill_steps`, `0064`). Before this,
+`stepper()` kept every step's outcome in memory and wrote nothing until the whole attempt finished, so
+a name mid-way through the eight steps — one of them a twenty-minute price walk — looked identical to
+one not yet claimed. Each step now writes a row when it starts (`outcome = 'running'`) and again when
+it ends, so a process killed mid-step leaves a `running` row rather than no row at all, the same
+argument `backfilled_at` already made. The prices step alone reports `sub_done`/`sub_total` —
+trading days done out of the window — at the cadence it already logs, passed a `--progress-row` id by
+`jobs/backfill-company.ts` when it spawns `jobs/backfill-prices.ts` as a subprocess.
+`lib/ingest/backfill-progress.ts` is the one read: `/companies` shows a fleet-wide bar plus a sliver
+on each running row, and a company's own page shows a block naming the steps already behind it, both
+refreshing only while something is running (`components/RefreshWhile.tsx`, a client-side poll that
+only asks Next to re-run the server component, never holding state itself). `backfill_steps.company_id`
+cascades on delete — a progress row is derived data like an alias or a chunk, not a reason to hold up
+`removeCompany`'s `DELETE`.
+
+**A company can be removed** (`lib/companies.ts`, `0063`). Removal is soft because a hard delete
+almost never can be: 18 tables reference `companies` with no `ON DELETE`. `removeCompany` tries a
+`DELETE` first, behind a `SAVEPOINT`, and on `foreign_key_violation` (`23503`) rolls back to it and
+sets `removed_at`/`removed_by` instead — a name with nothing recorded against it is deleted outright,
+a name with history is kept, hidden, and restorable, and a name with shares on the book is refused
+before either is tried. Every ingest selector, the backfill queue, the news-matching vocabulary, the
+agent sweeps, the news-brief gather and the alert evaluators skip a removed name; `/companies` hides
+it, and `?filter=removed` lists it with Restore. Following a removed name, or pressing Restore,
+re-queues its backfill — every feed skipped it while it was away, so its history has a hole exactly as
+long as the removal — and re-links whatever filed in the meantime. Trade moved from `/portfolio` alone
+(where it vanished on `?view=cash`) onto every portfolio view and each company's own page, opening the
+same form and the same `recordTradeAction`, preselected where the company is already known.
+
 **The offer document is the one thing no feed serves.** NSE has no endpoint for an RHP or DRHP and
 SEBI's draft index holds 2.3% of NSE Emerge names; both were probed live, in Sep 2026, twice. They
 arrive through the import dialog, which takes 32MB PDFs and keeps the bytes.
@@ -169,12 +197,49 @@ all, because the attachment already carries those words: 35 transcripts, 2,063 d
 
 ### News
 
-Feeds are polled wide — 56 configured, 34 active — then narrowed by a **deterministic** matcher
-(`lib/news/match.ts`:
-symbol → ISIN → name → alias → sector term, with word-boundary regexes and a stoplist; no model).
-Candidates then pass a **model gate** (`lib/news/gate.ts`) that must produce a *mechanism sentence* —
-not a score — explaining how the story touches the company. `related: true` with an empty mechanism
-is forced to rejected. Only `confirmed` matches reach a reader, or the content store.
+**Until 28-Sep-2026, `/news` showed confirmed company matches and nothing else** — `0018`'s rule that
+a candidate is never shown, only a stated mechanism is. The user reversed that for the page: `/news`
+now defaults to **the stream** — every story from the major outlets, merged across outlets, with no
+model scoring or ranking. The confirmed-match view survives as the **Ours** tab, unchanged, and the
+rule still holds there and for the content store: only a `confirmed` match reaches a reader outside
+the stream, or gets indexed (§4).
+
+**The matcher's net is unchanged underneath both.** Feeds are polled wide — 123 configured, 96
+active — then narrowed by a **deterministic** matcher (`lib/news/match.ts`: symbol → ISIN → name →
+alias → sector term, with word-boundary regexes and a stoplist; no model). Candidates then pass a
+**model gate** (`lib/news/gate.ts`) that must produce a *mechanism sentence* — not a score —
+explaining how the story touches the company. `related: true` with an empty mechanism is forced to
+rejected.
+
+**The stream is a second, separate admission**, on top of the matcher's. `news_sources.in_stream`
+(`0065`) marks which feeds belong in it — 98 of the 123, 93 both active and in the stream — leaving
+out the sector trade titles (which would flood a general reader with one industry) and the primary
+regulators RBI, SEBI and PIB (releases, not reporting). `news_sources.section` groups the stream into
+ten reading sections (india, world, politics, business, companies, markets, economy, industry, tech,
+official); `outlet` is **generated** from the label (`split_part(label, ' — ', 1)`) so a publisher's
+several feeds — BusinessLine runs one URL through two — count as one outlet, not two.
+
+**A story is the items sharing a `story_id`** (`news_items.story_id`, `lib/news/stories.ts`), joined
+by exact key — the same `url_key` or `title_key` `0027` already computed — within seven days of the
+story's first item, never by similarity: `C7`'s clustering measurement (100 items to 95 stories)
+still stands against it. A URL only merges items from *different* feeds, because `url_key` strips the
+query string and RBI's press releases differ only by `?prid=`. Assignment runs inside `storeItems`,
+behind a transaction-scoped advisory lock — `pg_advisory_xact_lock(hashtext('news_items.story_id'))`,
+the first advisory lock in this system — so two feeds carrying one wire story in the same poll do not
+each start a story of their own.
+
+**A feed whose newest item is more than 21 days old now fails the poll** (`STALE_DAYS`,
+`lib/news/poll.ts`), whatever else it answers. Five Moneycontrol feeds had been serving an April-2024
+history as "ok" for five months before this was measured on 28-Sep-2026, and are now switched off
+(`news_sources.active = false`, kept rather than deleted, so their fetched items and the reason stay).
+
+`/news` has two tabs. **All**, the default, is the stream: `?hours=` (6, 24 or 72), `?section=`,
+`?outlet=` and `?page=` filter it, every control a plain link. **Ours** is the confirmed-match view,
+unchanged since `0018`, with its own `?show=dismissed`.
+
+The poll runs **hourly, around the clock**, replacing a two-hourly daytime timer that lost the
+fastest-turning feeds outright (NDTV Profit turns over in 1.4 hours) and every feed's overnight
+stories.
 
 ---
 
@@ -243,7 +308,7 @@ Six, as rows in `agents`. An agent absent from that table cannot be invoked.
 | `results-figures` | event | reads a filed results period, with a deterministic verifier |
 | `concall-insights` | event | reads a transcript against the previous one |
 | `forensics-review` | event | works the fund's own 14-item forensic checklist |
-| `news-brief` | prompt | the week's confirmed news, per company |
+| `news-brief` | schedule | daily 08:00 IST, last 24 hours, per company; publishes without review, mailed to everyone, learning off |
 | `email-workflow` | schedule | drains `notification_outbox` |
 | `reminders` | schedule | what is due |
 
@@ -280,6 +345,23 @@ apart — *out of attempts* needs a person, *will be tried again* needs whatever
 `ai_drafts` row; `/review` shows its sources *before* its content, the deterministic checks, and
 Accept or Reject-with-a-required-reason. Accepting lands it in `documents`/`document_versions` (or
 `forensics_answers`). Every draft shows where it came from, before and after that decision.
+
+**One agent is the exception, by the fund's decision of 28-Sep-2026** (`0067`): the news brief
+publishes itself the moment it is written, with nobody between the model and the record.
+`publishDraft` (`lib/agents/review.ts`) runs in the same transaction that wrote the draft, marks it
+`status = 'published'`, lands it through the same `landDocument` an acceptance uses (as
+`system:agents`, not a person's name), and queues its mail to everybody in that transaction too. Two
+`ai_drafts` `CHECK` constraints hold the exception to this one agent however the row is reached —
+`only_the_brief_skips_review` refuses `published` for any other `agent_key`, and
+`nobody_signed_a_published_draft` refuses a decider, edits or an edit distance on a published row, so
+a distance of zero can never be misread as somebody having signed off unchanged. `learning = false`
+for the same reason: with no review there are no human edits, and retrieving the agent's own
+unreviewed output as an example would only reinforce whatever it already does.
+
+A change in progress alongside this one, not yet in this tree, adds a headline and a
+major-updates section drawn from the general news stream (§3), and makes the brief produce
+something even when no company is followed — as of this file the brief's content is per-company
+only, and `gather()` has nothing to write from with none followed.
 
 `costUsd` returns **null** for an unknown model, never zero. v2's dashboard confidently reported
 `$0.00` because nothing seeded its price table.
@@ -336,8 +418,10 @@ generated paragraph reads better and cannot be checked. A rule enters a prompt o
 approves it on `/rules`, enforced by both code and schema check constraints, and can be retired but
 never deleted.
 
-The assembled system prompt is, in order: **purpose → approved rules → examples**. Three agents learn
-(`concall-insights`, `news-brief`, `forensics-review`); the column is what gates it.
+The assembled system prompt is, in order: **purpose → approved rules → examples**. Two agents learn
+(`concall-insights`, `forensics-review`); the column is what gates it. `news-brief` learned here
+until 28-Sep-2026 (`0067`): publishing without review left it with no accepted draft to distil a
+correction from, and a rule built from its own unreviewed output would only reinforce it.
 
 Mean edit distance per agent per week is rendered on `/agents`, which is the measurement that decides
 whether this loop survives.
@@ -360,14 +444,31 @@ so a job that dies tells somebody.
 
 `jobs/heartbeat.ts` is a dead-man's switch: it reports health by *arriving*.
 
-**Mail is one envelope a person a morning.** Producers write a `notification_outbox` row per person
-per event as they always did; `lib/digest.ts` gathers each person's unsent rows into one mail after
-07:00 IST and marks them sent together (`0054`). Per-event sending is gone — a person gets one mail
-a day and never more, and an urgent alert waits until morning, which was chosen over an inbox that
-interrupts. One instant governs a pass: the hour gate, the "already sent today" check and the
-`sent_at` stamp all read the same `now`, because two clocks deciding one thing answers "still today"
-and "already tomorrow" in the same run. No relay configured is a valid state — the outbox keeps
-queueing and the run says how many are waiting.
+**Mail is one envelope a person a morning** — with one exception. Producers write a
+`notification_outbox` row per person per event as they always did; `lib/digest.ts` gathers each
+person's unsent rows into one mail after 07:00 IST and marks them sent together (`0054`). Per-event
+sending is gone — a person gets one mail a day and never more, and an urgent alert waits until
+morning, which was chosen over an inbox that interrupts. One instant governs a pass: the hour gate,
+the "already sent today" check and the `sent_at` stamp all read the same `now`, because two clocks
+deciding one thing answers "still today" and "already tomorrow" in the same run. No relay configured
+is a valid state — the outbox keeps queueing and the run says how many are waiting.
+
+**The brief schedules itself on the existing agents timer, with no timer of its own** (`0067`).
+`newsbrief.sweep()` runs beside `results.sweep()` and the rest inside `jobs/agents.ts`'s five-minute
+pass; from 08:00 IST it queues one run for the IST day, keyed as that day on `subject_ref`, so the
+house's usual `NOT EXISTS` question — has this subject had a run — is what "once a day" means here,
+and `agent_runs_one_brief_a_day` (a unique index on `subject_ref`) is what holds it when two sweeps
+race. A brief a person asks for carries no `subject_ref`, so it can neither stand in for the day's
+brief nor add a second one.
+
+**The news brief is the exception** (`0067`): its outbox rows are kind `brief`, queued for every
+active user in the same transaction that publishes the brief, and sent **on their own**, straight
+after `jobs/agents.ts`'s drain, through the shared relay only — never a person's linked mailbox, which
+was linked on the promise that it carries only its owner's daily digest. `lib/digest.ts` leaves `brief`
+rows alone twice over: unsent, they never fold into a digest, and sent, they do not count as the
+day's envelope — otherwise an 08:03 brief would hold every alert raised later that day until
+tomorrow's. No relay, or a send that fails, fails `jobs/agents.ts` itself, visibly, unlike every
+other mail path here: a brief that could not reach anybody is not a quiet day.
 
 **A person may link their own mailbox** (account menu → Link your mailbox, `0055`), and their digest
 then leaves from their own address rather than the shared relay. This is the schema's **first
@@ -458,7 +559,7 @@ export DATABASE_URL=postgres:///folio_dev
 pnpm install
 pnpm fetch-model                 # ~130 MB, bge-small-en-v1.5, validated on download
 pnpm exec tsx db/migrate.ts      # one transaction each, checksummed
-pnpm check                       # lint + typecheck + 862 tests
+pnpm check                       # lint + typecheck + 933 tests
 pnpm dev                         # port 3100
 ```
 

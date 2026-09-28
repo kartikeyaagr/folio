@@ -467,9 +467,17 @@ SMTP_FROM=desk@trisulacapital.com      # Hostinger rejects a From: that is not t
 the refusal arrives as a 5xx on `MAIL FROM` — which lands in `notification_outbox.last_error`
 rather than anywhere obvious, so check there first if nothing arrives.
 
-**No relay configured is a valid state and not a failure.** `smtpFromEnv()` returns null without
-`SMTP_HOST` and `SMTP_FROM`, the outbox keeps queueing, and the run says how many digests are
-waiting. Nothing is lost by leaving this unset; mail simply starts flowing the day it is set.
+**No relay configured is a valid state and not a failure — for the digest.** `smtpFromEnv()` returns
+null without `SMTP_HOST` and `SMTP_FROM`, the outbox keeps queueing, and the run says how many
+digests are waiting. Nothing is lost by leaving this unset; mail simply starts flowing the day it is
+set.
+
+**The daily news brief needs this same relay, and is not as forgiving** (`0067`). From 08:00 IST,
+`jobs/agents.ts` writes the brief, queues it for every active user, and sends it there and then
+through the shared relay — never a linked personal mailbox, which was linked on the promise that it
+carries only its own owner's digest. With `SMTP_HOST`/`SMTP_FROM` unset, or a send the relay refuses,
+`jobs/agents.ts` itself fails, visibly, rather than leaving the brief to queue quietly the way the
+digest does: a brief nobody could be sent must not look like a quiet morning.
 
 Check it end to end without waiting for 07:00:
 
@@ -844,6 +852,14 @@ sudo -u folio bash -c 'set -a; . /etc/folio/folio.env; set +a; pnpm preflight'
 added since the last deploy — §9 lists the full set, and `systemctl list-timers 'folio-*'`
 against that list is the check. `pnpm preflight` reads `ops/systemd/` and reports any timer in it
 that is not enabled, which is the same check without the list to keep in step.
+
+**A changed `OnCalendar=` on an already-enabled timer is not picked up by copying it either.**
+`daemon-reload` reparses the unit file, but a timer already running keeps the next elapse it last
+computed from the old one; the new schedule takes effect only after `systemctl restart <name>.timer`.
+`folio-news-poll.timer` is exactly this case as of 28-Sep-2026 — hourly, around the clock, in place
+of the old two-hourly daytime window — so this deploy needs `sudo systemctl restart
+folio-news-poll.timer` after the `cp` and `daemon-reload` above, and `systemctl list-timers
+folio-news-poll.timer` afterward should show the next elapse inside the hour, not the old window.
 
 Order matters in one direction only: migrations before the restart. The app reads columns the
 migration adds, so a restart first serves a build that queries a schema it does not have yet.

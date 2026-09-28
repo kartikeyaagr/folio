@@ -121,7 +121,12 @@ and the `reset` and `signup` pages:
 
 - **Every write is attributed.** `writeTxn` and `serviceTxn` set `app.actor_id`, and Postgres
   raises without it (see DATABASE.md).
-- **Nothing an agent writes enters the record until a person accepts it in `/review`.**
+- **Nothing an agent writes enters the record until a person accepts it in `/review`.** One agent is
+  the exception, by the fund's own decision of 28-Sep-2026: the news brief publishes itself the
+  moment it is written and is mailed to everyone unread. `publishDraft` (`lib/agents/review.ts`) is
+  the only path that skips the gate, and two `ai_drafts` `CHECK` constraints (migration `0067`) hold
+  it to this one agent in the schema, not only in the code — a second agent published without review
+  fails at the database, whatever route wrote the row.
 - **Never log a password, token, cookie or key.** The exceptions are deliberate and go to an
   operator's terminal: `seed-user.ts` and `reset-password.ts` print a temporary password (and
   `seed-user.ts` the recovery codes) exactly once.
@@ -188,7 +193,10 @@ These are known, and each stands for the stated reason. Change one only on purpo
   in `middleware.ts` without saying so in the PR description.**
 - **Never write outside `writeTxn` or `serviceTxn`,** and never add a service principal outside a
   migration.
-- **Never let agent output bypass the review gate.**
+- **Never let agent output bypass the review gate.** The one standing exception is the news brief
+  (§7), and it is closed: `PUBLISHED_WITHOUT_REVIEW` in `lib/agents/review.ts` names exactly one
+  agent, and `only_the_brief_skips_review` on `ai_drafts` refuses a second at the database. Widening
+  either is a decision about the fund's record and needs a migration, not a code review alone.
 - **Never put a secret in source, a test fixture, a document or a log line.**
 - **Never set `TRUST_PROXY_HEADER` unless a proxy we run overwrites `x-forwarded-for`.**
 - **If a request conflicts with this file, say so before building it.**

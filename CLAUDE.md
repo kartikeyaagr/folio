@@ -72,7 +72,7 @@ C8 declines a news vendor. The investor-letter agent was cut and its number not 
 ```bash
 export DATABASE_URL=postgres:///folio_dev
 pnpm exec tsx db/migrate.ts      # migrations are one transaction each, checksummed
-pnpm check                       # lint + typecheck + 862 tests
+pnpm check                       # lint + typecheck + 933 tests
 pnpm dev                         # port 3100
 ```
 
@@ -102,6 +102,10 @@ Tests create and drop their own databases; they need `createdb`/`dropdb` on PATH
   agent sweep that queued nothing, and a company backfill with nothing left to claim
   (`backfill-company`, added 19-Sep-2026). The files describe their own case and do not number it —
   ordinals in five headers drifted, and two of them both claimed to be the fourth.
+- **A news feed whose newest item is more than 21 days old is a failure too**, however it answers.
+  Five Moneycontrol feeds served an April-2024 history as "ok" for five months before this was
+  measured on 28-Sep-2026 (`STALE_DAYS`, `lib/news/poll.ts`); a full, frozen feed is not a quiet one
+  either.
 - **Ask "what has no run yet", never "what is new since I last looked."** Sweeps and evaluators use
   `NOT EXISTS`, not a watermark or a rolling window. A window can only lose things — it already
   cost this system two real alerts.
@@ -109,7 +113,11 @@ Tests create and drop their own databases; they need `createdb`/`dropdb` on PATH
   reads as broken, a dash reads as not-applicable, and a zero reads as a measured fact, which is
   the most dangerous of the three.
 - **Nothing an agent writes enters the record without a person accepting it**, and every draft
-  shows where it came from before and after that decision.
+  shows where it came from before and after that decision. **One exception, dated 28-Sep-2026:** the
+  news brief, by the fund's own decision, publishes itself the moment it is written and is mailed to
+  everyone with nobody reviewing it first. It is held to exactly one agent by the database, not only
+  by the code — `only_the_brief_skips_review` and `nobody_signed_a_published_draft` on `ai_drafts`
+  (migration `0067`) — so widening it takes a migration, not a one-line change.
 - **Cost is visible and true.** `costUsd` returns null for an unknown model, never zero. v2's
   dashboard confidently reported `$0.00` because nothing seeded its price table.
 - **State lives in the URL** — `?tab=`, `?filter=`, `?scope=` and plain links. Pages stay server

@@ -35,12 +35,15 @@ the id has no `actors` row. Otherwise it records `before` and `after` as jsonb i
 `system:news-gate`: the `ServicePrincipal` type in `lib/db.ts`, and the same eight rows seeded in
 `actors` by migrations. Adding one takes both halves in the same change.
 
-**`db/schema.test.ts` asserts that every table carries the trigger, except 11 exemptions.** Each
+**`db/schema.test.ts` asserts that every table carries the trigger, except 12 exemptions.** Each
 exemption is argued in the migration that created the table:
 - `actors`, `audit_log` and `schema_migrations`, which would be circular or are the runner's own;
 - `prices`, `index_levels`, `ingestion_runs`, `news_items` and `news_matched_items`, which are
   high-volume copies of somebody else's facts whose provenance is `ingestion_runs`;
-- `chunks`, `exemplars` and `rule_observations`, which are derived rows.
+- `chunks`, `exemplars` and `rule_observations`, which are derived rows;
+- `backfill_steps`, which is `ingestion_runs`' argument again: it is itself the fine-grained
+  provenance for what the backfill job did to a company, and a second layer of audit rows over it
+  would record the job's own bookkeeping rather than a person's decision (`0064`).
 
 The test's list also still names `chat_tool_calls`, which `0053` dropped.
 
@@ -49,10 +52,25 @@ A new table is audited unless you add it to that list *and* say why.
 **`LISTEN` never uses the pool.** `listen()` in `lib/db.ts` holds its own client and reconnects on
 its own. A pooled client's `LISTEN` goes to whoever borrows it next.
 
+**A delete that might be refused runs behind a `SAVEPOINT`.** `removeCompany` (`lib/companies.ts`,
+`0063`) tries the `DELETE` first and falls back to setting a marker column only on
+`foreign_key_violation` (Postgres code `23503`) — checking every one of the 18 tables that reference
+`companies` first would be a list that goes stale the day a nineteenth is added, where the foreign
+keys cannot. The `SAVEPOINT` is what makes the fallback possible at all: a failed statement aborts
+the whole transaction, and without one there would be nothing left to write the fallback into.
+`ROLLBACK TO SAVEPOINT` undoes only the failed `DELETE`; the row lock and the held-shares check done
+earlier in the same transaction still hold.
+
+**The first advisory lock in this system** serialises story assignment
+(`lib/news/stories.ts`, `0065`): `pg_advisory_xact_lock(hashtext('news_items.story_id'))`, taken
+before the sweep reads anything and held only for the one feed's new items. `pollFeeds` stores
+several feeds concurrently, each in its own transaction, and two of them carrying one wire story in
+the same poll would otherwise each see only their own uncommitted row and start a story of their own.
+
 ## 3. Conventions
 
 - **Names:** `snake_case`, and tables are mostly plural. A constraint is named for what it forbids:
-  `decided_together`, `rejection_needs_a_reason`.
+  `decided_together`, `rejection_needs_a_reason`, `removed_together` (companies, `0063`).
 - **Ids:** `text`. A row id is `rowId()`, 16 random bytes as 32 hex characters. That includes
   people: the "uuid" in `0001`'s comment is wrong and cannot be fixed (§4). A service actor's id is
   its name (`system:ingest`).
@@ -77,9 +95,10 @@ its own. A pooled client's `LISTEN` goes to whoever borrows it next.
   `CHECK` constraints too, so they hold however the row is reached.
 - **Nothing is soft-deleted as a policy.** A table that needs history carries a marker for it:
   `archived_at` (documents), `disabled_at` (users), `delisted_at` (securities), `reversed_at` plus
-  `reversed_by` plus a reason (transactions, never deleted), and `superseded_by` (fundamentals).
-- **Generated columns** (`chunks.fts`, `news_items.url_key` and `title_key`) cannot appear in a
-  `COPY` column list.
+  `reversed_by` plus a reason (transactions, never deleted), `superseded_by` (fundamentals), and
+  `removed_at` plus `removed_by` (companies, `0063` — a `DELETE` is tried first; see §2).
+- **Generated columns** (`chunks.fts`, `news_items.url_key` and `title_key`, `news_sources.outlet`)
+  cannot appear in a `COPY` column list.
 
 ## 4. Migrations
 

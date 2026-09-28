@@ -70,7 +70,7 @@ export DATABASE_URL=postgres:///folio_dev
 pnpm install
 pnpm fetch-model                 # ~130 MB embedding model, validated on download
 pnpm exec tsx db/migrate.ts      # migrations are one transaction each, checksummed
-pnpm check                       # lint + typecheck + 862 tests
+pnpm check                       # lint + typecheck + 933 tests
 pnpm dev                         # port 3100
 ```
 
