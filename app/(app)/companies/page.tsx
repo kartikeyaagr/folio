@@ -1,11 +1,14 @@
 import Link from 'next/link';
 
 import { companyList, type CompanyListRow } from '@/lib/company-view.ts';
+import { backfillProgress } from '@/lib/ingest/backfill-progress.ts';
 import {
   AppHeader, Blank, Card, Chip, dayMonthYear, Empty, Seg, inr, type Tone,
 } from '@/components/ui.tsx';
+import { BackfillRowBar, BackfillSummary } from '@/components/BackfillProgress.tsx';
 import { DialogButton } from '@/components/DialogButton.tsx';
 import { FollowPicker } from '@/components/FollowPicker.tsx';
+import { RefreshWhile } from '@/components/RefreshWhile.tsx';
 
 import {
   followCompany, restoreCompanyAction, searchSecurities,
@@ -106,7 +109,12 @@ export default async function CompaniesPage({
   const showRemoved = (await searchParams).filter === 'removed';
   // Both, always: the header counts the followed names whichever list is showing, and the switch
   // says how many were removed before anybody opens it.
-  const [rows, removed] = await Promise.all([companyList(), companyList({ removed: true })]);
+  const [rows, removed, progress] = await Promise.all([
+    companyList(),
+    companyList({ removed: true }),
+    backfillProgress(),
+  ]);
+  const runningBySymbol = new Map(progress.running.map((r) => [r.symbol, r]));
   // The count is of positions actually on the book, not of names somebody has marked `holding`.
   // Status is a judgement and the quantity is a fact; a header reading "0 held" above two rows
   // showing 5,000 each is the header disagreeing with its own table.
@@ -122,6 +130,9 @@ export default async function CompaniesPage({
           (marked !== onTheBook ? ` · ${marked} marked holding` : '')
         }
       />
+
+      <RefreshWhile active={progress.running.length > 0} />
+      <BackfillSummary overall={progress.overall} running={progress.running} />
 
       <div className="co-bar">
         <div className="form-actions">
@@ -210,6 +221,11 @@ export default async function CompaniesPage({
                           <span title={r.backfillNote ?? undefined}>
                             <Chip tone={BACKFILL_TONE[r.backfill] ?? 'neutral'}>{r.backfill}</Chip>
                           </span>
+                        )}
+                        {/* The chip says the queue state; this says how far the running attempt
+                            has actually got, from backfill_steps rather than from the lease alone. */}
+                        {runningBySymbol.has(r.symbol) && (
+                          <BackfillRowBar progress={runningBySymbol.get(r.symbol)!} />
                         )}
                       </td>
                       <td>

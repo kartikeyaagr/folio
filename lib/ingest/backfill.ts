@@ -57,6 +57,24 @@ export const MAX_ATTEMPTS = 3;
 
 export type Outcome = 'ok' | 'gap' | 'error';
 
+/**
+ * The eight steps `jobs/backfill-company.ts` runs, in the order it runs them.
+ *
+ * The single place that order is written down: `lib/ingest/backfill-progress.ts` counts a step's
+ * position against it rather than against a second copy, and `jobs/backfill-company.ts` names its
+ * steps from this array rather than repeating the strings.
+ */
+export const BACKFILL_STEPS = [
+  'filings',
+  'annual reports',
+  'documents',
+  'results',
+  'corporate actions',
+  'shareholding',
+  'insider',
+  'prices',
+] as const;
+
 /** What a step did, so the notice says what arrived rather than that something did. */
 export interface Step {
   label: string;
@@ -273,16 +291,30 @@ export async function record(t: Target, taken: Step[]): Promise<Verdict> {
  *
  * Returned rather than logged from here: `lib/` is imported by the web app as well as by `tsx`
  * jobs, and a library that writes to stdout is a library that writes to stdout in a request.
+ *
+ * **Also writes `backfill_steps`,** a row per step opened before `work` runs and closed after —
+ * the same shape `jobs/backfill-company.ts` already uses for `ingestion_runs`, and for the same
+ * reason: a process killed mid-step (the twenty-minute price walk most of all) leaves a `running`
+ * row rather than no row at all. `work` is handed the row's id because the prices step is itself a
+ * subprocess and has to be told which row to report its own sub-progress against.
  */
-export function stepper(): {
+export function stepper(t: Pick<Target, 'id' | 'attempts'>): {
   taken: Step[];
-  attempt: (label: string, work: () => Promise<StepResult>) => Promise<Step>;
+  attempt: (label: string, work: (rowId: string) => Promise<StepResult>) => Promise<Step>;
 } {
   const taken: Step[] = [];
-  const attempt = async (label: string, work: () => Promise<StepResult>): Promise<Step> => {
+  const attempt = async (label: string, work: (rowId: string) => Promise<StepResult>): Promise<Step> => {
+    const rowId = await serviceTxn('system:ingest', async (c) => {
+      const { rows } = await c.query<{ id: string }>(
+        'INSERT INTO backfill_steps (company_id, attempt, step) VALUES ($1, $2, $3) RETURNING id',
+        [t.id, t.attempts, label],
+      );
+      return rows[0]!.id;
+    });
+
     let step: Step;
     try {
-      step = { label, ...(await work()) };
+      step = { label, ...(await work(rowId)) };
     } catch (err) {
       // An exception is always `error`. A step that threw did not get far enough to know whether
       // the exchange has anything for this name, and guessing `gap` here would retire the name on
@@ -290,6 +322,14 @@ export function stepper(): {
       step = { label, detail: err instanceof Error ? err.message : String(err), outcome: 'error' };
     }
     taken.push(step);
+
+    await serviceTxn('system:ingest', async (c) => {
+      await c.query(
+        'UPDATE backfill_steps SET outcome = $2, detail = $3, finished_at = now() WHERE id = $1',
+        [rowId, step.outcome, step.detail],
+      );
+    });
+
     return step;
   };
   return { taken, attempt };

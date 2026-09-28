@@ -664,6 +664,40 @@ select:focus-visible {
   color: var(--navy);
 }
 
+/* --- Progress (the backfill bar) --------------------------------------------------------------- */
+/*                                                                                                    */
+/* A native <progress>, not a div built to look like one — the browser owns the fraction and the      */
+/* progressbar semantics. One primitive, three layouts around it in styles/companies.css: the         */
+/* whole-fleet figure above /companies' table, a sliver in a row, and the block on a company's page.  */
+/*                                                                                                    */
+/* Three rule sets for the track and the fill because there is no shorthand that reaches both         */
+/* engines: WebKit/Blink take ::-webkit-progress-bar/-value, Firefox takes ::-moz-progress-bar and     */
+/* reads the element's own background as the track once `appearance: none` removes the native chrome. */
+
+.progress {
+  appearance: none;
+  width: 100%;
+  height: 6px;
+  border: 0;
+  border-radius: 999px;
+  overflow: hidden;
+  background: var(--surface-2);
+}
+.progress::-webkit-progress-bar {
+  background: var(--surface-2);
+  border-radius: 999px;
+}
+.progress::-webkit-progress-value {
+  background: var(--navy);
+  border-radius: 999px;
+  transition: width 0.3s var(--ease);
+}
+.progress::-moz-progress-bar {
+  background: var(--navy);
+  border-radius: 999px;
+  transition: width 0.3s var(--ease);
+}
+
 /* --- Blank: the signature -------------------------------------------------------------------- */
 /*                                                                                                */
 /* Used wherever the system declines to answer rather than failing to. A hatched cell reads as     */

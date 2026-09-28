@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation';
 
 import { companyPage, priceHistory } from '@/lib/company-view.ts';
 import { coverers, listCompanies, sectorsWithTerms, STATUSES } from '@/lib/companies.ts';
+import { backfillProgress } from '@/lib/ingest/backfill-progress.ts';
 import { ACCEPTED } from '@/lib/import/index.ts';
 import { AUTHORED, documentsFor, KIND_LABEL } from '@/lib/workspace.ts';
 import { filedFor, heldNotListed, periodName, type FiledDocument } from '@/lib/files.ts';
@@ -10,9 +11,11 @@ import {
   AppHeader, Blank, Card, Chip, dayMonthYear, Empty, Fact, Facts, Seg, crore, inr, istDate,
   type Tone,
 } from '@/components/ui.tsx';
+import { CompanyBackfillBlock } from '@/components/BackfillProgress.tsx';
 import { PriceChart } from '@/components/PriceChart.tsx';
 import { DeleteDocument } from '@/components/DeleteDocument.tsx';
 import { DialogButton } from '@/components/DialogButton.tsx';
+import { RefreshWhile } from '@/components/RefreshWhile.tsx';
 import { RemoveCompany } from '@/components/RemoveCompany.tsx';
 import { TradeForm } from '@/components/TradeForm.tsx';
 
@@ -95,7 +98,7 @@ export default async function CompanyPage({
 
   const removed = co.removedAt !== null;
 
-  const [prices, desk, sectors, written, filed, notListed, names] = await Promise.all([
+  const [prices, desk, sectors, written, filed, notListed, names, progress] = await Promise.all([
     priceHistory(co.id),
     coverers(),
     sectorsWithTerms(),
@@ -104,7 +107,9 @@ export default async function CompanyPage({
     heldNotListed(co.id),
     // Only for the trade form's Change, which reaches the rest of the book's names.
     removed ? [] : listCompanies(),
+    backfillProgress(),
   ]);
+  const myProgress = progress.running.find((r) => r.symbol === co.symbol);
 
   // **A document promoted from an attachment is not a second document.** `extractPending` writes a
   // transcript's text into a `documents` row so agent 2 has something to sweep; `filedFor` lists
@@ -344,6 +349,13 @@ export default async function CompanyPage({
           <p className="notice">
             {co.status === 'exited' ? 'Exited' : 'Passed'}: {co.closedReason}
           </p>
+        )}
+
+        {myProgress && (
+          <>
+            <RefreshWhile active />
+            <CompanyBackfillBlock progress={myProgress} />
+          </>
         )}
 
         <Card title="Price">

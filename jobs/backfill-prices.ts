@@ -19,7 +19,7 @@
  */
 import './_env.ts';
 
-import { readTxn } from '../lib/db.ts';
+import { readTxn, serviceTxn } from '../lib/db.ts';
 import { fetchBhavcopy, NoBhavcopy, storePrices } from '../lib/ingest/bhavcopy.ts';
 import { ingestIndexDay } from '../lib/ingest/indices.ts';
 import { NseSession } from '../lib/ingest/nse.ts';
@@ -29,11 +29,16 @@ import { runJob } from './_run.ts';
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-const flags = readFlags(['days', 'symbol']);
+const flags = readFlags(['days', 'symbol', 'progress-row']);
 const days = Number(flags.str('days') ?? 90);
 if (!Number.isFinite(days) || days < 1) throw new Error('--days must be a positive number');
 
 const only = flags.str('symbol')?.trim().toUpperCase();
+
+// Set only when `jobs/backfill-company.ts` spawns this as its 'prices' step, naming the
+// `backfill_steps` row it opened before running us. A stand-alone run — this job's own documented
+// use, `--days 1825` by hand — has no row to report against, and sub-progress is simply not saved.
+const progressRow = flags.str('progress-row');
 
 // Which days are already held. Asked once rather than per day: a set membership test beats 1,250
 // round trips to answer a question the database can answer in one.
@@ -68,6 +73,28 @@ await runJob('nse_bhavcopy_backfill', async () => {
   // twenty-minute job that has to be restarted by hand is a job nobody runs twice.
   let session = await NseSession.open();
   const today = new Date();
+
+  // The loop's own denominator, known before a single request is made — how many of the `days`
+  // calendar days are weekdays. `traded` counts only what actually got fetched, so on a resumed
+  // window (most days already held) it stays near zero for a while; the fraction below is against
+  // this instead, which is the number that says how far through the walk we are.
+  let totalWeekdays = 0;
+  for (let back = 1; back <= days; back++) {
+    const dow = new Date(today.getTime() - back * 86_400_000).getUTCDay();
+    if (dow !== 0 && dow !== 6) totalWeekdays++;
+  }
+
+  const saveProgress = (done: number): Promise<void> =>
+    progressRow
+      ? serviceTxn('system:ingest', async (c) => {
+          await c.query(
+            'UPDATE backfill_steps SET sub_done = $2, sub_total = $3 WHERE id = $1',
+            [progressRow, done, totalWeekdays],
+          );
+        })
+      : Promise.resolve();
+  await saveProgress(0);
+
   let traded = 0;
   let quiet = 0;
   let skipped = 0;
@@ -103,6 +130,7 @@ await runJob('nse_bhavcopy_backfill', async () => {
       traded++;
       if (traded % 25 === 0) {
         console.log(`  ${day}  ${traded} trading days so far, ${stored} closes, ${levels} index closes`);
+        await saveProgress(traded);
       }
     } catch (err) {
       // A 404 is a non-trading day and is not retried: the file will not appear on a second ask.

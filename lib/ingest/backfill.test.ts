@@ -64,9 +64,11 @@ after(async () => {
 beforeEach(async () => {
   await serviceTxn('system:ingest', async (c) => {
     await c.query('DELETE FROM notification_outbox');
-    // In dependency order: a filing points at an attachment, and both point at a company.
+    // In dependency order: a filing points at an attachment, and both point at a company, as do
+    // this attempt's backfill_steps rows.
     await c.query('DELETE FROM filings');
     await c.query('DELETE FROM attachments');
+    await c.query('DELETE FROM backfill_steps');
     await c.query('DELETE FROM companies');
     await c.query(
       `INSERT INTO companies (id, symbol, name, added_by, created_at)
@@ -162,7 +164,7 @@ test('every step clean finishes with no error text and a plain notice', async ()
 });
 
 test('a throw is error, never a gap — a step that threw does not know what the exchange holds', async () => {
-  const { taken, attempt } = stepper();
+  const { taken, attempt } = stepper({ id: 'c1', attempts: 1 });
   await attempt('prices', async () => {
     throw new Error('fetch failed');
   });
@@ -185,6 +187,82 @@ test('verdictOf ranks a break above a gap however many clean steps surround it',
   assert.equal(verdictOf([did('a'), nothingFiled('b')].map(label), 1), 'filled with gaps');
   assert.equal(verdictOf([did('a')].map(label), 1), 'filled');
   assert.equal(verdictOf([broke('c')].map(label), MAX_ATTEMPTS), 'out of attempts');
+});
+
+// ------------------------------------------------------------------------------------------------
+// backfill_steps: a row per step, written as it happens rather than at the end
+// ------------------------------------------------------------------------------------------------
+
+const stepRows = (companyId: string, attempt: number) =>
+  readTxn(async (c) => {
+    const { rows } = await c.query<{ step: string; outcome: string; finished: boolean }>(
+      `SELECT step, outcome, (finished_at IS NOT NULL) AS finished
+         FROM backfill_steps WHERE company_id = $1 AND attempt = $2 ORDER BY id`,
+      [companyId, attempt],
+    );
+    return rows;
+  });
+
+test('a step is recorded running, under its own row, before it resolves', async () => {
+  const t = await one();
+  const { attempt, taken } = stepper(t);
+  let sawWhileRunning: { step: string; outcome: string; finished: boolean } | undefined;
+
+  await attempt('prices', async (rowId) => {
+    // Read from inside the step: by the time `work` runs, `attempt` has already awaited the
+    // INSERT, so this is not a race — it is the one moment the row is guaranteed to say `running`.
+    const { rows } = await readTxn((c) =>
+      c.query<{ step: string; outcome: string; finished: boolean }>(
+        'SELECT step, outcome, (finished_at IS NOT NULL) AS finished FROM backfill_steps WHERE id = $1',
+        [rowId],
+      ),
+    );
+    sawWhileRunning = rows[0];
+    return did('375 closes');
+  });
+
+  assert.deepEqual(sawWhileRunning, { step: 'prices', outcome: 'running', finished: false });
+  assert.equal(taken[0]?.outcome, 'ok');
+  assert.deepEqual(await stepRows(t.id, t.attempts), [
+    { step: 'prices', outcome: 'ok', finished: true },
+  ]);
+});
+
+test('step rows are written in order, each with the outcome it actually ended on', async () => {
+  const t = await one();
+  const { attempt } = stepper(t);
+  await attempt('filings', async () => did('486 served'));
+  await attempt('documents', async () => nothingFiled('this name holds no document'));
+  await attempt('prices', async () => broke('fetch failed'));
+
+  assert.deepEqual(await stepRows(t.id, t.attempts), [
+    { step: 'filings', outcome: 'ok', finished: true },
+    { step: 'documents', outcome: 'gap', finished: true },
+    { step: 'prices', outcome: 'error', finished: true },
+  ]);
+});
+
+test('a retry starts a fresh set of rows; the failed attempt keeps its own', async () => {
+  const first = await one();
+  await stepper(first).attempt('filings', async () => broke('feed down'));
+  await record(first, [{ label: 'filings', detail: 'feed down', outcome: 'error' }]);
+  await expireLease();
+
+  const second = await one();
+  assert.equal(second.attempts, 2, 'the claim is what counts the attempt');
+  await stepper(second).attempt('filings', async () => did('486 served'));
+
+  const rows = await readTxn(async (c) => {
+    const { rows } = await c.query<{ attempt: number; outcome: string }>(
+      'SELECT attempt, outcome FROM backfill_steps WHERE company_id = $1 ORDER BY attempt, id',
+      [first.id],
+    );
+    return rows;
+  });
+  assert.deepEqual(rows, [
+    { attempt: 1, outcome: 'error' },
+    { attempt: 2, outcome: 'ok' },
+  ]);
 });
 
 // ------------------------------------------------------------------------------------------------

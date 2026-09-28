@@ -46,6 +46,7 @@ import { promisify } from 'node:util';
 
 import { closePool, listen, readTxn, serviceTxn } from '../lib/db.ts';
 import {
+  BACKFILL_STEPS,
   broke,
   CHANNEL,
   claim,
@@ -155,8 +156,11 @@ async function documents(companyId: string): Promise<StepResult> {
   return did(line);
 }
 
+const [FILINGS, ANNUAL_REPORTS, DOCUMENTS, RESULTS, CORPORATE_ACTIONS, SHAREHOLDING, INSIDER, PRICES] =
+  BACKFILL_STEPS;
+
 async function backfill(t: Target, priceDays: number): Promise<Step[]> {
-  const { taken, attempt } = stepper();
+  const { taken, attempt } = stepper(t);
   const mark = { ok: '·', gap: '~', error: '!' } as const;
   const say = (s: Step): void => console.log(`  ${mark[s.outcome]} ${s.label}: ${s.detail}`);
 
@@ -167,7 +171,7 @@ async function backfill(t: Target, priceDays: number): Promise<Step[]> {
     return t.platform === 'nse_emerge' ? sme : main;
   };
 
-  say(await attempt('filings', async () => {
+  say(await attempt(FILINGS, async () => {
     const { filings, served, skipped } = await fetchAnnouncementsForSymbol(
       t.symbol, board<Board>('nse_sme', 'nse_equities'),
     );
@@ -187,7 +191,7 @@ async function backfill(t: Target, priceDays: number): Promise<Step[]> {
   // Before 'documents', not after: that step's extractPending sweep reads every attachment with no
   // extracted_text yet, and running it first would leave these newly-stored PDFs unread until
   // whatever backfill happens to touch this company next.
-  say(await attempt('annual reports', async () => {
+  say(await attempt(ANNUAL_REPORTS, async () => {
     const session = await NseSession.open();
     const reports = await fetchAnnualReports(t.symbol, board('sme', 'equities'), session);
     if (reports.length === 0) {
@@ -217,11 +221,11 @@ async function backfill(t: Target, priceDays: number): Promise<Step[]> {
   }));
 
   // After the filings and the annual reports, because it works from what they both point at.
-  say(await attempt('documents', () => documents(t.id)));
+  say(await attempt(DOCUMENTS, () => documents(t.id)));
 
   // Asked by symbol, which is the difference between one quarter and twenty years of them. The
   // feed without a symbol serves only the period just filed.
-  say(await attempt('results', async () => {
+  say(await attempt(RESULTS, async () => {
     const index = await fetchResultsForSymbol(t.symbol, board('sme', 'equities'));
     // A name on the exchange has filed results. Zero is the feed, not the company.
     if (index.length === 0) return broke('the results feed returned nothing for this symbol');
@@ -240,7 +244,7 @@ async function backfill(t: Target, priceDays: number): Promise<Step[]> {
   // window's — PRAJIND answers back to 2015. A company followed today therefore arrives with its
   // bonuses and splits already known, which matters because a split nobody recorded silently
   // misprices every trade before it.
-  say(await attempt('corporate actions', async () => {
+  say(await attempt(CORPORATE_ACTIONS, async () => {
     const items = await fetchAnnouncements(board<CaBoard>('sme', 'equities'), {
       from: '2010-01-01',
       to: new Date(Date.now() + 90 * 86_400_000).toISOString().slice(0, 10),
@@ -265,7 +269,7 @@ async function backfill(t: Target, priceDays: number): Promise<Step[]> {
   // exchange index — which cannot be zero while NSE is up, so the step could not fail for the
   // company it names. Measured 17-Sep-2026: AERON and TCL were both marked backfilled with no
   // error and neither has a single row in `shareholding_patterns`.
-  say(await attempt('shareholding', async () => {
+  say(await attempt(SHAREHOLDING, async () => {
     const before = await count(SHP, t.id);
     const r = await ingestShareholding();
     const after = await count(SHP, t.id);
@@ -286,7 +290,7 @@ async function backfill(t: Target, priceDays: number): Promise<Step[]> {
   // reaches back to 2015 (232 rows for PRAJIND). Its own docstring says "a newly followed company
   // arrives with its complete history and there is no backfill job to remember to run", which was
   // true of `ingestInsider()` sweeping every name and not true of the name added five minutes ago.
-  say(await attempt('insider', async () => {
+  say(await attempt(INSIDER, async () => {
     const session = await NseSession.open();
     const rows = await fetchInsider(t.symbol, session);
     // Genuinely common and not a fault: a promoter who has neither traded nor pledged since 2015
@@ -299,10 +303,13 @@ async function backfill(t: Target, priceDays: number): Promise<Step[]> {
   // A separate process on purpose: it is the long one, it re-primes its own NSE session when the
   // exchange drops it, and running it here would put a twenty-minute loop inside a job that has
   // already done six other things worth keeping.
-  say(await attempt('prices', async () => {
+  say(await attempt(PRICES, async (stepRowId) => {
     const { stdout } = await run(
       'pnpm',
-      ['exec', 'tsx', 'jobs/backfill-prices.ts', '--symbol', t.symbol, '--days', String(priceDays)],
+      [
+        'exec', 'tsx', 'jobs/backfill-prices.ts',
+        '--symbol', t.symbol, '--days', String(priceDays), '--progress-row', stepRowId,
+      ],
       { cwd: process.cwd(), maxBuffer: 8 * 1024 * 1024 },
     );
     const line = stdout.trim().split('\n').pop() ?? 'done';

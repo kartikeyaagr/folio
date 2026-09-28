@@ -122,9 +122,13 @@ test('every audited table carries the trigger', async () => {
       -- evidence for an audited decision records the decision twice;
       -- index_levels is prices' argument exactly: unchanging exchange facts, written only by the
       -- ingest jobs, provenance in ingestion_runs. Four closes a trading day, never corrected.
+      -- backfill_steps is ingestion_runs' argument again: it is itself the fine-grained provenance
+      -- for what the backfill job did to a company, written only by system:ingest, and a second
+      -- layer of audit rows over it would record the job's own bookkeeping rather than a person's
+      -- decision (0064).
       AND c.relname NOT IN ('actors', 'audit_log', 'schema_migrations', 'prices', 'ingestion_runs',
                             'news_items', 'news_matched_items', 'chunks', 'chat_tool_calls',
-                            'exemplars', 'rule_observations', 'index_levels')
+                            'exemplars', 'rule_observations', 'index_levels', 'backfill_steps')
       AND NOT EXISTS (
         SELECT 1 FROM pg_trigger t WHERE t.tgrelid = c.oid AND t.tgname = 'audit'
       )`);
