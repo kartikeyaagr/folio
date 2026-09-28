@@ -2,7 +2,7 @@ import { readTxn } from '@/lib/db.ts';
 import { openCandidates, standingRules, type Observation } from '@/lib/agents/rules.ts';
 import { MIN_DISTANCE, MIN_OBSERVATIONS } from '@/lib/agents/distil.ts';
 import { label } from '@/lib/agents/paths.ts';
-import { AppHeader, Card, Chip, Empty, Eyebrow } from '@/components/ui.tsx';
+import { AppHeader, Card, Chip, dayMonthYear, Empty, Eyebrow } from '@/components/ui.tsx';
 
 import { approve, propose, refuse, retire } from '../../_lib/actions/rules.ts';
 import { requireUser } from '../../_lib/session.ts';
@@ -224,7 +224,7 @@ export default async function RulesPage() {
                       </td>
                       <td className="cell-wrap">{r.rule}</td>
                       <td>{r.decidedBy}</td>
-                      <td>{r.decidedAt.toLocaleDateString('en-IN')}</td>
+                      <td>{dayMonthYear(r.decidedAt)}</td>
                       <td>
                         <form action={retire} className="draft-reject">
                           <input type="hidden" name="id" value={r.id} />

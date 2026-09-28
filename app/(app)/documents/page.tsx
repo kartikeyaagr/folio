@@ -77,7 +77,7 @@ export default async function DocumentsPage({
                   {docs.map((d) => (
                     <tr key={d.id} className={d.archivedAt ? 'pf-void' : undefined}>
                       <td className="cell-wrap">
-                        {/* A quarterly document is named for its quarter: "Sept 2026 Transcript",
+                        {/* A quarterly document is named for its quarter: "Sep 2026 Transcript",
                             not seventeen rows reading "Transcript". Composed here rather than stored
                             — see periodName. A document somebody wrote keeps the title they gave it. */}
                         <Link href={`/doc/${d.id}`}>

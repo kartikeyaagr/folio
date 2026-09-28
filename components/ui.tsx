@@ -2,6 +2,7 @@ import Link from 'next/link';
 import type { ReactNode } from 'react';
 
 import { searchCompanies } from '@/app/_lib/actions/search.ts';
+import { MONTHS } from '@/lib/months.ts';
 
 import { CompanySearch } from './CompanySearch.tsx';
 
@@ -18,7 +19,6 @@ import { CompanySearch } from './CompanySearch.tsx';
 /* Page header                                                                                     */
 /* --------------------------------------------------------------------------------------------- */
 
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 /** "Wed 3 Sep 2026", in the fund's own time zone regardless of where the server sits. */
@@ -38,7 +38,7 @@ export function todayLabel(now = new Date()): string {
 /**
  * Dates, in the fund's time zone and in one vocabulary.
  *
- * Every one of these reads its parts from `Intl` and then spells the month from `MONTHS` above,
+ * Every one of these reads its parts from `Intl` and then spells the month from `MONTHS`,
  * rather than letting `Intl` name it. That is not decoration: **en-GB renders September as
  * "Sept"** — four letters where the other eleven months are three — which makes a column of dates
  * ragged and is why `todayLabel` was written this way in the first place.
@@ -90,6 +90,12 @@ function istParts(at: Date): IstParts {
 export function dayMonth(at: Date): string {
   const p = istParts(at);
   return `${Number(p.day)} ${p.mon}`;
+}
+
+/** "3 Sep 2026" — a day that happened, where a time would claim a precision it has not got. */
+export function dayMonthYear(at: Date): string {
+  const p = istParts(at);
+  return `${Number(p.day)} ${p.mon} ${p.year}`;
 }
 
 /** "08 Sep, 09:30" — a day and a time, in a column where the days line up. */

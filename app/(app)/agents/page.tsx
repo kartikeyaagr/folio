@@ -6,7 +6,7 @@ import { pendingDraftCount } from '@/lib/agents/review.ts';
 import { coverage, fieldHotspots, weeklyDistance } from '@/lib/agents/learning.ts';
 import { pendingRules } from '@/lib/agents/rules.ts';
 import { label } from '@/lib/agents/paths.ts';
-import { AppHeader, Blank, Card, Chip, Empty, Stat, StatRow, type Tone } from '@/components/ui.tsx';
+import { AppHeader, Blank, Card, Chip, dayMonthTime, Empty, Stat, StatRow, type Tone } from '@/components/ui.tsx';
 
 import { retryRun } from '../../_lib/actions/review.ts';
 import { requireAdmin } from '../../_lib/session.ts';
@@ -61,10 +61,7 @@ const TRIGGER_TONE: Record<string, Tone> = {
  * `toISOString().slice(0, 16)` — UTC, unlabelled, five and a half hours behind the desk reading
  * it, which for a "will be tried again at" is the difference between waiting and not.
  */
-const IST = new Intl.DateTimeFormat('en-IN', {
-  timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
-});
-const when = (at: Date): string => (at.getTime() <= Date.now() ? 'due now' : IST.format(at));
+const when = (at: Date): string => (at.getTime() <= Date.now() ? 'due now' : dayMonthTime(at));
 
 export default async function AgentsPage() {
   // **The whole page is admin-only now**, not just its spend column. What runs unattended, on what

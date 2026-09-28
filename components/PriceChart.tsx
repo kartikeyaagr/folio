@@ -3,7 +3,7 @@
 import { useState, type PointerEvent } from 'react';
 
 import { RANGES, windowOf, type History, type Point, type Range } from '@/lib/prices.ts';
-import { Blank, inr, signedPct } from './ui.tsx';
+import { Blank, dayMonthYear, inr, signedPct } from './ui.tsx';
 
 /**
  * Closes over a window, against the market, as an SVG.
@@ -59,10 +59,7 @@ function path(points: Point[], floor: number | null, ceiling: number | null, n: 
  */
 const DEFAULT_RANGE: Range = 'max';
 
-const day = (iso: string): string =>
-  new Intl.DateTimeFormat('en-IN', { dateStyle: 'medium', timeZone: 'Asia/Kolkata' }).format(
-    new Date(`${iso}T00:00:00+05:30`),
-  );
+const day = (iso: string): string => dayMonthYear(new Date(`${iso}T00:00:00+05:30`));
 
 export function PriceChart({ history }: { history: History }) {
   const [range, setRange] = useState<Range>(DEFAULT_RANGE);

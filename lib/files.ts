@@ -29,6 +29,7 @@
  */
 
 import { readTxn } from './db.ts';
+import { MONTHS } from './months.ts';
 
 /** What the panel calls it. One word where one word will do — the company is already on the page. */
 export const FILE_LABEL: Record<string, string> = {
@@ -51,13 +52,15 @@ export const FILE_LABEL: Record<string, string> = {
 const PERIODIC = new Set(['transcript', 'presentation']);
 
 /**
- * `Sept 2026 Transcript` — the month, the year, and what it is.
+ * `Sep 2026 Transcript` — the month, the year, and what it is.
  *
  * **Computed here rather than stored.** Baking it into `documents.title` would need SQL to format
- * the month, and `to_char(…, 'Mon')` gives `Sep` where `Intl` under `en-IN` gives `Sept` — so a
- * transcript promoted by the job and one renamed by a migration would disagree about September,
- * silently, forever. One implementation, one month name, and it always agrees with the date column
- * beside it because both come from the same formatter.
+ * the month, and a transcript promoted by the job and one renamed by a migration would then be
+ * named by two implementations that can disagree about September, silently, forever. One
+ * implementation, and it agrees with the date column beside it because both spell the month from
+ * `lib/months.ts`. They did not always agree. Until 28-Sep-2026 both were en-IN formatters saying
+ * "Sept", and moving the column to the app's own dates without this left "Sept 2026 Transcript"
+ * beside "13 Sep 2026".
  */
 export function periodName(kind: string, on: Date | string | null): string {
   const label = FILE_LABEL[kind] ?? kind;
@@ -67,12 +70,13 @@ export function periodName(kind: string, on: Date | string | null): string {
   if (on == null || !PERIODIC.has(kind)) return label;
   const at = typeof on === 'string' ? new Date(`${on}T00:00:00+05:30`) : on;
   if (Number.isNaN(at.getTime())) return label;
-  const month = new Intl.DateTimeFormat('en-IN', {
-    month: 'short',
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    month: 'numeric',
     year: 'numeric',
     timeZone: 'Asia/Kolkata',
-  }).format(at);
-  return `${month} ${label}`;
+  }).formatToParts(at);
+  const part = (type: string): string => parts.find((p) => p.type === type)?.value ?? '';
+  return `${MONTHS[Number(part('month')) - 1]} ${part('year')} ${label}`;
 }
 
 /**

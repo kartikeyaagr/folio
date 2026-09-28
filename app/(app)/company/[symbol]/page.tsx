@@ -7,7 +7,7 @@ import { ACCEPTED } from '@/lib/import/index.ts';
 import { AUTHORED, documentsFor, KIND_LABEL } from '@/lib/workspace.ts';
 import { filedFor, heldNotListed, periodName, type FiledDocument } from '@/lib/files.ts';
 import {
-  AppHeader, Blank, Card, Chip, Empty, Fact, Facts, Seg, crore, inr, type Tone,
+  AppHeader, Blank, Card, Chip, dayMonthYear, Empty, Fact, Facts, Seg, crore, inr, type Tone,
 } from '@/components/ui.tsx';
 import { PriceChart } from '@/components/PriceChart.tsx';
 import { DeleteDocument } from '@/components/DeleteDocument.tsx';
@@ -39,9 +39,7 @@ export const dynamic = 'force-dynamic';
  * got.
  */
 const day = (d: Date | string): string =>
-  new Intl.DateTimeFormat('en-IN', { dateStyle: 'medium', timeZone: 'Asia/Kolkata' }).format(
-    typeof d === 'string' ? new Date(`${d}T00:00:00+05:30`) : d,
-  );
+  dayMonthYear(typeof d === 'string' ? new Date(`${d}T00:00:00+05:30`) : d);
 
 /**
  * One filed document as the page shows it: a one-word name, the date the company released it, and

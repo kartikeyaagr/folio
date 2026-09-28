@@ -2,33 +2,34 @@
  * The name a filed document goes by.
  *
  * Its own test because the format is a promise two screens and a page heading all keep separately,
- * and because the reason it is computed rather than stored is a month-name disagreement that no
- * type system would have caught: `to_char(…, 'Mon')` gives `Sep` where `Intl` under `en-IN` gives
- * `Sept`, so a title written by SQL and one written by TypeScript differ for one month a year.
+ * and because the month is exactly the thing that drifts without a type error. `Intl` spells
+ * September "Sept" under en-IN and en-GB and "Sep" under en-US, and SQL's `to_char` says "Sep", so
+ * every hand-rolled formatter picks a dialect by accident. This one spells from `lib/months.ts`,
+ * like every date in the app.
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { FILE_LABEL, periodName } from './files.ts';
+import { MONTHS } from './months.ts';
 
 test('a quarterly document is named for its month, its year and what it is', () => {
   assert.equal(periodName('transcript', '2026-08-20'), 'Aug 2026 Transcript');
   assert.equal(periodName('presentation', '2026-08-13'), 'Aug 2026 PPT');
 });
 
-test('September is Sept, which is the whole reason this is not stored', () => {
-  // `to_char(make_date(2026,9,15),'Mon')` is `Sep`. A migration renaming these rows and the job
-  // promoting the next one would disagree, once a year, silently.
-  assert.equal(periodName('transcript', '2026-09-13'), 'Sept 2026 Transcript');
+test('September is Sep, as every other date in the app spells it', () => {
+  // The date column beside this title is `dayMonthYear`, which reads "13 Sep 2026". Until
+  // 28-Sep-2026 both were page-local en-IN formatters and both said "Sept". Moving one without the
+  // other put "Sept 2026 Transcript" beside "13 Sep 2026" on the same row.
+  assert.equal(periodName('transcript', '2026-09-13'), 'Sep 2026 Transcript');
 });
 
-test('the month agrees with the date column beside it, because both come from en-IN', () => {
-  const shown = new Intl.DateTimeFormat('en-IN', {
-    dateStyle: 'medium',
-    timeZone: 'Asia/Kolkata',
-  }).format(new Date('2026-09-13T00:00:00+05:30'));
-  assert.ok(shown.includes('Sept'), `the date column renders ${shown}`);
-  assert.ok(periodName('transcript', '2026-09-13').startsWith('Sept'));
+test('every month is the three letters the date column uses, never what Intl happens to say', () => {
+  for (let m = 1; m <= 12; m++) {
+    const on = `2026-${String(m).padStart(2, '0')}-15`;
+    assert.equal(periodName('transcript', on).split(' ')[0], MONTHS[m - 1], on);
+  }
 });
 
 test('a document with no month in its identity keeps its plain name', () => {
@@ -51,5 +52,5 @@ test('a kind with no label renders as itself rather than as undefined', () => {
 test('the boundary is the Asia/Kolkata day, not UTC', () => {
   // 2026-09-01 IST is 2026-08-31T18:30Z. Formatted in UTC this reads August, and the document would
   // be named for the month before the one the exchange published it in.
-  assert.equal(periodName('transcript', '2026-09-01'), 'Sept 2026 Transcript');
+  assert.equal(periodName('transcript', '2026-09-01'), 'Sep 2026 Transcript');
 });
