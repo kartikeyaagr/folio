@@ -1831,37 +1831,19 @@ body.is-row-resizing * {
 /* document is not that — it is the thing somebody wrote, and it is written to be read as a page.  */
 /* The desk drafts a memo here and sends the same words to an investment committee on white.       */
 /*                                                                                                */
-/* Done by pinning the light tokens rather than by hard-coding colours on each element, because    */
+/* Done by pinning the light half of the tokens rather than by colouring each element, because    */
 /* the elements inside are the ordinary ones: `.tbl`, `.field`, `.chip`, the grid's own            */
 /* `--teal` editing ring and `--red-soft` error fill. Set `background: #fff` alone and dark mode   */
-/* leaves a near-white `--navy` link and a dark `--surface-2` formula bar on a white grid. One     */
-/* island of light palette keeps every one of them consistent, including the ones added later.     */
-/* `color-scheme` is part of it: without it the caret and the scrollbars stay dark-mode native.    */
+/* leaves a near-white `--navy` link and a dark `--surface-2` formula bar on a white grid.         */
+/*                                                                                                */
+/* Every token in `:root` is a `light-dark()` pair, so `color-scheme: light` is the whole          */
+/* mechanism: it picks the light half for this subtree, caret and scrollbars included, and a token */
+/* added later is covered without being listed here. Until 28-Sep-2026 this block re-declared 21   */
+/* tokens as literals: the navy-and-shadow palette from before the re-skin, written on a branch    */
+/* that never saw it. The six-branch merge kept them without a conflict, so every document stayed  */
+/* in the old palette, shadowed cards included, while the rest of the app had moved on.            */
 
 .paper {
-  --bg: #f4f6f9;
-  --surface: #ffffff;
-  --surface-2: #f0f3f7;
-  --line: #e2e7ee;
-  --line-2: #cbd3de;
-  --ink: #15223a;
-  --ink-2: #3b475c;
-  --muted: #6b7689;
-  --ghost: #98a2b3;
-  --navy: #0f2440;
-  --navy-2: #1a3559;
-  --navy-soft: #e7edf6;
-  --on-navy: #ffffff;
-  --teal: #1f7a63;
-  --teal-soft: #e3f2ec;
-  --red: #b4413a;
-  --red-soft: #f9e9e7;
-  --amber: #a86f1a;
-  --amber-soft: #f9f0dd;
-  --ring: rgba(15, 36, 64, 0.14);
-  --shadow-sm: 0 1px 2px rgba(15, 36, 64, 0.06), 0 1px 1px rgba(15, 36, 64, 0.04);
-  --shadow-lg: 0 12px 32px rgba(15, 36, 64, 0.14), 0 2px 6px rgba(15, 36, 64, 0.08);
-
   background: var(--surface);
   color: var(--ink);
   color-scheme: light;
