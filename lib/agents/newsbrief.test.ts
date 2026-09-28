@@ -6,6 +6,8 @@
  * wide as decided and no wider: one scheduled brief an IST day, from eight; a brief somebody asks
  * for that neither stands in for it nor doubles it; publication for this agent and no other; and
  * a mail to every active user that is recorded as sent, or fails where somebody will see it.
+ *
+ * What it is written from, the stream included, is `newsbrief-stream.test.ts`.
  */
 
 import { test, before, after, beforeEach } from 'node:test';
@@ -33,8 +35,11 @@ const ist = (hhmm: string, day = '2026-09-28'): Date => new Date(`${day}T${hhmm}
 
 const BRIEF = {
   period: 'The last 24 hours',
+  headline: 'Tega’s CFO resigned.',
   by_company: [{ symbol: 'TEGA', what_happened: ['The CFO resigned.'], why_it_matters: 'Watch it.' }],
   nothing_to_report: ['AERON'],
+  // Empty, because none of the tests that use this seed a story: the model is told to leave it so.
+  major_updates: [],
   coming_up: ['TEGA — results, 30 September'],
 };
 
@@ -270,8 +275,9 @@ test('the brief is mailed to every active user, and each send is recorded as sen
   const r = await drainOutbox(async (m) => { sent.push(m); }, 50, 'brief');
   assert.equal(r.sent, 2);
   assert.deepEqual(sent.map((m) => m.to).sort(), ['anna@example.com', 'bob@example.com']);
-  assert.match(sent[0]!.subject, /^Folio brief — .*: 1 name, 1 quiet$/);
+  assert.match(sent[0]!.subject, /^Folio brief — .*: 1 name, 1 quiet, no major updates$/);
   assert.match(sent[0]!.body, /The CFO resigned\./, 'the brief itself, not a link to it');
+  assert.match(sent[0]!.body, /Tega’s CFO resigned\./, 'led by its headline');
   assert.match(sent[0]!.body, /not reviewed/);
 
   assert.ok((await outbox()).every((o) => o.sent_at !== null), 'stamped, so the digest never resends it');

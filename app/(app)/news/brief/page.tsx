@@ -1,6 +1,6 @@
 import Link from 'next/link';
 
-import { ASKABLE_DAYS, brief, briefInFlight, briefs, provenance } from '@/lib/briefs.ts';
+import { ASKABLE_DAYS, brief, briefInFlight, briefs, provenance, tally } from '@/lib/briefs.ts';
 import { Brief } from '@/components/Brief.tsx';
 import { AppHeader, Card, Empty, Eyebrow } from '@/components/ui.tsx';
 
@@ -60,7 +60,7 @@ export default async function BriefsPage() {
             <Empty>
               The first arrives at 08:00 IST, or ask for one below. A brief covers what each
               followed name filed, what news was confirmed, and what is scheduled, including the
-              names that had nothing.
+              names that had nothing, then the major stories across the outlets.
             </Empty>
           </Card>
         )}
@@ -80,8 +80,8 @@ export default async function BriefsPage() {
           <p className="hint">
             A brief arrives by itself every morning at 08:00 IST, covering the last 24 hours. Ask
             here for one over a longer window. Every followed name, filings first, using only
-            confirmed news. It is published as soon as it is written, without review, and mailed
-            to everybody.
+            confirmed news, then the major stories across the outlets. It is published as soon as
+            it is written, without review, and mailed to everybody.
           </p>
         </Card>
 
@@ -95,10 +95,7 @@ export default async function BriefsPage() {
                   <b>
                     <Link href={`/news/brief/${b.id}`}>{b.title}</Link>
                   </b>
-                  <span>
-                    {b.covered} {b.covered === 1 ? 'name' : 'names'}
-                    {b.quiet > 0 && `, ${b.quiet} quiet`}
-                  </span>
+                  <span>{tally(b)}</span>
                   <span>{b.published ? 'not reviewed' : (b.acceptedBy ?? '')}</span>
                 </li>
               ))}

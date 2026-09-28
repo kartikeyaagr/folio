@@ -96,7 +96,7 @@ test('a removed name is offered to no sweep and left out of the brief', async ()
       ),
     );
   const briefed = (companyId: string | null) =>
-    readTxn((c) => newsbrief.gather(c, 7, companyId)).then((m) => m.map((x) => x.symbol));
+    newsbrief.gather(readTxn, 7, companyId).then((g) => g.names.map((x) => x.symbol));
 
   await mark(true);
   try {

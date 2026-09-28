@@ -1,6 +1,7 @@
 import Link from 'next/link';
 
 import { label } from '@/lib/agents/paths.ts';
+import { majorUpdates } from '@/lib/briefs.ts';
 
 import { Blank, Empty } from './ui.tsx';
 
@@ -18,8 +19,10 @@ import { Blank, Empty } from './ui.tsx';
 
 export interface BriefContent {
   period?: unknown;
+  headline?: unknown;
   by_company?: unknown;
   nothing_to_report?: unknown;
+  major_updates?: unknown;
   coming_up?: unknown;
 }
 
@@ -102,10 +105,14 @@ function Drop({ path }: { path: string }) {
 export function Brief({ content, editing = false }: { content: BriefContent; editing?: boolean }) {
   const covered = sections(content.by_company);
   const quiet = strings(content.nothing_to_report);
+  const major = majorUpdates(content.major_updates);
   const coming = strings(content.coming_up);
   const period = typeof content.period === 'string' ? content.period : null;
+  const headline = typeof content.headline === 'string' && content.headline !== ''
+    ? content.headline : null;
 
-  if (covered.length === 0 && quiet.length === 0 && coming.length === 0) {
+  if (headline === null && covered.length === 0 && quiet.length === 0 && major === null &&
+      coming.length === 0) {
     return <Empty>This brief has no content.</Empty>;
   }
 
@@ -119,6 +126,17 @@ export function Brief({ content, editing = false }: { content: BriefContent; edi
         ) : (
           <p className="brief-period">{period}</p>
         ))}
+
+      {/*
+        The headline and the major updates are never correctable here, even while editing. Both
+        arrived in 0068, after 0067 published every brief without review, so no draft carrying them
+        ever waits in /review. If that decision is reversed, they need controls of their own.
+      */}
+      {headline !== null && (
+        <p>
+          <strong>{headline}</strong>
+        </p>
+      )}
 
       {covered.map((s) => (
         <section key={s.index} className="brief-co">
@@ -182,6 +200,34 @@ export function Brief({ content, editing = false }: { content: BriefContent; edi
             </ul>
           ) : (
             <p>{quiet.map((q) => q.line).join(' · ')}</p>
+          )}
+        </section>
+      )}
+
+      {/*
+        Absent on a brief written before 0068, and then not shown at all. Present and empty is a
+        brief that reported none, and says so, or it would read as a quiet market. `brief-coming`
+        for the treatment every section after the names shares: a rule above and a heading.
+      */}
+      {major !== null && (
+        <section className="brief-coming">
+          <h3>Major updates</h3>
+          {major.length === 0 ? (
+            <p className="brief-none">
+              <Blank why="No major update was reported" />
+            </p>
+          ) : (
+            <ul>
+              {major.map((u) => (
+                <li key={u.index}>
+                  {u.what_happened}
+                  {u.why_it_matters && <p className="brief-why">{u.why_it_matters}</p>}
+                  <p className="hint">
+                    {u.outlets.length > 0 ? u.outlets.join(' · ') : <Blank why="No outlet named" />}
+                  </p>
+                </li>
+              ))}
+            </ul>
           )}
         </section>
       )}

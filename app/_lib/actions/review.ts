@@ -2,7 +2,9 @@
 
 import { revalidatePath } from 'next/cache';
 
-import { acceptDraft, NotAChoice, rejectDraft, UnwritablePath } from '@/lib/agents/review.ts';
+import {
+  acceptDraft, NotAChoice, PUBLISHED_WITHOUT_REVIEW, rejectDraft, UnwritablePath,
+} from '@/lib/agents/review.ts';
 import { missingSubject } from '@/lib/agents/invocable.ts';
 import { isSubjectFor } from '@/lib/agents/subjects.ts';
 import { positionOf } from '@/lib/agents/paths.ts';
@@ -141,6 +143,10 @@ export async function askAgent(form: FormData): Promise<void> {
   }
 
   await enqueue({ agentKey, companyId, subjectRef, requestedBy: user.userId });
-  await flash(`Queued ${agentKey}. Its draft will appear in Review.`);
+  // The brief never passes through Review (0067), and saying it will sends somebody to wait there.
+  await flash(PUBLISHED_WITHOUT_REVIEW.has(agentKey)
+    ? `Queued ${agentKey}. It is published as soon as it is written, without review, and mailed ` +
+      'to everybody.'
+    : `Queued ${agentKey}. Its draft will appear in Review.`);
   revalidatePath('/chat');
 }

@@ -60,7 +60,8 @@ export const INVOCABLE: Record<string, Invocable> = {
   },
   'news-brief': {
     subject: 'none',
-    what: 'Briefs the desk on the last few days across every followed name.',
+    what: 'Briefs the desk on the last week: every followed name, then the major stories across ' +
+      'the outlets.',
   },
 };
 

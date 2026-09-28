@@ -81,6 +81,7 @@ export const CONTENT: Record<string, Field> = {
 
   'news-brief': group(
     ['period', text],
+    ['headline', text],
     ['by_company', list(group(
       // The symbol is a join key, not prose: `Brief` links `/company/{symbol}` from it. Correcting
       // one would mean the agent covered the wrong company, which is a rejection.
@@ -91,6 +92,14 @@ export const CONTENT: Record<string, Field> = {
     // Symbols again. Removable, because "this name was not actually quiet" is a real correction;
     // not editable, because retyping one is not.
     ['nothing_to_report', list(fixed)],
+    ['major_updates', list(group(
+      ['what_happened', text],
+      ['why_it_matters', text],
+      // Names checked against the stream the brief read (`checkOutlets`). Removable, because "this
+      // outlet did not run it" is a correction; not editable, because a retyped name is one
+      // nothing checked.
+      ['outlets', list(fixed)],
+    ))],
     ['coming_up', list(text)],
   ),
 

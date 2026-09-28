@@ -37,9 +37,12 @@ export interface AskedRun {
   createdAt: Date;
   finishedAt: Date | null;
   draftId: string | null;
-  /** `pending`, `accepted` or `rejected`. Null while the run has produced nothing. */
+  /**
+   * `pending`, `accepted` or `rejected`, or `published` for a brief, which nobody reviews (0067).
+   * Null while the run has produced nothing.
+   */
   draftStatus: string | null;
-  /** The document an accepted draft became, if it became one. */
+  /** The document an accepted or published draft became, if it became one. */
   documentId: string | null;
 }
 

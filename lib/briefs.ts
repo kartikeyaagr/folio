@@ -23,6 +23,8 @@ export interface BriefSummary {
   /** How many names the brief actually said something about. */
   covered: number;
   quiet: number;
+  /** How many major updates it carried. Null for a brief written before it carried any (0068). */
+  major: number | null;
   fromDraftId: string | null;
 }
 
@@ -48,7 +50,8 @@ const SUMMARY = `
          COALESCE(dr.status = 'published', false) AS published,
          asker.name AS "askedBy",
          COALESCE(jsonb_array_length(v.body->'by_company'), 0) AS covered,
-         COALESCE(jsonb_array_length(v.body->'nothing_to_report'), 0) AS quiet
+         COALESCE(jsonb_array_length(v.body->'nothing_to_report'), 0) AS quiet,
+         jsonb_array_length(v.body->'major_updates') AS major
     FROM documents d
     JOIN LATERAL (
       SELECT body, written_at, written_by FROM document_versions
@@ -169,6 +172,56 @@ function companies(value: unknown): Record<string, unknown>[] {
     typeof v === 'object' && v !== null && typeof (v as Record<string, unknown>)['symbol'] === 'string');
 }
 
+export interface MajorUpdate {
+  /** Where it sits in `major_updates`, which a dropped malformed element makes differ from here. */
+  index: number;
+  what_happened: string;
+  why_it_matters: string;
+  outlets: string[];
+}
+
+/**
+ * A brief's major updates, read the one way both the mail and components/Brief.tsx read them.
+ *
+ * **Null and empty are different answers.** Null is a brief written before the section existed
+ * (0068), which shows nothing where it would be. Empty is a brief that reported none, which is
+ * said on the page and in the mail rather than left out, or it would read as a quiet market.
+ */
+export function majorUpdates(value: unknown): MajorUpdate[] | null {
+  if (!Array.isArray(value)) return null;
+  return value.flatMap((v, index): MajorUpdate[] => {
+    if (typeof v !== 'object' || v === null) return [];
+    const u = v as Record<string, unknown>;
+    if (typeof u['what_happened'] !== 'string') return [];
+    return [{
+      index,
+      what_happened: u['what_happened'],
+      why_it_matters: typeof u['why_it_matters'] === 'string' ? u['why_it_matters'] : '',
+      outlets: strings(u['outlets']),
+    }];
+  });
+}
+
+/**
+ * What a brief holds, in a few words: "1 name, 2 quiet, 4 major updates".
+ *
+ * The mail's subject and the page's list of earlier briefs, so the two cannot count differently.
+ * A part that would be a zero is left out rather than written: "0 names" on a morning nobody is
+ * followed reads as a book that was looked at and found empty. The one exception is a brief that
+ * reported no major updates, which says so, because that one is news.
+ */
+export function tally(t: { covered: number; quiet: number; major: number | null }): string {
+  const parts: string[] = [];
+  if (t.covered > 0) parts.push(`${t.covered} ${t.covered === 1 ? 'name' : 'names'}`);
+  if (t.quiet > 0) parts.push(`${t.quiet} quiet`);
+  if (t.major !== null) {
+    parts.push(t.major === 0
+      ? 'no major updates'
+      : `${t.major} major ${t.major === 1 ? 'update' : 'updates'}`);
+  }
+  return parts.length === 0 ? 'nothing in it' : parts.join(', ');
+}
+
 /**
  * The brief's content as plain text, section by section.
  *
@@ -180,6 +233,9 @@ function companies(value: unknown): Record<string, unknown>[] {
  */
 export function briefText(content: Record<string, unknown>): string {
   const out: string[] = [];
+  const headline = content['headline'];
+  if (typeof headline === 'string' && headline !== '') out.push(headline, '');
+
   for (const co of companies(content['by_company'])) {
     out.push(`── ${String(co['symbol'])} ──`, '');
     out.push(...strings(co['what_happened']).map((line) => `  • ${line}`));
@@ -192,6 +248,17 @@ export function briefText(content: Record<string, unknown>): string {
   // to say leaves a reader unable to tell "nothing happened" from "nobody looked".
   const quiet = strings(content['nothing_to_report']);
   if (quiet.length > 0) out.push('── Nothing to report ──', '', `  ${quiet.join(' · ')}`, '');
+
+  const major = majorUpdates(content['major_updates']);
+  if (major !== null) {
+    out.push('── Major updates ──', '');
+    if (major.length === 0) out.push('  None reported.', '');
+    for (const u of major) {
+      out.push(`  • ${u.what_happened}`);
+      if (u.why_it_matters !== '') out.push(`    ${u.why_it_matters}`);
+      out.push(`    ${u.outlets.length > 0 ? u.outlets.join(' · ') : 'No outlet named.'}`, '');
+    }
+  }
 
   const coming = strings(content['coming_up']);
   if (coming.length > 0) out.push('── Coming up ──', '', ...coming.map((line) => `  • ${line}`), '');
@@ -209,10 +276,13 @@ export function briefMail(
   content: Record<string, unknown>,
   about: Provenance,
 ): { subject: string; body: string } {
-  const covered = companies(content['by_company']).length;
-  const quiet = strings(content['nothing_to_report']).length;
-  const subject = `Folio brief — ${istParts(about.writtenAt).day}: ` +
-    `${covered} ${covered === 1 ? 'name' : 'names'}, ${quiet} quiet`;
+  // The counts, never the headline. The headline is what the model wrote from other people's text,
+  // and a subject is a header.
+  const subject = `Folio brief — ${istParts(about.writtenAt).day}: ` + tally({
+    covered: companies(content['by_company']).length,
+    quiet: strings(content['nothing_to_report']).length,
+    major: majorUpdates(content['major_updates'])?.length ?? null,
+  });
 
   const period = typeof content['period'] === 'string' && content['period'] !== ''
     ? content['period'] : 'Brief';

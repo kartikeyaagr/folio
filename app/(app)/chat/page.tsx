@@ -60,6 +60,11 @@ const STATUS_TONE: Record<string, Tone> = {
  * document it became once somebody accepted it.
  */
 function outcome(r: AskedRun) {
+  // Before `documentId`, which a published brief has too: nobody accepted it, and the brief's own
+  // page is the one that says who wrote it and that nobody read it first.
+  if (r.draftStatus === 'published' && r.documentId) {
+    return <Link href={`/news/brief/${r.documentId}`}>Published, not reviewed →</Link>;
+  }
   if (r.documentId) return <Link href={`/doc/${r.documentId}`}>Accepted →</Link>;
   if (r.draftStatus === 'pending') return <Link href="/review">Waiting in Review →</Link>;
   if (r.draftStatus === 'rejected') return <span className="muted">Rejected</span>;
