@@ -112,7 +112,7 @@ export default async function DocumentsPage({
                       >
                         {stamp(d.documentDate)}
                       </td>
-                      <td>{d.updatedByName ?? <Blank why="Written before saves were attributed" />}</td>
+                      <td>{d.updatedByName ?? <Blank why="Saved before authorship was recorded" />}</td>
                       <td className="cell-note">
                         <div className="form-actions">
                           <form action={archiveDocumentAction}>

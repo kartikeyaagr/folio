@@ -74,7 +74,7 @@ export function DeleteDocument({
         )}
 
         <div className="form-actions">
-          <button type="submit" className="btn btn-danger">Delete it for good</button>
+          <button type="submit" className="btn btn-danger">Delete</button>
         </div>
       </form>
     </DialogButton>
