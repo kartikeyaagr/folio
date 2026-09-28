@@ -5,6 +5,8 @@
  * wall clock, not a dependency graph, and a slow bhavcopy would otherwise have this evaluating
  * yesterday's prices while reporting success.
  */
+import './_env.ts';
+
 import { closePool, readTxn, serviceTxn } from '../lib/db.ts';
 import { evaluateFilings, evaluateInsider, evaluatePrices } from '../lib/alerts.ts';
 

@@ -19,6 +19,8 @@
  *
  *   pnpm exec tsx jobs/distil-rules.ts
  */
+import './_env.ts';
+
 import { closePool, serviceTxn } from '../lib/db.ts';
 import { distil, MIN_DISTANCE, MIN_OBSERVATIONS } from '../lib/agents/distil.ts';
 

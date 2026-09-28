@@ -12,6 +12,8 @@
  * This does not create accounts. `jobs/seed-user.ts` does that, and a new account is an ordinary
  * one until this is run against it.
  */
+import './_env.ts';
+
 import { closePool, readTxn, serviceTxn } from '../lib/db.ts';
 import { readFlags } from './_args.ts';
 

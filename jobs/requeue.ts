@@ -7,6 +7,8 @@
  *   pnpm exec tsx jobs/requeue.ts            what failed
  *   pnpm exec tsx jobs/requeue.ts <run-id>   put it back
  */
+import './_env.ts';
+
 import { closePool } from '../lib/db.ts';
 import { failedRuns, requeue } from '../lib/agents/queue.ts';
 

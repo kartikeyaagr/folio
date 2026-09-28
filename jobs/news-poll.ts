@@ -7,6 +7,8 @@
  *
  *   pnpm exec tsx jobs/news-poll.ts
  */
+import './_env.ts';
+
 import { pollFeeds } from '../lib/news/poll.ts';
 import { matchNewItems } from '../lib/news/match.ts';
 import { runJob } from './_run.ts';

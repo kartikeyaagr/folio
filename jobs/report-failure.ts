@@ -17,6 +17,8 @@
  *
  *   pnpm exec tsx jobs/report-failure.ts folio-job@ingest-eod.service
  */
+import './_env.ts';
+
 import { closePool } from '../lib/db.ts';
 import { recordUnitFailure } from '../lib/notify.ts';
 

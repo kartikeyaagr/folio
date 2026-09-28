@@ -70,13 +70,18 @@ export DATABASE_URL=postgres:///folio_dev
 pnpm install
 pnpm fetch-model                 # ~130 MB embedding model, validated on download
 pnpm exec tsx db/migrate.ts      # migrations are one transaction each, checksummed
-pnpm check                       # lint + typecheck + 859 tests
+pnpm check                       # lint + typecheck + 862 tests
 pnpm dev                         # port 3100
 ```
 
 Tests create and drop their own databases, so they need `createdb`/`dropdb` on PATH. The retrieval
 tests need the embedding model present — `pnpm fetch-model` is idempotent and leaves a good copy
-alone. Jobs run as `pnpm exec tsx jobs/<name>.ts`; deployment lives in `ops/SETUP.md`.
+alone. Deployment lives in `ops/SETUP.md`.
+
+Jobs run as `pnpm exec tsx jobs/<name>.ts`, and **each job reads `.env.local` itself**
+(`jobs/_env.ts`), filling only what the shell has not already set. Nothing else run under `tsx`
+does: `db/migrate.ts` and `ops/*.ts` still need `DATABASE_URL` exported as above. Without it, `pg`
+connects to the database named after your user and fails with `database "<you>" does not exist`.
 
 `pnpm preflight` answers "is this box actually ready" — database, schema, the embedding model's
 checksum, a model credential the API actually accepts, backups, mail, and every systemd timer.

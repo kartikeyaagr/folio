@@ -7,6 +7,8 @@
  *
  *   pnpm exec tsx jobs/ingest-calendar.ts
  */
+import './_env.ts';
+
 import { fetchCalendar, storeCalendar } from '../lib/ingest/calendar.ts';
 import { runJob } from './_run.ts';
 

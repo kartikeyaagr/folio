@@ -15,6 +15,8 @@
  * Idempotent: storing is an upsert on NSE's own `seq_id`, so re-running costs a fetch and changes
  * nothing. Run it after adding a name, or whenever the history looks thin.
  */
+import './_env.ts';
+
 import { readTxn } from '../lib/db.ts';
 import { NseSession } from '../lib/ingest/nse.ts';
 import {

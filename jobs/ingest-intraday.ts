@@ -7,6 +7,8 @@
  *
  *   pnpm exec tsx jobs/ingest-intraday.ts [days]
  */
+import './_env.ts';
+
 import { fetchAnnouncements, storeFilings, linkAllFollowed } from '../lib/ingest/filings.ts';
 import { runJob } from './_run.ts';
 

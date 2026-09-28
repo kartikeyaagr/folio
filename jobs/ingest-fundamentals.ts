@@ -5,6 +5,8 @@
  * They are deliberately not found by filtering announcements on hasXbrl: NSE sets that flag on
  * everything, a Copy of Newspaper Publication included.
  */
+import './_env.ts';
+
 import { closePool, serviceTxn } from '../lib/db.ts';
 import { ingestFundamentals } from '../lib/ingest/fundamentals.ts';
 

@@ -39,6 +39,8 @@
  * success and the name was then marked done forever. Each step below says which of the three it is
  * returning and why.
  */
+import './_env.ts';
+
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 

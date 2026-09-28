@@ -3,6 +3,8 @@
  *
  *   pnpm exec tsx jobs/refresh-securities.ts
  */
+import './_env.ts';
+
 import { closePool, serviceTxn } from '../lib/db.ts';
 import { refreshSecurities } from '../lib/ingest/securities.ts';
 

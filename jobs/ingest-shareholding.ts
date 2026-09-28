@@ -8,6 +8,8 @@
  *
  *   pnpm exec tsx jobs/ingest-shareholding.ts
  */
+import './_env.ts';
+
 import { ingestShareholding } from '../lib/ingest/shareholding.ts';
 import { runJob } from './_run.ts';
 

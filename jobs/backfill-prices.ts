@@ -17,6 +17,8 @@
  * fetches it has not made. Weekends and holidays answer 404 and are recorded as the non-trading
  * days they are, not as failures.
  */
+import './_env.ts';
+
 import { readTxn } from '../lib/db.ts';
 import { fetchBhavcopy, NoBhavcopy, storePrices } from '../lib/ingest/bhavcopy.ts';
 import { ingestIndexDay } from '../lib/ingest/indices.ts';

@@ -8,6 +8,8 @@
  *   pnpm exec tsx jobs/ingest-eod.ts            yesterday
  *   pnpm exec tsx jobs/ingest-eod.ts 2026-09-04
  */
+import './_env.ts';
+
 import { closePool, readTxn } from '../lib/db.ts';
 import { fetchBhavcopy, NoBhavcopy, storePrices } from '../lib/ingest/bhavcopy.ts';
 import { ingestIndexDay } from '../lib/ingest/indices.ts';

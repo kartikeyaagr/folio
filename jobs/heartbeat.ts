@@ -21,6 +21,8 @@
  * Stack, a cron monitor of your own. Unset is a valid state and says so rather than failing: a box
  * with no monitor should not raise an alarm it has nowhere to send.
  */
+import './_env.ts';
+
 import { closePool, readTxn } from '../lib/db.ts';
 
 const TIMEOUT_MS = 10_000;

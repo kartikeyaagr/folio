@@ -10,6 +10,8 @@
  *   pnpm exec tsx jobs/ingest-corporate-actions.ts
  *   pnpm exec tsx jobs/ingest-corporate-actions.ts --days 400
  */
+import './_env.ts';
+
 import { ingestCorporateActions } from '../lib/ingest/corporate-actions.ts';
 import { readFlags } from './_args.ts';
 import { runJob } from './_run.ts';

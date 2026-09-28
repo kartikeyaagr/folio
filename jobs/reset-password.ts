@@ -9,6 +9,8 @@
  *   pnpm exec tsx jobs/reset-password.ts --email you@trisulacapital.com
  */
 
+import './_env.ts';
+
 import { randomBytes } from 'node:crypto';
 import { closePool, readTxn } from '../lib/db.ts';
 import { setPassword } from '../lib/auth.ts';

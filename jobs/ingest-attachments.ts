@@ -16,6 +16,8 @@
  * `ATTACHMENT_DIR` decides where the bytes go, defaulting to the `/var/lib/folio/attachments`
  * that `ops/SETUP.md` §5 creates.
  */
+import './_env.ts';
+
 import { attachmentDir, fetchAttachments } from '../lib/ingest/attachments.ts';
 import { extractPending } from '../lib/ingest/extract.ts';
 import { readFlags } from './_args.ts';

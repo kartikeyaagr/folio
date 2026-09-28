@@ -28,6 +28,8 @@
  *
  *   pnpm exec tsx jobs/agents.ts [limit]
  */
+import './_env.ts';
+
 import { closePool, serviceTxn } from '../lib/db.ts';
 import { drain } from '../lib/agents/runner.ts';
 import { requeueErrored, sweepScheduled, RETRY_AFTER_HOURS } from '../lib/agents/queue.ts';

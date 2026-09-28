@@ -2,7 +2,7 @@
 
 How Folio is put together, and why it is put together that way. Accurate against the tree at the
 time of writing: **62 migrations, 50 tables, 6 agents, 24 job entry points, 19 systemd timers, two
-long-running watchers, 18 pages and 4 route handlers, 859 tests.** Every number here was counted,
+long-running watchers, 18 pages and 4 route handlers, 862 tests.** Every number here was counted,
 not remembered; if you change the shape, count again rather than editing around it.
 
 For the product argument — what was built, what was deliberately cut, and on whose authority — see
@@ -349,6 +349,10 @@ whether this loop survives.
 24 entry points, 19 on a systemd timer. The rest are operator tools (`requeue`, `seed-user`,
 `set-admin`, `reset-password`) or hand-run backfills.
 
+Every job imports `jobs/_env.ts` first. It fills whatever the shell has not set from `.env.local`,
+so a job run by hand on a laptop finds the same database the app does. On the VM there is no
+`.env.local`, and systemd's `EnvironmentFile` stays the only source.
+
 Each job writes an `ingestion_runs` row — started, finished, status, items, detail — and downstream
 readers gate on **that row rather than on the clock**. `jobs/alerts.ts` runs only after a successful
 EOD ingest for today, not at a time of day. `report-failure` is named by `OnFailure=` on every unit,
@@ -454,7 +458,7 @@ export DATABASE_URL=postgres:///folio_dev
 pnpm install
 pnpm fetch-model                 # ~130 MB, bge-small-en-v1.5, validated on download
 pnpm exec tsx db/migrate.ts      # one transaction each, checksummed
-pnpm check                       # lint + typecheck + 859 tests
+pnpm check                       # lint + typecheck + 862 tests
 pnpm dev                         # port 3100
 ```
 

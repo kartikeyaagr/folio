@@ -27,6 +27,8 @@
  *                                                  minutes of silence otherwise, indistinguishable
  *                                                  from a hang.
  */
+import './_env.ts';
+
 import { closePool, listen, readTxn, serviceTxn } from '../lib/db.ts';
 import { drain, type DrainResult } from '../lib/retrieval/index.ts';
 import { embedPending } from '../lib/agents/exemplars.ts';

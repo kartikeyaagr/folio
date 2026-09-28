@@ -7,6 +7,8 @@
  *
  *   pnpm exec tsx jobs/ingest-insider.ts
  */
+import './_env.ts';
+
 import { ingestInsider } from '../lib/ingest/insider.ts';
 import { runJob } from './_run.ts';
 

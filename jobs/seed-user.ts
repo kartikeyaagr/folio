@@ -18,6 +18,8 @@
  * They come from whoever is holding the shell, which is a different trust question.
  */
 
+import './_env.ts';
+
 import { randomBytes } from 'node:crypto';
 import { closePool, rowId, serviceTxn } from '../lib/db.ts';
 import { approvedRequest } from '../lib/access-requests.ts';

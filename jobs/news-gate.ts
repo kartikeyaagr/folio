@@ -8,6 +8,8 @@
  *
  *   pnpm exec tsx jobs/news-gate.ts
  */
+import './_env.ts';
+
 import { closePool, serviceTxn } from '../lib/db.ts';
 import { runGate } from '../lib/news/gate.ts';
 
