@@ -122,7 +122,8 @@ const BY_SEVERITY = `ORDER BY CASE severity
  * matched or ruled out, so nothing can fall through a gap between runs.
  *
  * Only filings belonging to a followed company are considered. The feed carries every listed
- * company's filings, and alerting on all of them would be a stream nobody reads.
+ * company's filings, and alerting on all of them would be a stream nobody reads. A removed name
+ * keeps its filings linked, so the link alone no longer says followed; the join does.
  */
 export async function evaluateFilings(maxAgeDays = 60): Promise<EvaluateResult> {
   return serviceTxn('system:alerts', async (c) => {
@@ -138,8 +139,8 @@ export async function evaluateFilings(maxAgeDays = 60): Promise<EvaluateResult> 
     }>(
       `SELECT f.id, f.company_id, f.symbol, f.category, f.summary
          FROM filings f
-        WHERE f.company_id IS NOT NULL
-          AND f.announced_at > now() - ($1 || ' days')::interval
+         JOIN companies co ON co.id = f.company_id AND co.removed_at IS NULL
+        WHERE f.announced_at > now() - ($1 || ' days')::interval
           AND NOT EXISTS (SELECT 1 FROM alerts a WHERE a.subject_ref = f.id)
         ORDER BY f.announced_at DESC`,
       [String(maxAgeDays)],
@@ -198,8 +199,8 @@ export async function evaluateInsider(maxAgeDays = 60): Promise<EvaluateResult> 
       `SELECT i.id, i.company_id, i.symbol, i.person, i.category, i.kind,
               i.quantity::text, i.pct_before::text, i.pct_after::text
          FROM insider_transactions i
-        WHERE i.company_id IS NOT NULL
-          AND i.disclosed_at > now() - ($1 || ' days')::interval
+         JOIN companies co ON co.id = i.company_id AND co.removed_at IS NULL
+        WHERE i.disclosed_at > now() - ($1 || ' days')::interval
           AND NOT EXISTS (SELECT 1 FROM alerts a WHERE a.subject_ref = i.id)
         ORDER BY i.disclosed_at DESC`,
       [String(maxAgeDays)],
@@ -262,6 +263,7 @@ export async function evaluatePrices(): Promise<EvaluateResult> {
                 lag(p.close) OVER (PARTITION BY c.id ORDER BY p.on_date) AS prev
            FROM prices p
            JOIN companies c ON (p.isin IS NOT NULL AND p.isin = c.isin) OR p.symbol = c.symbol
+          WHERE c.removed_at IS NULL
        )
        SELECT company_id, symbol, on_date, close::text, prev::text,
               round(((close - prev) / prev * 100)::numeric, 2)::text AS pct
@@ -372,6 +374,8 @@ export async function upcoming(days = 14): Promise<
       `SELECT e.id, e.kind, e.title, e.on_date AS "onDate", co.symbol
          FROM calendar_events e LEFT JOIN companies co ON co.id = e.company_id
         WHERE e.on_date BETWEEN current_date AND current_date + ($1 || ' days')::interval
+          -- A removed name's meetings are kept (see storeCalendar) but are not the desk's to watch.
+          AND co.removed_at IS NULL
         ORDER BY e.on_date, co.symbol`,
       [String(days)],
     );

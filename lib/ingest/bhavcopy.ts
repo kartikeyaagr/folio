@@ -134,7 +134,7 @@ export async function storePrices(on: Date, rows: PriceRow[]): Promise<{ stored:
   const onDate = on.toISOString().slice(0, 10);
   return serviceTxn('system:ingest', async (c) => {
     const { rows: followed } = await c.query<{ isin: string | null; symbol: string }>(
-      'SELECT isin, symbol FROM companies',
+      'SELECT isin, symbol FROM companies WHERE removed_at IS NULL',
     );
     // ISIN first, because that is the instrument. Symbol is only a fallback for a followed company
     // whose ISIN we do not yet have.

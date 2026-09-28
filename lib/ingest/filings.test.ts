@@ -1,7 +1,9 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { readTxn, serviceTxn } from '../db.ts';
-import { linkFilingsForCompany, parseAnnouncements, storeFilings } from './filings.ts';
+import {
+  linkAllFollowed, linkFilingsForCompany, parseAnnouncements, storeFilings,
+} from './filings.ts';
 import { createTestDatabase, dropTestDatabase } from '../../db/testing.ts';
 
 const DB = `folio_fil_${process.pid}`;
@@ -160,4 +162,59 @@ test('re-ingesting the same window updates rather than duplicating', async () =>
     Number((await c.query<{ n: string }>('SELECT count(*)::text AS n FROM filings')).rows[0]!.n),
   );
   assert.equal(after, before, 'seq_id is stable, so an overlapping window adds nothing');
+});
+
+test('a removed name keeps the filings it had, is linked to no new ones, and gets them on restore', async () => {
+  const announcement = (seq: string) => ({
+    seq_id: seq,
+    symbol: 'GRAVITA',
+    sm_isin: null,
+    sm_name: 'Gravita India Limited',
+    desc: 'Outcome of Board Meeting',
+    attchmntText: '',
+    attchmntFile: '',
+    hasXbrl: false,
+    an_dt: '06-Sep-2026 10:00:00',
+  });
+  const linkOf = (id: string) =>
+    readTxn(async (c) => {
+      const { rows } = await c.query<{ company_id: string | null }>(
+        'SELECT company_id FROM filings WHERE id = $1',
+        [id],
+      );
+      return rows[0]?.company_id ?? null;
+    });
+  const mark = (removed: boolean) =>
+    serviceTxn('system:ingest', (c) =>
+      c.query(
+        `UPDATE companies
+            SET removed_at = CASE WHEN $1::boolean THEN now() END,
+                removed_by = CASE WHEN $1::boolean THEN 'u_rm' END
+          WHERE id = 'c4'`,
+        [removed],
+      ),
+    );
+
+  await serviceTxn('system:auth', async (c) => {
+    await c.query("INSERT INTO actors (id,kind,label) VALUES ('u_rm','person','Remover')");
+    await c.query("INSERT INTO users (id,email,name) VALUES ('u_rm','rm@x.com','Remover')");
+    await c.query(
+      "INSERT INTO companies (id, symbol, name) VALUES ('c4','GRAVITA','Gravita India Limited')",
+    );
+  });
+  await storeFilings(parseAnnouncements('nse_sme', [announcement('3001')]));
+  assert.equal(await linkOf('nse_sme:3001'), 'c4');
+
+  await mark(true);
+  // The feed re-serves the old one and brings a new one. The old link is history and stays; the
+  // new filing is stored, as every filing is, and left for whoever follows the name.
+  await storeFilings(parseAnnouncements('nse_sme', [announcement('3001'), announcement('3002')]));
+  assert.equal(await linkOf('nse_sme:3001'), 'c4');
+  assert.equal(await linkOf('nse_sme:3002'), null);
+  assert.equal(await linkAllFollowed(), 0);
+  assert.equal(await linkFilingsForCompany('c4'), 0);
+
+  await mark(false);
+  assert.equal(await linkAllFollowed(), 1, 'restored, it collects what arrived while it was away');
+  assert.equal(await linkOf('nse_sme:3002'), 'c4');
 });

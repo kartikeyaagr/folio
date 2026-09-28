@@ -158,8 +158,11 @@ export async function storeFilings(filings: Filing[]): Promise<StoreResult> {
   return serviceTxn('system:ingest', async (c) => {
     // Resolved once rather than per row. ISIN is the instrument and wins; symbol is the fallback
     // the SME board forces, and which key was used is stored on the row.
+    //
+    // A removed name's filings are still stored, unlinked, like anybody else's: that is what lets
+    // `restoreCompany` attach the ones that arrived while it was away.
     const { rows: cos } = await c.query<{ id: string; isin: string | null; symbol: string }>(
-      'SELECT id, isin, symbol FROM companies',
+      'SELECT id, isin, symbol FROM companies WHERE removed_at IS NULL',
     );
     const byIsin = new Map(cos.filter((x) => x.isin).map((x) => [x.isin!, x.id]));
     const bySymbol = new Map(cos.map((x) => [x.symbol, x.id]));
@@ -216,6 +219,7 @@ export async function linkFilingsIn(c: Client, companyId: string): Promise<numbe
             linked_by  = CASE WHEN f.isin IS NOT NULL AND f.isin = c.isin THEN 'isin' ELSE 'symbol' END
        FROM companies c
       WHERE c.id = $1
+        AND c.removed_at IS NULL
         AND f.company_id IS NULL
         AND ((f.isin IS NOT NULL AND f.isin = c.isin) OR (f.isin IS NULL AND f.symbol = c.symbol))`,
     [companyId],
@@ -255,6 +259,7 @@ export async function linkAllFollowed(): Promise<number> {
               linked_by  = CASE WHEN f.isin IS NOT NULL AND f.isin = c.isin THEN 'isin' ELSE 'symbol' END
          FROM companies c
         WHERE f.company_id IS NULL
+          AND c.removed_at IS NULL
           AND ((f.isin IS NOT NULL AND f.isin = c.isin) OR (f.isin IS NULL AND f.symbol = c.symbol))`,
     );
     return rowCount ?? 0;

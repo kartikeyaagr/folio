@@ -31,7 +31,7 @@ export async function searchCompanies(query: string): Promise<CompanyHit[]> {
   return readTxn(async (c) => {
     const { rows } = await c.query<{ symbol: string; name: string; status: string }>(
       `SELECT symbol, name, status FROM companies
-        WHERE symbol ILIKE $1 OR name ILIKE $1
+        WHERE (symbol ILIKE $1 OR name ILIKE $1) AND removed_at IS NULL
         ORDER BY (symbol ILIKE $2) DESC, symbol
         LIMIT 8`,
       [`%${q}%`, `${q}%`],

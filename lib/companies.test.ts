@@ -1,6 +1,7 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { serviceTxn } from './db.ts';
+import { readTxn, serviceTxn } from './db.ts';
+import { recordTrade } from './book.ts';
 import {
   addAlias,
   addCompany,
@@ -8,12 +9,17 @@ import {
   getCompany,
   listAliases,
   listCompanies,
+  NotFollowed,
   ReasonRequired,
+  removeCompany,
+  restoreCompany,
   setCoverage,
   setStatus,
   searchSecurities,
+  StillHeld,
   UnknownSymbol,
 } from './companies.ts';
+import { companyList, companyPage } from './company-view.ts';
 import { CHANNEL } from './ingest/backfill.ts';
 import pg from 'pg';
 import { createTestDatabase, dropTestDatabase } from '../db/testing.ts';
@@ -200,4 +206,134 @@ test('following a name rings the backfill doorbell, so the work starts now rathe
   } finally {
     await client.end();
   }
+});
+
+// ---- removing a name ----------------------------------------------------------------------------
+
+/** One column of one company, read the way a test wants to assert on it. */
+const column = async <T>(symbol: string, sql: string): Promise<T | undefined> =>
+  readTxn(async (c) => {
+    const { rows } = await c.query<{ v: T }>(`SELECT ${sql} AS v FROM companies WHERE symbol = $1`, [
+      symbol,
+    ]);
+    return rows[0]?.v;
+  });
+
+test('a name with nothing recorded against it is deleted outright, aliases and all', async () => {
+  await serviceTxn('system:ingest', async (c) => {
+    await c.query(
+      "INSERT INTO securities (symbol, isin, name) VALUES ('GRAVITA', 'INE024L01027', 'Gravita India Limited')",
+    );
+  });
+  const co = await addCompany('GRAVITA', ME);
+
+  assert.equal(await removeCompany(ME, 'gravita'), 'deleted');
+  assert.equal(await getCompany('GRAVITA'), null);
+  assert.deepEqual(await listAliases(co.id), [], 'the registered-name alias cascades with it');
+  const audited = await readTxn(async (c) => {
+    const { rows } = await c.query<{ actor_id: string }>(
+      "SELECT actor_id FROM audit_log WHERE table_name = 'companies' AND op = 'DELETE' AND row_id = $1",
+      [co.id],
+    );
+    return rows.map((r) => r.actor_id);
+  });
+  assert.deepEqual(audited, [ME], 'and the deletion is on the record, under whoever pressed it');
+});
+
+test('a name with history is removed rather than deleted, and keeps every row', async () => {
+  const co = (await getCompany('PRAJIND'))!;
+  await serviceTxn('system:ingest', async (c) => {
+    await c.query(
+      `INSERT INTO filings (id, company_id, symbol, isin, category, announced_at, linked_by)
+       VALUES ('nse_equities:p1', $1, 'PRAJIND', 'INE074A01025', 'Press Release', now(), 'isin')`,
+      [co.id],
+    );
+  });
+
+  assert.equal(await removeCompany(ME, 'PRAJIND'), 'removed');
+
+  const after = await getCompany('PRAJIND');
+  assert.ok(after?.removedAt instanceof Date, 'the row is kept, marked');
+  assert.equal(await column<string>('PRAJIND', 'removed_by'), ME);
+  const linked = await readTxn(async (c) => {
+    const { rows } = await c.query<{ company_id: string }>(
+      "SELECT company_id FROM filings WHERE id = 'nse_equities:p1'",
+    );
+    return rows[0]?.company_id;
+  });
+  assert.equal(linked, co.id, 'its filing is still its filing');
+});
+
+test('removing a removed name changes nothing, the date included', async () => {
+  const first = await column<Date>('PRAJIND', 'removed_at');
+  assert.equal(await removeCompany(ME, 'PRAJIND'), 'removed');
+  assert.deepEqual(await column<Date>('PRAJIND', 'removed_at'), first);
+});
+
+test('a removed name leaves the pickers and the list, and its own page still opens', async () => {
+  assert.ok(!(await listCompanies()).some((c) => c.symbol === 'PRAJIND'), 'no trade can pick it');
+  assert.ok(!(await companyList()).some((c) => c.symbol === 'PRAJIND'));
+
+  const removed = await companyList({ removed: true });
+  assert.deepEqual(removed.map((c) => c.symbol), ['PRAJIND'], 'it is listed where Restore is');
+  assert.equal(removed[0]?.removedByName, 'Tester');
+
+  const page = await companyPage('PRAJIND');
+  assert.ok(page?.removedAt, 'the page opens and says so');
+
+  // Offered as not followed, because following it again is the way back.
+  const hit = (await searchSecurities('PRAJIND')).find((h) => h.symbol === 'PRAJIND');
+  assert.equal(hit?.followed, false);
+});
+
+test('following a removed name restores it, with what arrived while it was away', async () => {
+  // It had been filled in; the feeds then skipped it, so its history now has a hole.
+  await serviceTxn('system:ingest', async (c) => {
+    await c.query(
+      "UPDATE companies SET backfilled_at = now(), backfill_attempts = 3 WHERE symbol = 'PRAJIND'",
+    );
+    await c.query(
+      `INSERT INTO filings (id, symbol, isin, category, announced_at)
+       VALUES ('nse_equities:p2', 'PRAJIND', 'INE074A01025', 'Outcome of Board Meeting', now())`,
+    );
+  });
+
+  const back = await addCompany('PRAJIND', ME);
+  assert.equal(back.restored, true);
+  assert.equal(back.removedAt, null);
+  assert.equal(await column<string | null>('PRAJIND', 'removed_by'), null);
+  assert.equal(await column<Date | null>('PRAJIND', 'backfilled_at'), null, 'back in the queue');
+  assert.equal(await column<number>('PRAJIND', 'backfill_attempts'), 0);
+  const linked = await readTxn(async (c) => {
+    const { rows } = await c.query<{ company_id: string | null }>(
+      "SELECT company_id FROM filings WHERE id = 'nse_equities:p2'",
+    );
+    return rows[0]?.company_id;
+  });
+  assert.equal(linked, back.id, 'the filing that landed while it was removed is attached');
+  await assert.rejects(() => addCompany('PRAJIND', ME), AlreadyFollowed, 'and now it is followed');
+});
+
+test('restore puts a removed name back, and says so only when it was removed', async () => {
+  assert.equal(await removeCompany(ME, 'PRAJIND'), 'removed');
+  assert.equal(await restoreCompany(ME, 'PRAJIND'), true);
+  assert.equal(await restoreCompany(ME, 'PRAJIND'), false, 'a second click is not a fault');
+  assert.equal((await getCompany('PRAJIND'))?.removedAt, null);
+});
+
+test('a symbol nobody follows can be neither removed nor restored', async () => {
+  await assert.rejects(() => removeCompany(ME, 'NOPE'), NotFollowed);
+  await assert.rejects(() => restoreCompany(ME, 'NOPE'), NotFollowed);
+});
+
+test('a name on the book cannot be removed; once sold, it is removed and its trades kept', async () => {
+  const co = (await getCompany('DOORBELL'))!;
+  const trade = { companyId: co.id, tradeDate: '2026-09-01', quantity: 100, price: 50 };
+  await recordTrade({ ...trade, side: 'buy' }, ME);
+
+  await assert.rejects(() => removeCompany(ME, 'DOORBELL'), StillHeld);
+  assert.equal((await getCompany('DOORBELL'))?.removedAt, null, 'the refusal changed nothing');
+
+  await recordTrade({ ...trade, side: 'sell', tradeDate: '2026-09-02' }, ME);
+  assert.equal(await removeCompany(ME, 'DOORBELL'), 'removed', 'two trades are history to keep');
 });

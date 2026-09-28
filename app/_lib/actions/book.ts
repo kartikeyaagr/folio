@@ -72,6 +72,9 @@ export async function recordTradeAction(form: FormData): Promise<void> {
 
   revalidatePath('/portfolio');
   revalidatePath('/');
+  // The company page records trades too, and shows the holding the trade just moved. The
+  // page-file form, for the reason `setStatusAction` gives: a resolved path leaves it stale.
+  revalidatePath('/company/[symbol]', 'page');
 }
 
 /**

@@ -123,6 +123,7 @@ export async function pending(limit = 20): Promise<{ subjectRef: string; company
     const { rows } = await c.query<{ subjectRef: string; companyId: string }>(
       `SELECT d.id AS "subjectRef", d.company_id AS "companyId"
          FROM documents d
+         JOIN companies co ON co.id = d.company_id AND co.removed_at IS NULL
          JOIN LATERAL (
            SELECT body FROM document_versions
             WHERE document_id = d.id ORDER BY written_at DESC LIMIT 1

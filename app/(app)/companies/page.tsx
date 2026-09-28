@@ -1,11 +1,15 @@
 import Link from 'next/link';
 
-import { companyList } from '@/lib/company-view.ts';
-import { AppHeader, Blank, Card, Chip, Empty, inr, type Tone } from '@/components/ui.tsx';
+import { companyList, type CompanyListRow } from '@/lib/company-view.ts';
+import {
+  AppHeader, Blank, Card, Chip, dayMonthYear, Empty, Seg, inr, type Tone,
+} from '@/components/ui.tsx';
 import { DialogButton } from '@/components/DialogButton.tsx';
 import { FollowPicker } from '@/components/FollowPicker.tsx';
 
-import { followCompany, searchSecurities } from '../../_lib/actions/companies.ts';
+import {
+  followCompany, restoreCompanyAction, searchSecurities,
+} from '../../_lib/actions/companies.ts';
 import { requireUser } from '../../_lib/session.ts';
 
 /**
@@ -39,9 +43,70 @@ function priceWhy(backfill: string | null): string {
   return 'No price row joins this name yet';
 }
 
-export default async function CompaniesPage() {
+/**
+ * The names a person took off the list, with the way back.
+ *
+ * Its own table rather than the followed one filtered: what a removed name is owed is who removed
+ * it and when, and the holding, price and thirty-day columns would be blanks for a name every feed
+ * now skips.
+ */
+function RemovedTable({ rows }: { rows: CompanyListRow[] }) {
+  return (
+    <div className="tbl-scroll">
+      <table className="tbl">
+        <thead>
+          <tr>
+            <th>Company</th>
+            <th>Status</th>
+            <th>Removed</th>
+            <th />
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr key={r.id}>
+              <td>
+                <Link href={`/company/${r.symbol}`}>
+                  <b>{r.symbol}</b>
+                </Link>
+                <span className="cell-sub">{r.name}</span>
+              </td>
+              <td>
+                <Chip tone={STATUS_TONE[r.status] ?? 'neutral'}>
+                  {STATUS_LABEL[r.status] ?? r.status}
+                </Chip>
+              </td>
+              <td>
+                {r.removedAt ? dayMonthYear(r.removedAt) : <Blank why="No removal date held" />}
+                <span className="cell-sub">
+                  {r.removedByName ?? <Blank why="Nobody recorded as removing it" />}
+                </span>
+              </td>
+              <td className="cell-note">
+                <form action={restoreCompanyAction}>
+                  <input type="hidden" name="symbol" value={r.symbol} />
+                  <button type="submit" className="btn btn-sm">Restore</button>
+                </form>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+export default async function CompaniesPage({
+  searchParams,
+}: {
+  // In the URL so a refresh, and a link somebody sends, lands on the same list.
+  searchParams: Promise<{ filter?: string }>;
+}) {
   await requireUser();
-  const rows = await companyList();
+  const showRemoved = (await searchParams).filter === 'removed';
+  // Both, always: the header counts the followed names whichever list is showing, and the switch
+  // says how many were removed before anybody opens it.
+  const [rows, removed] = await Promise.all([companyList(), companyList({ removed: true })]);
   // The count is of positions actually on the book, not of names somebody has marked `holding`.
   // Status is a judgement and the quantity is a fact; a header reading "0 held" above two rows
   // showing 5,000 each is the header disagreeing with its own table.
@@ -77,8 +142,33 @@ export default async function CompaniesPage() {
       </div>
 
       <div className="page">
-        <Card title="Followed names" padded={false}>
-          {rows.length === 0 ? (
+        <Card
+          title={showRemoved ? 'Removed names' : 'Followed names'}
+          action={
+            <Seg
+              current={showRemoved ? '/companies?filter=removed' : '/companies'}
+              options={[
+                { label: 'Followed', href: '/companies', count: rows.length },
+                {
+                  label: 'Removed',
+                  href: '/companies?filter=removed',
+                  count: removed.length,
+                  disabled: removed.length === 0 && !showRemoved,
+                  why: 'No name has been removed',
+                },
+              ]}
+              small
+            />
+          }
+          padded={false}
+        >
+          {showRemoved ? (
+            removed.length === 0 ? (
+              <Empty>No name has been removed. Remove is on each company's own page.</Empty>
+            ) : (
+              <RemovedTable rows={removed} />
+            )
+          ) : rows.length === 0 ? (
             <Empty>
               No names yet. Following a company starts its filings, results and calendar from the
               next run.

@@ -60,7 +60,8 @@ interface Material {
 export async function gather(c: Client, days: number, companyId: string | null): Promise<Material[]> {
   const { rows: companies } = await c.query<{ id: string; symbol: string; name: string }>(
     `SELECT id, symbol, name FROM companies
-      WHERE status IN ('watching','working','holding') AND ($1::text IS NULL OR id = $1)
+      WHERE status IN ('watching','working','holding') AND removed_at IS NULL
+        AND ($1::text IS NULL OR id = $1)
       ORDER BY symbol`,
     [companyId],
   );

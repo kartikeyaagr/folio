@@ -336,7 +336,7 @@ export async function ingestFundamentals(
 
   const followed = await serviceTxn('system:ingest', async (c) => {
     const { rows } = await c.query<{ id: string; isin: string | null; symbol: string }>(
-      'SELECT id, isin, symbol FROM companies',
+      'SELECT id, isin, symbol FROM companies WHERE removed_at IS NULL',
     );
     return rows;
   });

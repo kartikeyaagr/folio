@@ -25,6 +25,7 @@ import {
   LEASE_MINUTES,
   MAX_ATTEMPTS,
   nothingFiled,
+  owed,
   record,
   stepper,
   verdictOf,
@@ -280,6 +281,19 @@ test('a company already filled in is offered only by name', async () => {
 // ------------------------------------------------------------------------------------------------
 // Following a name starts the work, rather than scheduling it
 // ------------------------------------------------------------------------------------------------
+
+test('a removed name is not claimed, not even by name, and is not counted as owed', async () => {
+  // `--symbol` bypasses the lease and the bound because a person typed it. A removal is also a
+  // person's decision, and the later one; restoring the name is what puts it back in this queue.
+  await serviceTxn('system:ingest', async (c) => {
+    await c.query("UPDATE companies SET removed_at = now(), removed_by = $1 WHERE id = 'c1'", [ME]);
+  });
+  assert.deepEqual(await claim(), []);
+  assert.deepEqual(await claim('TEGA'), []);
+  assert.equal(await followed('TEGA'), false, 'so the job says it is not followed, not that it is busy');
+  assert.deepEqual(await owed(), { leased: 0, exhausted: 0 });
+  assert.equal((await state()).attempts, 0, 'and no attempt was spent on it');
+});
 
 test('a follow announces on the channel the watcher listens to, and only when it commits', async () => {
   const heard: string[] = [];

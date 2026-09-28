@@ -40,7 +40,7 @@ const targets = await readTxn(async (c) => {
     `SELECT co.symbol, s.platform
        FROM companies co
        LEFT JOIN securities s ON s.symbol = co.symbol
-      WHERE ($1::text IS NULL OR co.symbol = $1)
+      WHERE co.removed_at IS NULL AND ($1::text IS NULL OR co.symbol = $1)
       ORDER BY co.symbol`,
     [only ?? null],
   );

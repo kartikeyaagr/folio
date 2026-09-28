@@ -24,18 +24,24 @@ export interface TradeName {
  *
  * Client-side only for the picking and the filter. Every value is still checked server-side in
  * `recordTradeAction`; nothing here is a guarantee to anything.
+ *
+ * `preselected` is the company page's way in: the form opens already on that name, and Change
+ * still reaches the rest of the list. The same form and the same action as `/portfolio`, because
+ * two trade forms are two sets of checks that drift apart.
  */
 export function TradeForm({
   names,
   today,
   action,
+  preselected = null,
 }: {
   names: TradeName[];
   today: string;
   action: (form: FormData) => Promise<void>;
+  preselected?: TradeName | null;
 }) {
   const [query, setQuery] = useState('');
-  const [picked, setPicked] = useState<TradeName | null>(null);
+  const [picked, setPicked] = useState<TradeName | null>(preselected);
 
   const q = query.trim().toLowerCase();
   const hits =

@@ -278,7 +278,9 @@ export async function ingestShareholding(): Promise<ShareholdingResult> {
   const index = await fetchIndex(session);
 
   const companies = await serviceTxn('system:ingest', async (c) => {
-    const { rows } = await c.query<{ id: string; symbol: string }>('SELECT id, symbol FROM companies');
+    const { rows } = await c.query<{ id: string; symbol: string }>(
+      'SELECT id, symbol FROM companies WHERE removed_at IS NULL',
+    );
     return rows;
   });
   const bySymbol = new Map(companies.map((c) => [c.symbol, c.id]));

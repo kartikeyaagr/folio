@@ -141,3 +141,20 @@ test('re-running the same day updates rather than duplicating', async () => {
   assert.equal(rows.n, '1', 'one row per symbol per day');
   assert.equal(rows.close, '340.0000', 'and the revision won');
 });
+
+test('a removed name is priced no more, and keeps the closes it had', async () => {
+  await serviceTxn('system:auth', async (c) => {
+    await c.query("INSERT INTO actors (id,kind,label) VALUES ('u_rm','person','Remover')");
+    await c.query("INSERT INTO users (id,email,name) VALUES ('u_rm','rm@x.com','Remover')");
+    await c.query("UPDATE companies SET removed_at = now(), removed_by = 'u_rm' WHERE id = 'c2'");
+  });
+  const { stored } = await storePrices(new Date('2026-09-05T00:00:00Z'), parseBhavcopy(CSV));
+  assert.equal(stored, 1, 'PRAJIND only');
+  const aeron = await readTxn(async (c) => {
+    const { rows } = await c.query<{ on: string }>(
+      "SELECT on_date::text AS on FROM prices WHERE symbol = 'AERON' ORDER BY on_date",
+    );
+    return rows.map((r) => r.on);
+  });
+  assert.deepEqual(aeron, ['2026-09-04']);
+});

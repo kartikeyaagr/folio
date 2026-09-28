@@ -219,10 +219,11 @@ const matchId = (itemId: string, companyId: string): string =>
 /**
  * Every company the net is cast for, with its aliases and its sector's vocabulary.
  *
- * `status <> 'passed'` is the whole filter, and the exclusion is narrow on purpose: a name the
- * fund looked at and declined stops producing candidates, and with them gate calls. Everything
- * else stays in, `exited` included — `lib/agents/forensics.ts` sweeps on the identical predicate,
- * and a position that has been sold goes on filing and goes on being written about.
+ * `status <> 'passed'` is the whole filter, beside a removed name, and the exclusion is narrow on
+ * purpose: a name the fund looked at and declined stops producing candidates, and with them gate
+ * calls. Everything else stays in, `exited` included — `lib/agents/forensics.ts` sweeps on the
+ * identical predicate, and a position that has been sold goes on filing and goes on being
+ * written about.
  *
  * `aliases` and `sectorTerms` come back from `json_agg` behind a `COALESCE(…, '[]')`, so both are
  * empty arrays rather than null when a company has none. `candidatesFor` iterates them without a
@@ -240,7 +241,7 @@ export async function loadVocabulary(): Promise<CompanyVocabulary[]> {
                 (SELECT json_agg(t.term) FROM sector_terms t WHERE t.sector = co.sector), '[]'
               ) AS "sectorTerms"
          FROM companies co
-        WHERE co.status <> 'passed'`,
+        WHERE co.status <> 'passed' AND co.removed_at IS NULL`,
     );
     return rows;
   });

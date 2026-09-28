@@ -191,7 +191,7 @@ export async function storeInsider(companyId: string, rows: InsiderRow[]): Promi
 export async function ingestInsider(): Promise<{ companies: number; stored: number }> {
   const companies = await serviceTxn('system:ingest', async (c) => {
     const { rows } = await c.query<{ id: string; symbol: string }>(
-      'SELECT id, symbol FROM companies ORDER BY symbol',
+      'SELECT id, symbol FROM companies WHERE removed_at IS NULL ORDER BY symbol',
     );
     return rows;
   });

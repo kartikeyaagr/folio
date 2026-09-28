@@ -17,6 +17,7 @@ import { enqueue } from './queue.ts';
 import { pendingDraftCount, pendingDrafts, acceptDraft } from './review.ts';
 import * as results from './results.ts';
 import * as forensics from './forensics.ts';
+import * as newsbrief from './newsbrief.ts';
 import { createTestDatabase, dropTestDatabase } from '../../db/testing.ts';
 
 const DB = `folio_ag2_${process.pid}`;
@@ -79,6 +80,36 @@ test('agent 7 only offers periods longer than 300 days', async () => {
   const work = await forensics.pending();
   assert.deepEqual(work.map((w) => w.subjectRef), ['y1'],
     'a quarter would answer half the checklist wrongly and the rest not at all');
+});
+
+test('a removed name is offered to no sweep and left out of the brief', async () => {
+  // Its fundamentals are kept, which is what removal means, so the rows these ask about are all
+  // still there; only the company's own marker can keep a model call from being spent on them.
+  const mark = (removed: boolean) =>
+    serviceTxn('system:agents', (c) =>
+      c.query(
+        `UPDATE companies
+            SET removed_at = CASE WHEN $1::boolean THEN now() END,
+                removed_by = CASE WHEN $1::boolean THEN $2::text END
+          WHERE id = $3`,
+        [removed, ME, CO],
+      ),
+    );
+  const briefed = (companyId: string | null) =>
+    readTxn((c) => newsbrief.gather(c, 7, companyId)).then((m) => m.map((x) => x.symbol));
+
+  await mark(true);
+  try {
+    assert.deepEqual(await results.pending(), []);
+    assert.deepEqual(await forensics.pending(), []);
+    assert.deepEqual(await briefed(null), []);
+    assert.deepEqual(await briefed(CO), [], 'not even when asked for by name');
+  } finally {
+    await mark(false);
+  }
+  assert.deepEqual((await results.pending()).map((w) => w.subjectRef), ['q1']);
+  assert.deepEqual((await forensics.pending()).map((w) => w.subjectRef), ['y1']);
+  assert.deepEqual(await briefed(null), ['TEGA']);
 });
 
 // ---- agent 1's verifier -------------------------------------------------------------------------

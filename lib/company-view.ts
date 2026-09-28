@@ -31,17 +31,16 @@ export interface CompanyListRow extends Company {
   backfill: string | null;
   /** What the last attempt could not do. The `why` behind the word above. */
   backfillNote: string | null;
+  removedByName: string | null;
 }
 
 /**
- * Ordered by how much attention the name has a claim on: the book first, then what is being worked
- * on, then the watchlist, then what is closed. A closed name is kept and shown last — what was
- * passed on and why is part of the record, not clutter to be hidden.
+ * A row of the list, shared with the company's own page. That page reads it whether or not the
+ * name is removed, because a removed name's page still opens: it is where the removal is said and
+ * where Restore is.
  */
-export async function companyList(): Promise<CompanyListRow[]> {
-  return readTxn(async (c) => {
-    const { rows } = await c.query<CompanyListRow>(
-      `SELECT co.id, co.symbol, co.isin, co.name, co.status,
+const LIST_SELECT = `
+      SELECT co.id, co.symbol, co.isin, co.name, co.status,
               co.closed_reason AS "closedReason", co.covered_by AS "coveredBy",
               u.name AS "coveredByName", co.sector,
               h.quantity::text, h.avg_cost::text AS "avgCost",
@@ -64,14 +63,31 @@ export async function companyList(): Promise<CompanyListRow[]> {
                 WHEN co.backfill_started_at > now() - interval '90 minutes' THEN 'filling in'
                 ELSE 'waiting'
               END AS backfill,
-              co.backfill_error AS "backfillNote"
+              co.backfill_error AS "backfillNote",
+              co.removed_at AS "removedAt", r.name AS "removedByName"
          FROM companies co
          LEFT JOIN users u ON u.id = co.covered_by
-         LEFT JOIN holdings h ON h.company_id = co.id
+         LEFT JOIN users r ON r.id = co.removed_by
+         LEFT JOIN holdings h ON h.company_id = co.id`;
+
+/**
+ * Ordered by how much attention the name has a claim on: the book first, then what is being worked
+ * on, then the watchlist, then what is closed. A closed name is kept and shown last — what was
+ * passed on and why is part of the record, not clutter to be hidden.
+ *
+ * A removed name is the exception, and the difference is that a person asked for it to go. It is
+ * listed only when asked for with `removed`, which is the only way to reach Restore from the list.
+ */
+export async function companyList(opts: { removed?: boolean } = {}): Promise<CompanyListRow[]> {
+  return readTxn(async (c) => {
+    const { rows } = await c.query<CompanyListRow>(
+      `${LIST_SELECT}
+        WHERE (co.removed_at IS NOT NULL) = $1
         ORDER BY CASE co.status
                    WHEN 'holding' THEN 0 WHEN 'working' THEN 1 WHEN 'watching' THEN 2
                    WHEN 'exited' THEN 3 ELSE 4 END,
                  co.symbol`,
+      [opts.removed ?? false],
     );
     return rows;
   });
@@ -99,12 +115,13 @@ export interface CompanyPage extends CompanyListRow {
 }
 
 export async function companyPage(symbol: string): Promise<CompanyPage | null> {
-  const base = (await companyList()).find(
-    (c) => c.symbol.toUpperCase() === symbol.trim().toUpperCase(),
-  );
-  if (!base) return null;
-
   return readTxn(async (c) => {
+    const { rows: found } = await c.query<CompanyListRow>(`${LIST_SELECT} WHERE co.symbol = $1`, [
+      symbol.trim().toUpperCase(),
+    ]);
+    const base = found[0];
+    if (!base) return null;
+
     const rows = async <T extends Record<string, unknown>>(sql: string): Promise<T[]> =>
       (await c.query<T>(sql, [base.id])).rows;
 

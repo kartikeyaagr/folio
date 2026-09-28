@@ -2,20 +2,24 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 
 import { companyPage, priceHistory } from '@/lib/company-view.ts';
-import { coverers, sectorsWithTerms, STATUSES } from '@/lib/companies.ts';
+import { coverers, listCompanies, sectorsWithTerms, STATUSES } from '@/lib/companies.ts';
 import { ACCEPTED } from '@/lib/import/index.ts';
 import { AUTHORED, documentsFor, KIND_LABEL } from '@/lib/workspace.ts';
 import { filedFor, heldNotListed, periodName, type FiledDocument } from '@/lib/files.ts';
 import {
-  AppHeader, Blank, Card, Chip, dayMonthYear, Empty, Fact, Facts, Seg, crore, inr, type Tone,
+  AppHeader, Blank, Card, Chip, dayMonthYear, Empty, Fact, Facts, Seg, crore, inr, istDate,
+  type Tone,
 } from '@/components/ui.tsx';
 import { PriceChart } from '@/components/PriceChart.tsx';
 import { DeleteDocument } from '@/components/DeleteDocument.tsx';
 import { DialogButton } from '@/components/DialogButton.tsx';
+import { RemoveCompany } from '@/components/RemoveCompany.tsx';
+import { TradeForm } from '@/components/TradeForm.tsx';
 
 import { requireUser } from '../../../_lib/session.ts';
+import { recordTradeAction } from '../../../_lib/actions/book.ts';
 import {
-  setCoverageAction, setSectorAction, setStatusAction,
+  restoreCompanyAction, setCoverageAction, setSectorAction, setStatusAction,
 } from '../../../_lib/actions/companies.ts';
 import {
   archiveDocumentAction, createDocumentAction, importFileAction,
@@ -89,13 +93,17 @@ export default async function CompanyPage({
   const sp = await searchParams;
   const showArchived = sp.archived === '1';
 
-  const [prices, desk, sectors, written, filed, notListed] = await Promise.all([
+  const removed = co.removedAt !== null;
+
+  const [prices, desk, sectors, written, filed, notListed, names] = await Promise.all([
     priceHistory(co.id),
     coverers(),
     sectorsWithTerms(),
     documentsFor(co.id, { archived: showArchived }),
     filedFor(co.id),
     heldNotListed(co.id),
+    // Only for the trade form's Change, which reaches the rest of the book's names.
+    removed ? [] : listCompanies(),
   ]);
 
   // **A document promoted from an attachment is not a second document.** `extractPending` writes a
@@ -226,7 +234,40 @@ export default async function CompanyPage({
         backTitle="Companies"
       />
 
+      {/* What is done *to* a name rather than inside it, under the header where /companies keeps
+          Add. A removed name offers neither Trade nor Remove: Restore is the one thing left. */}
+      <div className="co-bar">
+        <div className="form-actions">
+          {removed ? (
+            <form action={restoreCompanyAction}>
+              <input type="hidden" name="symbol" value={co.symbol} />
+              <button type="submit" className="btn btn-primary">Restore</button>
+            </form>
+          ) : (
+            <>
+              <DialogButton label="Trade" title={`Record a trade in ${co.symbol}`} className="btn btn-primary">
+                <TradeForm
+                  names={names}
+                  today={istDate()}
+                  action={recordTradeAction}
+                  preselected={{ id: co.id, symbol: co.symbol, name: co.name }}
+                />
+              </DialogButton>
+              <RemoveCompany symbol={co.symbol} held={Number(co.quantity ?? 0)} />
+            </>
+          )}
+        </div>
+      </div>
+
       <div className="page">
+        {co.removedAt && (
+          <p className="notice">
+            Removed on {dayMonthYear(co.removedAt)}
+            {co.removedByName ? ` by ${co.removedByName}` : ''}. Its history is kept; the feeds,
+            agents, alerts and search skip it until it is restored.
+          </p>
+        )}
+
         <Facts>
           <Fact
             label="Status"

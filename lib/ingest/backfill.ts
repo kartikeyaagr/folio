@@ -96,6 +96,8 @@ export interface Target {
  *
  * A name given with `--symbol` bypasses all of it: no attempt bound, no lease, and the counter
  * resets to 1, because a person typing a symbol has already decided the name deserves another go.
+ * It does not bypass a removal. A person decided that too, and restoring the name puts it back in
+ * this queue by itself.
  */
 export async function claim(only?: string | null): Promise<Target[]> {
   const symbol = only?.trim().toUpperCase() || null;
@@ -106,12 +108,13 @@ export async function claim(only?: string | null): Promise<Target[]> {
               backfill_attempts = CASE WHEN $1::text IS NULL THEN co.backfill_attempts + 1 ELSE 1 END
         WHERE co.id IN (
           SELECT q.id FROM companies q
-           WHERE ($1::text IS NULL
-                    AND q.backfilled_at IS NULL
-                    AND q.backfill_attempts < $2
-                    AND (q.backfill_started_at IS NULL
-                         OR q.backfill_started_at < now() - ($3 || ' minutes')::interval))
-              OR q.symbol = $1
+           WHERE q.removed_at IS NULL
+             AND (($1::text IS NULL
+                     AND q.backfilled_at IS NULL
+                     AND q.backfill_attempts < $2
+                     AND (q.backfill_started_at IS NULL
+                          OR q.backfill_started_at < now() - ($3 || ' minutes')::interval))
+                  OR q.symbol = $1)
            ORDER BY q.created_at
              FOR UPDATE SKIP LOCKED)
        RETURNING co.id, co.symbol, co.name, co.added_by AS "addedBy",
@@ -153,12 +156,15 @@ export async function announce(c: Client, symbol: string): Promise<void> {
  * from other worktrees against the same dev database held TEGA's row through a foreign key, and
  * the job said "TEGA is not a followed company" about a company it had filled in ten minutes
  * earlier.
+ *
+ * A removed name is not followed, which is the claim's own answer and so the true one here.
  */
 export async function followed(symbol: string): Promise<boolean> {
   return serviceTxn('system:ingest', async (c) => {
-    const { rowCount } = await c.query('SELECT 1 FROM companies WHERE symbol = $1', [
-      symbol.trim().toUpperCase(),
-    ]);
+    const { rowCount } = await c.query(
+      'SELECT 1 FROM companies WHERE symbol = $1 AND removed_at IS NULL',
+      [symbol.trim().toUpperCase()],
+    );
     return (rowCount ?? 0) > 0;
   });
 }
@@ -176,7 +182,7 @@ export async function owed(): Promise<{ leased: number; exhausted: number }> {
     const { rows } = await c.query<{ leased: string; exhausted: string }>(
       `SELECT count(*) FILTER (WHERE backfill_attempts < $1)::text  AS leased,
               count(*) FILTER (WHERE backfill_attempts >= $1)::text AS exhausted
-         FROM companies WHERE backfilled_at IS NULL`,
+         FROM companies WHERE backfilled_at IS NULL AND removed_at IS NULL`,
       [MAX_ATTEMPTS],
     );
     return { leased: Number(rows[0]!.leased), exhausted: Number(rows[0]!.exhausted) };

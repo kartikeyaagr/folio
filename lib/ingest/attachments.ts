@@ -200,8 +200,9 @@ export async function fetchAttachments(limit = 200, companyId?: string | null): 
     const { rows } = await c.query<Row>(
       `SELECT f.id, f.company_id, f.category, f.attachment_url
          FROM filings f
-        WHERE f.company_id IS NOT NULL
-          AND ($2::text IS NULL OR f.company_id = $2)
+         -- A removed name keeps its filings linked, so the link alone no longer means followed.
+         JOIN companies co ON co.id = f.company_id AND co.removed_at IS NULL
+        WHERE ($2::text IS NULL OR f.company_id = $2)
           AND f.attachment_url IS NOT NULL
           AND f.attachment_sha256 IS NULL
           -- NSE writes a bare "-" where a filing has no attachment. It arrives here either as the

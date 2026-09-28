@@ -2,7 +2,7 @@ import { test, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { readTxn, serviceTxn } from './db.ts';
 import {
-  acknowledge, desk, evaluateFilings, evaluateInsider, evaluatePrices, recipients,
+  acknowledge, desk, evaluateFilings, evaluateInsider, evaluatePrices, recipients, upcoming,
 } from './alerts.ts';
 import { createTestDatabase, dropTestDatabase } from '../db/testing.ts';
 
@@ -232,4 +232,65 @@ test('re-evaluating raises nothing twice', async () => {
   await disclosure('d_once', 'Sell', 'Promoters', 1, { quantity: 100000 });
   assert.equal((await evaluateInsider()).raised, 1);
   assert.equal((await evaluateInsider()).raised, 0);
+});
+
+// ---- a removed name ---------------------------------------------------------------------------
+
+/** Set as `removeCompany` leaves a name with history: the row kept and marked, never deleted. */
+async function setRemoved(companyId: string, removed: boolean) {
+  await serviceTxn('system:alerts', async (c) => {
+    await c.query(
+      `UPDATE companies
+          SET removed_at = CASE WHEN $2::boolean THEN now() END,
+              removed_by = CASE WHEN $2::boolean THEN $3::text END
+        WHERE id = $1`,
+      [companyId, removed, A],
+    );
+  });
+}
+
+test('a removed name raises nothing from its filings, its insiders or its prices', async () => {
+  // Its history stays linked — that is what removal keeps — so `company_id IS NOT NULL`, which
+  // was the whole filter on two of these, no longer means followed.
+  await filing(COVERED, 'COV', 'Change in Auditors', 1, 'f_gone');
+  await disclosure('d_gone', 'Pledge', 'Promoters', 1, { quantity: 1000000 });
+  await serviceTxn('system:ingest', async (c) => {
+    await c.query(
+      `INSERT INTO prices (symbol,on_date,close) VALUES
+         ('COV', current_date - 2, 100),
+         ('COV', current_date - 1, 150)`,
+    );
+  });
+
+  await setRemoved(COVERED, true);
+  try {
+    assert.deepEqual(await evaluateFilings(), { considered: 0, raised: 0 });
+    assert.deepEqual(await evaluateInsider(), { considered: 0, raised: 0 });
+    assert.deepEqual(await evaluatePrices(), { considered: 0, raised: 0 });
+  } finally {
+    await setRemoved(COVERED, false);
+  }
+
+  // Restored, the same three each raise, so the silence above was the removal and not the fixture.
+  assert.equal((await evaluateFilings()).raised, 1);
+  assert.equal((await evaluateInsider()).raised, 1);
+  assert.equal((await evaluatePrices()).raised, 1);
+});
+
+test("a removed name's meetings leave the fortnight but are kept", async () => {
+  await serviceTxn('system:ingest', async (c) => {
+    await c.query(
+      `INSERT INTO calendar_events (id, company_id, kind, title, on_date)
+       VALUES ('e_gone', $1, 'board_meeting', 'Results', current_date + 3)
+       ON CONFLICT (id) DO NOTHING`,
+      [COVERED],
+    );
+  });
+  await setRemoved(COVERED, true);
+  try {
+    assert.deepEqual((await upcoming()).map((e) => e.id), []);
+  } finally {
+    await setRemoved(COVERED, false);
+  }
+  assert.deepEqual((await upcoming()).map((e) => e.id), ['e_gone']);
 });

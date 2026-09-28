@@ -164,3 +164,35 @@ test('upcoming shows the fortnight ahead and not the month', async () => {
   assert.equal(soon[0]?.symbol, 'PRAJIND');
   assert.equal(soon[0]?.onDate, iso(4));
 });
+
+test('a removed name gains no new dates, and the ones it has are not counted as withdrawn', async () => {
+  await serviceTxn('system:auth', async (c) => {
+    await c.query("INSERT INTO actors (id,kind,label) VALUES ('u_rm','person','Remover')");
+    await c.query("INSERT INTO users (id,email,name) VALUES ('u_rm','rm@x.com','Remover')");
+    await c.query("INSERT INTO companies (id,symbol,name) VALUES ('c_gone','AERON','Aeron')");
+  });
+  await storeCalendar(parseCalendar([
+    row('PRAJIND', inDays(3), 'Financial Results'),
+    row('AERON', inDays(4), 'Financial Results'),
+  ]));
+  await serviceTxn('system:auth', (c) =>
+    c.query("UPDATE companies SET removed_at = now(), removed_by = 'u_rm' WHERE id = 'c_gone'"),
+  );
+
+  // The feed still lists AERON's meeting and adds another. Skipping the name must not read as the
+  // exchange cancelling its meeting: that is a claim about the world this run never observed.
+  const r = await storeCalendar(parseCalendar([
+    row('PRAJIND', inDays(3), 'Financial Results'),
+    row('AERON', inDays(4), 'Financial Results'),
+    row('AERON', inDays(6), 'Fund Raising'),
+  ]));
+  assert.equal(r.stored, 1, 'PRAJIND only');
+  assert.equal(r.withdrawn, 0);
+  const aeron = await readTxn(async (c) => {
+    const { rows } = await c.query<{ title: string }>(
+      "SELECT title FROM calendar_events WHERE company_id = 'c_gone'",
+    );
+    return rows.map((x) => x.title);
+  });
+  assert.deepEqual(aeron, ['Financial Results'], 'its meeting is kept, and the new one not added');
+});

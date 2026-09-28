@@ -215,16 +215,20 @@ export default async function PortfolioPage({
                   { label: 'Cash', href: '/portfolio?view=cash' },
                 ]}
               />
-              {/* B2 calls this the only manual write to the ledger, so it is one button and it is
-                  where the ledger is, rather than scattered across the screens that show its
-                  consequences. Cash gets its own on the cash view for the same reason. */}
-              {view === 'cash' ? (
+              {/* B2 calls these the only manual writes to the ledger. Trade is on every view, and
+                  first so it never moves: the cash view used to replace it with Cash, and the
+                  person looking for it could not find it. Cash joins it where the ledger it writes
+                  is, and takes the emphasis there. The company page opens the same trade form. */}
+              <DialogButton
+                label="Trade"
+                title="Record a trade"
+                className={view === 'cash' ? 'btn btn-sm' : 'btn btn-primary btn-sm'}
+              >
+                {tradeForm}
+              </DialogButton>
+              {view === 'cash' && (
                 <DialogButton label="Cash" title="Record a cash movement" className="btn btn-primary btn-sm">
                   {capitalForm}
-                </DialogButton>
-              ) : (
-                <DialogButton label="Trade" title="Record a trade" className="btn btn-primary btn-sm">
-                  {tradeForm}
                 </DialogButton>
               )}
             </div>

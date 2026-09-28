@@ -81,7 +81,7 @@ export interface CalendarResult {
 export async function storeCalendar(events: CalendarEvent[]): Promise<CalendarResult> {
   return serviceTxn('system:ingest', async (c) => {
     const { rows: cos } = await c.query<{ id: string; symbol: string }>(
-      'SELECT id, symbol FROM companies',
+      'SELECT id, symbol FROM companies WHERE removed_at IS NULL',
     );
     const bySymbol = new Map(cos.map((x) => [x.symbol, x.id]));
 
@@ -109,7 +109,12 @@ export async function storeCalendar(events: CalendarEvent[]): Promise<CalendarRe
         WHERE source = 'nse'
           AND on_date BETWEEN $1 AND $2
           AND on_date >= current_date
-          AND NOT (id = ANY($3))`,
+          AND NOT (id = ANY($3))
+          -- A removed name's events were skipped above, not dropped by the feed, so they are not
+          -- the feed's to withdraw; counting them would report cancellations nobody announced.
+          AND NOT EXISTS (
+            SELECT 1 FROM companies co
+             WHERE co.id = calendar_events.company_id AND co.removed_at IS NOT NULL)`,
       [dates[0], dates[dates.length - 1], keep],
     );
     return { seen: events.length, stored, withdrawn: rowCount ?? 0 };

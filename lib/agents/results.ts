@@ -58,6 +58,7 @@ export async function pending(limit = 20): Promise<{ subjectRef: string; company
     const { rows } = await c.query<{ subjectRef: string; companyId: string }>(
       `SELECT f.id AS "subjectRef", f.company_id AS "companyId"
          FROM fundamentals f
+         JOIN companies co ON co.id = f.company_id AND co.removed_at IS NULL
         WHERE f.superseded_by IS NULL
           AND f.period_kind IN ('quarter', 'half_year')
           AND NOT EXISTS (

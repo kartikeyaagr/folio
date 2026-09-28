@@ -119,7 +119,7 @@ export interface ActionResult {
 export async function storeAnnouncements(items: Announcement[]): Promise<ActionResult> {
   return serviceTxn('system:ingest', async (c) => {
     const { rows: cos } = await c.query<{ id: string; symbol: string }>(
-      'SELECT id, symbol FROM companies',
+      'SELECT id, symbol FROM companies WHERE removed_at IS NULL',
     );
     const bySymbol = new Map(cos.map((x) => [x.symbol, x.id]));
 

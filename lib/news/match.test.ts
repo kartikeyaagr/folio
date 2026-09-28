@@ -2,7 +2,7 @@ import { test, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { readTxn, serviceTxn } from '../db.ts';
 import {
-  candidatesFor, distinctive, matchNewItems, mentions, mentionsTerm, nameTerm,
+  candidatesFor, distinctive, loadVocabulary, matchNewItems, mentions, mentionsTerm, nameTerm,
   type CompanyVocabulary, type Item,
 } from './match.ts';
 import { createTestDatabase, dropTestDatabase } from '../../db/testing.ts';
@@ -277,4 +277,41 @@ test('a headline in another script is not deduplicated against every other one',
   await storeItem('f2', 'agri', 'चीनी मिलों को बिक्री डेटा दाखिल करने को कहा', 'https://a/7', 0);
   const r = await matchNewItems();
   assert.equal(r.duplicates, 0, 'two different headlines, in two different scripts');
+});
+
+// ---- a removed name ---------------------------------------------------------------------------
+
+test('a removed name casts no net, and restored it casts one again', async () => {
+  // Every candidate is a gate call later, so a name nobody wants on the list must stop producing
+  // them at the source rather than be filtered out after the money is spent.
+  await serviceTxn('system:auth', async (c) => {
+    await c.query(
+      "INSERT INTO actors (id,kind,label) VALUES ('u_rm','person','Remover') ON CONFLICT DO NOTHING",
+    );
+    await c.query(
+      "INSERT INTO users (id,email,name) VALUES ('u_rm','rm@x.com','Remover') ON CONFLICT DO NOTHING",
+    );
+  });
+  const mark = (removed: boolean) =>
+    serviceTxn('system:news', (c) =>
+      c.query(
+        `UPDATE companies
+            SET removed_at = CASE WHEN $1::boolean THEN now() END,
+                removed_by = CASE WHEN $1::boolean THEN 'u_rm' END
+          WHERE id = $2`,
+        [removed, CO],
+      ),
+    );
+
+  await twoFeeds();
+  await storeItem('rm1', 'agri', 'Praj Industries wins an ethanol plant order', 'https://x/story/rm1', 0);
+  await mark(true);
+  try {
+    assert.deepEqual(await loadVocabulary(), []);
+    assert.equal((await matchNewItems()).candidates, 0);
+  } finally {
+    await mark(false);
+  }
+  assert.deepEqual((await loadVocabulary()).map((v) => v.symbol), ['PRAJIND']);
+  assert.equal((await matchNewItems()).candidates, 1, 'and the story it missed is still there');
 });

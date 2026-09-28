@@ -1,11 +1,16 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
+import { redirect } from 'next/navigation';
 
 import {
   addCompany,
   AlreadyFollowed,
+  NotFollowed,
   ReasonRequired,
+  removeCompany,
+  restoreCompany,
+  StillHeld,
   UnknownSector,
   searchSecurities as search,
   setCoverage,
@@ -13,6 +18,7 @@ import {
   setStatus,
   STATUSES,
   UnknownSymbol,
+  type Removal,
   type SecurityHit,
   type Status,
 } from '@/lib/companies.ts';
@@ -73,6 +79,14 @@ export async function followCompany(form: FormData): Promise<void> {
 
   try {
     const company = await addCompany(symbol, user.userId);
+    if (company.restored) {
+      await flash(
+        `${company.symbol} is back on the list, restored as ${user.email}, with everything it had. ` +
+          'What it missed while removed is queued and arrives within the hour.',
+      );
+      revalidatePath('/companies');
+      return;
+    }
     // Says what actually happened rather than what a reader would assume. `addCompany` attaches the
     // filings already stored for the symbol, which is whatever the 14-day announcement window
     // happened to catch — not the company's history.
@@ -185,6 +199,60 @@ export async function setSectorAction(form: FormData): Promise<void> {
     // A sector with no vocabulary behind it is refused, and the refusal says why rather than
     // storing something that would behave exactly like the blank it replaced.
     if (err instanceof UnknownSector) return flash(err.message);
+    throw err;
+  }
+
+  revalidatePath('/company/[symbol]', 'page');
+  revalidatePath('/companies');
+}
+
+/**
+ * Take a name off the list.
+ *
+ * The library decides between deleting and removing; this only says which happened. A deleted
+ * name's page no longer exists, so it lands on the list rather than on a 404 for a button that
+ * worked.
+ */
+export async function removeCompanyAction(form: FormData): Promise<void> {
+  const user = await requireUser();
+  const symbol = String(form.get('symbol') ?? '').trim().toUpperCase();
+  if (!symbol) return flash('No company given.');
+
+  let outcome: Removal;
+  try {
+    outcome = await removeCompany(user.userId, symbol);
+  } catch (err) {
+    // A name on the book is the refusal a person can act on, and the sentence says how.
+    if (err instanceof StillHeld || err instanceof NotFollowed) return flash(err.message);
+    throw err;
+  }
+
+  revalidatePath('/companies');
+  if (outcome === 'deleted') {
+    await flash(`${symbol} is deleted, as ${user.email}. Nothing was recorded against it to keep.`);
+    redirect('/companies');
+  }
+  await flash(
+    `${symbol} is removed, as ${user.email}. Its history is kept, and Restore brings it back.`,
+  );
+  revalidatePath('/company/[symbol]', 'page');
+}
+
+export async function restoreCompanyAction(form: FormData): Promise<void> {
+  const user = await requireUser();
+  const symbol = String(form.get('symbol') ?? '').trim().toUpperCase();
+  if (!symbol) return flash('No company given.');
+
+  try {
+    const restored = await restoreCompany(user.userId, symbol);
+    await flash(
+      restored
+        ? `${symbol} is back on the list, restored as ${user.email}. What it missed while ` +
+            'removed is queued and arrives within the hour.'
+        : `${symbol} was not removed, so nothing changed.`,
+    );
+  } catch (err) {
+    if (err instanceof NotFollowed) return flash(err.message);
     throw err;
   }
 

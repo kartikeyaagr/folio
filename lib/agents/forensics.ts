@@ -68,6 +68,7 @@ export async function pending(limit = 10): Promise<{ subjectRef: string; company
         WHERE f.superseded_by IS NULL
           AND (f.period_end - f.period_start) > 300
           AND co.status <> 'passed'
+          AND co.removed_at IS NULL
           AND NOT EXISTS (
             SELECT 1 FROM agent_runs r
              WHERE r.agent_key = $1 AND r.subject_ref = f.id)
