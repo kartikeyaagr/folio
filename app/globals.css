@@ -1389,7 +1389,7 @@ dialog.dlg[open] {
   width: 78px;
 }
 .sheet-tool-face option[value='serif'] { font-family: var(--serif); }
-.sheet-tool-face option[value='mono'] { font-family: ui-monospace, Consolas, monospace; }
+.sheet-tool-face option[value='mono'] { font-family: var(--mono); }
 .sheet-tool-size {
   width: 58px;
 }
@@ -1441,12 +1441,14 @@ dialog.dlg[open] {
 .sheet-grid td.sheet-cell.cf-center { text-align: center; }
 .sheet-grid td.sheet-cell.cf-right { text-align: right; }
 
-/* Typefaces. Three, because this system owns two as tokens and a grid needs a third: a column of
-   figures in a proportional face does not line up, and lining up is what a column of figures is
-   for. `lib/sheet/format.ts` carries each one's Word equivalent for the export. */
+/* Typefaces. Three, one per font token. A grid needs mono because a column of figures in a
+   proportional face does not line up, and lining up is what a column of figures is for.
+   `lib/sheet/format.ts` carries each one's Word equivalent for the export. Mono was a literal stack
+   until 28-Sep-2026. It was written before `--mono` existed, and after the merge that stack
+   rendered a different face from the Geist Mono every other figure in the app uses. */
 .cf-face-sans { font-family: var(--font); }
 .cf-face-serif { font-family: var(--serif); }
-.cf-face-mono { font-family: ui-monospace, SFMono-Regular, 'SF Mono', Consolas, monospace; }
+.cf-face-mono { font-family: var(--mono); }
 
 /* Sizes, as classes rather than a number, so the ladder is fixed and each rung can carry a
    line-height that suits it. A 24pt heading at 1.65 is a heading with a hole under it. */
