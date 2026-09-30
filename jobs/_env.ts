@@ -3,7 +3,7 @@
  *
  * Next loads that file for the app, and tsx loads nothing. So until 28-Sep-2026, a job run by hand
  * on a laptop needed `DATABASE_URL` exported first. Without it, `pg` connects to the database named
- * after the macOS user and fails with `database "karti" does not exist`, an error that says nothing
+ * after the login user and fails with `database "<you>" does not exist`, an error that says nothing
  * about the variable that was missing. That is how a password reset failed for the person who had
  * just been told to run it.
  *

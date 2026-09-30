@@ -1,6 +1,6 @@
 # Private planning notes and internal documentation. Never committed.
-# No trailing slash on these three: in a Conductor worktree they are symlinks back to the main
-# checkout, and `docs/` matches a directory but not a symlink to one — so with the slash they
+# No trailing slash on these three: a secondary checkout may hold them as symlinks back to the
+# main one, and `docs/` matches a directory but not a symlink to one — so with the slash they
 # showed as untracked and `git add -A` would have committed the private notes.
 docs
 tasks

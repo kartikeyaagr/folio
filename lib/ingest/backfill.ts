@@ -171,7 +171,7 @@ export async function announce(c: Client, symbol: string): Promise<void> {
  * want opposite responses. `SKIP LOCKED` is why: it is right for a job never to block on somebody
  * else's transaction, but it means an empty claim can mean *this name is not followed* or *this
  * name is followed and busy*. Hit live on 17-Sep-2026 — three `index-content --watch` processes
- * from other worktrees against the same dev database held TEGA's row through a foreign key, and
+ * from other checkouts against the same dev database held TEGA's row through a foreign key, and
  * the job said "TEGA is not a followed company" about a company it had filled in ten minutes
  * earlier.
  *

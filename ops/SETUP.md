@@ -95,8 +95,8 @@ psql --version
 **`postgresql-18-pgvector` is not optional.** Migration
 `0040_the_system_can_be_asked_what_it_holds.sql` runs `CREATE EXTENSION IF NOT EXISTS vector`, and
 `chunks.embedding` is `vector(384)`. Without the package that migration fails, so `pnpm migrate` in
-§11 — the first command of first run — dies at 40 of 62 with a half-built schema. It is on the same
-PGDG repo the line above just added, so it costs nothing to install now and an afternoon to discover
+§11 — the first command of first run — dies at 0040 with a half-built schema. It is on the same PGDG
+repo the line above just added, so it costs nothing to install now and an afternoon to discover
 later.
 
 **Installing the package is not enough: the extension has to be created by `postgres`, in

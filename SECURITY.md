@@ -104,7 +104,7 @@ and the `reset` and `signup` pages:
 | Where | What |
 |---|---|
 | `/etc/folio/folio.env` | Production. `640 root:folio`: the app can read it but not rewrite it (SETUP §6). The VM never reads an env file from the repo. |
-| `.env.local` | Development, one per worktree. Every `.env*` file is gitignored except `.env.example`. |
+| `.env.local` | Development, one per checkout. Every `.env*` file is gitignored except `.env.example`. |
 | `.env.example` | **Every variable the code reads, by name only.** Add a new variable here *and* to `ops/SETUP.md` §6 in the same change. |
 
 - **No `NEXT_PUBLIC_` variables, and nothing secret reaches the browser.** The web process never

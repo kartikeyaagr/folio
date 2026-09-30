@@ -76,7 +76,7 @@ pnpm dev                         # port 3100
 
 Tests create and drop their own databases, so they need `createdb`/`dropdb` on PATH. The retrieval
 tests need the embedding model present — `pnpm fetch-model` is idempotent and leaves a good copy
-alone. Deployment lives in `ops/SETUP.md`.
+alone. To deploy, start at `DEPLOY.md`; the runbook it walks through is `ops/SETUP.md`.
 
 Jobs run as `pnpm exec tsx jobs/<name>.ts`, and **each job reads `.env.local` itself**
 (`jobs/_env.ts`), filling only what the shell has not already set. Nothing else run under `tsx`

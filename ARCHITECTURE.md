@@ -579,7 +579,7 @@ assertion error to explain themselves. Measured 15-Sep-2026: 3 failures with the
 with it stopped — the suite was 616 tests then — and those same three files pass in isolation
 either way. It looks like a broken test and it is a resource conflict.
 
-Measured again 21-Sep-2026, which narrows it: a dev server belonging to a *different* worktree, on
+Measured again 21-Sep-2026, which narrows it: a dev server running from a *different* checkout, on
 the same port, did **not** reproduce it — 814/814 passed with one running, the suite being 814
 that morning. The conflict is over the ONNX session in this checkout, not over the port, so it is
 your own `pnpm dev` that has to stop.
