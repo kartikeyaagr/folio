@@ -100,10 +100,21 @@ await runJob('nse_bhavcopy_backfill', async () => {
   let skipped = 0;
   let stored = 0;
   let levels = 0;
+  // Weekdays passed, however each turned out: already held, a holiday, or fetched. This is the
+  // numerator `totalWeekdays` is the denominator of. Until 30-Sep-2026 it was `traded`, so a resumed
+  // window read "0 of 400" while the walk was nearly done.
+  let walked = 0;
 
   for (let back = 1; back <= days; back++) {
     const on = new Date(today.getTime() - back * 86_400_000);
     const day = on.toISOString().slice(0, 10);
+    const dow = on.getUTCDay();
+    // Counted here, before any of the loop's exits, so that a new exit cannot miss it. What is
+    // saved is the weekdays already behind this one.
+    if (dow !== 0 && dow !== 6) {
+      if (walked > 0 && walked % 25 === 0) await saveProgress(walked);
+      walked++;
+    }
     // Only when BOTH are held. A day whose prices are in and whose index close is not still
     // costs one request, and the alternative is a benchmark that begins the day this shipped.
     if (held.has(day) && heldIndex.has(day)) {
@@ -112,7 +123,6 @@ await runJob('nse_bhavcopy_backfill', async () => {
     }
     // Saturday and Sunday never have one. Checked before the request rather than after a 404,
     // because two in seven requests is a lot of politeness to spend on a known answer.
-    const dow = on.getUTCDay();
     if (dow === 0 || dow === 6) {
       quiet++;
       continue;
@@ -130,7 +140,6 @@ await runJob('nse_bhavcopy_backfill', async () => {
       traded++;
       if (traded % 25 === 0) {
         console.log(`  ${day}  ${traded} trading days so far, ${stored} closes, ${levels} index closes`);
-        await saveProgress(traded);
       }
     } catch (err) {
       // A 404 is a non-trading day and is not retried: the file will not appear on a second ask.

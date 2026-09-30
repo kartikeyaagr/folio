@@ -903,16 +903,17 @@ sudo shred -u /tmp/restore.key
 sudo -u folio psql -d folio_restored -c 'SELECT max(filename) FROM schema_migrations'
 
 # 3. Swap, with everything that writes stopped. The broken database is renamed, not dropped.
-sudo systemctl stop folio-web 'folio-*.timer' folio-index-watch folio-backfill-watch \
-  'folio-job@*'
+sudo systemctl stop 'folio-*'
 sudo -u folio psql -d postgres -c 'ALTER DATABASE folio RENAME TO folio_broken' \
   -c 'ALTER DATABASE folio_restored RENAME TO folio'
 sudo systemctl start folio-web folio-index-watch folio-backfill-watch 'folio-*.timer'
 ```
 
-Stop the timers *and* any job already running (`folio-job@*`): a job that runs mid-swap writes
-into the wrong database, and the `ingestion_runs` row it leaves makes the gap look like a quiet day
-rather than an outage. `restore.sh` reapplies the database's timezone, which a dump does not carry
+Stop every `folio-*` unit, not only the timers. Stopping a timer does not stop the run it already
+started, so a job mid-run (`folio-job@*`) writes into the wrong database, and the `ingestion_runs`
+row it leaves makes the gap look like a quiet day rather than an outage. A backup or the weekly
+drill mid-run (`folio-backup`, `folio-backup-verify`) holds a connection to `folio`, and the rename
+refuses while one is open. `restore.sh` reapplies the database's timezone, which a dump does not carry
 and a rename keeps. `pnpm preflight` afterwards checks it, with everything else. Drop
 `folio_broken` once the restored database has run a day.
 

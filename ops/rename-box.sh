@@ -82,8 +82,16 @@ sed -i -e "s#^APP_URL=https://$OLD\.#APP_URL=https://$NEW.#" "/etc/$NEW/$NEW.env
 
 say "database and role"
 psql_() { sudo -u postgres psql -v ON_ERROR_STOP=1 -tAc "$1"; }
-[ "$(psql_ "SELECT 1 FROM pg_database WHERE datname = '$OLD'")" != 1 ] \
-  || psql_ "ALTER DATABASE $OLD RENAME TO $NEW"
+if [ "$(psql_ "SELECT 1 FROM pg_database WHERE datname = '$OLD'")" = 1 ]; then
+  # ALTER DATABASE refuses while anything else is connected, and says only how many. With every
+  # unit stopped, what is left is a unit the stop missed or somebody's psql, and neither should be
+  # killed from here. Name them and stop; closing them and re-running resumes at this step.
+  held=$(psql_ "SELECT string_agg(format('pid %s %s (%s)', pid, usename,
+                  coalesce(nullif(application_name, ''), 'no application name')), '; ')
+                FROM pg_stat_activity WHERE datname = '$OLD' AND pid <> pg_backend_pid()")
+  [ -z "$held" ] || die "database $OLD is still in use, so it cannot be renamed: $held"
+  psql_ "ALTER DATABASE $OLD RENAME TO $NEW"
+fi
 # Peer authentication maps the unix user to the role of the same name, so the two move together.
 [ "$(psql_ "SELECT 1 FROM pg_roles WHERE rolname = '$OLD'")" != 1 ] \
   || psql_ "ALTER ROLE $OLD RENAME TO $NEW"
